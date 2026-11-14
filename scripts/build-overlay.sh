@@ -24,8 +24,12 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSScreenCaptureUsageDescription</key><string>Reach reads the region you select so it can answer about it.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Reach listens only while you hold Control-Option-Space, to turn what you say into a question. Audio is not saved.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Reach turns what you say into text on this Mac while you hold Control-Option-Space. If on-device recognition is unavailable, Apple's speech service is used and the panel says so.</string>
   <key>ReachRepo</key><string>$REPO</string>
 </dict></plist>
 PLIST
+# Ad-hoc signed without the hardened runtime, so the microphone needs no audio-input entitlement (that entitlement
+# is only enforced under the hardened runtime or the App Sandbox).
 codesign --force -s - "$APP"
 echo "built $APP"
