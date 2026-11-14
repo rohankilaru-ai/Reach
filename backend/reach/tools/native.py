@@ -12,6 +12,7 @@ receipt builder parses.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -67,7 +68,8 @@ def check_notes_path(path: Path, allowed: Path | None = None) -> Path:
     """The file destination is one fixed file. Anything else (another path, a symlink elsewhere) is refused."""
     allowed = (allowed or NOTES_FILE).expanduser()
     p = path.expanduser()
-    if p.resolve() != allowed.resolve() or (p.exists() and p.is_symlink()):
+    # lstat-based: a symlink is refused even when it dangles (resolve() would follow it to its target).
+    if p.is_symlink() or p.parent.resolve() / p.name != allowed.parent.resolve() / allowed.name:
         raise PermissionError(f"refused: file notes go only to {allowed}")
     return p
 
@@ -81,7 +83,9 @@ def write_file(text: str, path: Path | None = None, allowed: Path | None = None)
         before = p.read_text(encoding="utf-8") if p.exists() else None
         p.parent.mkdir(parents=True, exist_ok=True)
         chunk = ("" if not before or before.endswith("\n") else "\n") + text.rstrip("\n") + "\n"
-        with p.open("a", encoding="utf-8") as f:
+        # O_NOFOLLOW: a symlink planted between the check and the open is refused, not followed.
+        fd = os.open(p, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(chunk)
     except OSError as e:
         return WriteResult(destination="file", outcome="failed", detail=f"write error {type(e).__name__}")

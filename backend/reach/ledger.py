@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextvars import ContextVar
 from pathlib import Path
@@ -19,6 +20,16 @@ def parse_outcome(content: str) -> str | None:
 
     m = re.match(r"outcome=(verified|unverified|failed)\b", content or "")
     return m.group(1) if m else None
+
+
+_CLAIM_YES = re.compile(r"\b(saved|added|appended|wrote|written|done|completed|finished|success(fully)?|submitted|"
+                        r"in your notes)\b", re.I)
+_CLAIM_NO = re.compile(r"n't\b|\b(not|cannot|couldn't|failed|unable|unverified)\b", re.I)
+
+
+def claims_success(text: str) -> bool:
+    """Whether the model's answer says the action worked (saved, added, done...) without saying it failed."""
+    return bool(_CLAIM_YES.search(text or "")) and not _CLAIM_NO.search(text or "")
 
 
 def worst(outcomes: list[str]) -> str | None:
@@ -193,10 +204,21 @@ class ReceiptBuilder:
         reason = end.get("reason") or ("aborted" if aborted else (f"error: {error}" if error else "no_run_end"))
         status = "ok" if reason == "completed" else ("aborted" if reason == "aborted" else "failed")
         outcome = None
+        final_text = end.get("final_text") or "".join(self.text)
+        notes: list[str] = []
         if self.browser:
             outcome = "aborted" if aborted else self.browser[-1].get("outcome", "not_done")
             if status == "ok" and outcome != "done":
                 status = "failed"  # the run completed but the browser task did not: never show it as done
+                notes.append(f"browser task {outcome}")
+        write_outcome = worst(self.write_outcomes)
+        if status == "ok" and write_outcome in ("failed", "unverified"):
+            status = "failed"  # a write that did not read back is never shown as done
+            notes.append(f"note write {write_outcome}")
+        if notes:
+            if claims_success(final_text):
+                notes.append("the answer text claims success but the action did not complete")
+            reason = "; ".join(notes)
         duration = end.get("duration_ms")
         if duration is None:
             duration = int((time.monotonic() - self.started) * 1000)
@@ -210,8 +232,8 @@ class ReceiptBuilder:
             tokens=int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)),
             est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost, 6),
             duration_ms=int(duration),
-            final_text=end.get("final_text") or "".join(self.text),
+            final_text=final_text,
             outcome=outcome,
             browser=self.browser,
-            write_outcome=worst(self.write_outcomes),
+            write_outcome=write_outcome,
         )
