@@ -1,0 +1,60 @@
+{"id": "c01", "group": "command", "text": "Reach, scroll down", "gold_addressed": true, "split": "dev"}
+{"id": "c02", "group": "command", "text": "Hey Reach, what does this error mean?", "gold_addressed": true, "split": "held_out"}
+{"id": "c03", "group": "command", "text": "Reach stop", "gold_addressed": true, "split": "held_out"}
+{"id": "c04", "group": "command", "text": "hey reach open this link", "gold_addressed": true, "split": "dev"}
+{"id": "c05", "group": "command", "text": "Reach, compare these two", "gold_addressed": true, "split": "held_out"}
+{"id": "c06", "group": "command", "text": "hey Reach summarize this page for me", "gold_addressed": true, "split": "held_out"}
+{"id": "c07", "group": "command", "text": "Reach, next", "gold_addressed": true, "split": "dev"}
+{"id": "c08", "group": "command", "text": "Reach can you explain this chart", "gold_addressed": true, "split": "held_out"}
+{"id": "c09", "group": "command", "text": "Hey Reach, pause", "gold_addressed": true, "split": "held_out"}
+{"id": "c10", "group": "command", "text": "Reach, put this in my notes", "gold_addressed": true, "split": "dev"}
+{"id": "c11", "group": "command", "text": "scroll down", "gold_addressed": true, "split": "held_out"}
+{"id": "c12", "group": "command", "text": "explain this paragraph to me", "gold_addressed": true, "split": "held_out"}
+{"id": "c13", "group": "command", "text": "open that link", "gold_addressed": true, "split": "dev"}
+{"id": "c14", "group": "command", "text": "stop talking", "gold_addressed": true, "split": "held_out"}
+{"id": "c15", "group": "command", "text": "what's on my screen right now", "gold_addressed": true, "split": "held_out"}
+{"id": "c16", "group": "command", "text": "can you summarize this article for me", "gold_addressed": true, "split": "dev"}
+{"id": "c17", "group": "command", "text": "go to the next page", "gold_addressed": true, "split": "held_out"}
+{"id": "c18", "group": "command", "text": "compare these two options", "gold_addressed": true, "split": "held_out"}
+{"id": "c19", "group": "command", "text": "cancel that", "gold_addressed": true, "split": "dev"}
+{"id": "c20", "group": "command", "text": "keep going", "gold_addressed": true, "split": "held_out"}
+{"id": "s01", "group": "side", "text": "did you see the game last night", "gold_addressed": false, "split": "dev"}
+{"id": "s02", "group": "side", "text": "I think we should push the launch to Thursday", "gold_addressed": false, "split": "held_out"}
+{"id": "s03", "group": "side", "text": "honey can you grab the milk on your way home", "gold_addressed": false, "split": "held_out"}
+{"id": "s04", "group": "side", "text": "okay so where was I", "gold_addressed": false, "split": "dev"}
+{"id": "s05", "group": "side", "text": "hmm that's weird, let me check the logs", "gold_addressed": false, "split": "held_out"}
+{"id": "s06", "group": "side", "text": "the mitochondria is the powerhouse of the cell", "gold_addressed": false, "split": "held_out"}
+{"id": "s07", "group": "side", "text": "next slide please", "gold_addressed": false, "split": "dev"}
+{"id": "s08", "group": "side", "text": "as you can see on this chart revenue grew twelve percent", "gold_addressed": false, "split": "held_out"}
+{"id": "s09", "group": "side", "text": "chapter three, the storm had passed by morning", "gold_addressed": false, "split": "held_out"}
+{"id": "s10", "group": "side", "text": "let's circle back on this next week", "gold_addressed": false, "split": "dev"}
+{"id": "s11", "group": "side", "text": "can everyone see my screen", "gold_addressed": false, "split": "held_out"}
+{"id": "s12", "group": "side", "text": "I'll send you the doc after the call", "gold_addressed": false, "split": "held_out"}
+{"id": "s13", "group": "side", "text": "lol no way he said that", "gold_addressed": false, "split": "dev"}
+{"id": "s14", "group": "side", "text": "and that's why you should always back up your files", "gold_addressed": false, "split": "held_out"}
+{"id": "s15", "group": "side", "text": "breaking news tonight, a storm is moving up the coast", "gold_addressed": false, "split": "held_out"}
+{"id": "s16", "group": "side", "text": "mom I'm on a call", "gold_addressed": false, "split": "dev"}
+{"id": "s17", "group": "side", "text": "ugh I forgot my password again", "gold_addressed": false, "split": "held_out"}
+{"id": "s18", "group": "side", "text": "so the function returns null when the list is empty", "gold_addressed": false, "split": "held_out"}
+{"id": "s19", "group": "side", "text": "thanks everyone, see you tomorrow", "gold_addressed": false, "split": "dev"}
+{"id": "s20", "group": "side", "text": "wait what time is the meeting", "gold_addressed": false, "split": "held_out"}
+{"id": "h01", "group": "hard", "text": "reach over and grab that for me", "gold_addressed": false, "split": "held_out"}
+{"id": "h02", "group": "hard", "text": "can you open the window, it's hot in here", "gold_addressed": false, "split": "dev"}
+{"id": "h03", "group": "hard", "text": "explain this to the class, Jordan", "gold_addressed": false, "split": "held_out"}
+{"id": "h04", "group": "hard", "text": "I need to reach out to the vendor today", "gold_addressed": false, "split": "held_out"}
+{"id": "h05", "group": "hard", "text": "Reach is the app I was telling you about", "gold_addressed": false, "split": "dev"}
+{"id": "h06", "group": "hard", "text": "stop, you're going to spill it", "gold_addressed": false, "split": "held_out"}
+{"id": "h07", "group": "hard", "text": "scroll down, it's further down the page", "gold_addressed": false, "split": "held_out"}
+{"id": "h08", "group": "hard", "text": "let me explain this one more time, everybody", "gold_addressed": false, "split": "dev"}
+{"id": "h09", "group": "hard", "text": "can you compare these for me", "gold_addressed": true, "split": "held_out"}
+{"id": "h10", "group": "hard", "text": "what does this mean", "gold_addressed": true, "split": "held_out"}
+{"id": "h11", "group": "hard", "text": "hey can you pause the music", "gold_addressed": false, "split": "dev"}
+{"id": "h12", "group": "hard", "text": "next", "gold_addressed": true, "split": "held_out"}
+{"id": "h13", "group": "hard", "text": "open this", "gold_addressed": true, "split": "held_out"}
+{"id": "h14", "group": "hard", "text": "the Reach demo crashed again yesterday", "gold_addressed": false, "split": "dev"}
+{"id": "h15", "group": "hard", "text": "did Reach save my note", "gold_addressed": false, "split": "held_out"}
+{"id": "h16", "group": "hard", "text": "could you scroll up a bit so I can see the title", "gold_addressed": true, "split": "held_out"}
+{"id": "h17", "group": "hard", "text": "okay keep going", "gold_addressed": true, "split": "dev"}
+{"id": "h18", "group": "hard", "text": "I'm reaching the limit of what I can do today", "gold_addressed": false, "split": "held_out"}
+{"id": "h19", "group": "hard", "text": "show me what this error is about", "gold_addressed": true, "split": "held_out"}
+{"id": "h20", "group": "hard", "text": "Jamie, can you explain this graph to me", "gold_addressed": false, "split": "held_out"}

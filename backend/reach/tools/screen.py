@@ -19,6 +19,7 @@ blank capture returns a 'needs you' message instead of an answer.
 from __future__ import annotations
 
 import json
+import shutil
 import os
 import subprocess
 import time
@@ -154,7 +155,10 @@ def capture(target: str = "display", run: Runner = run_cmd, info: Callable[[], d
     d = captures_dir(root)
     d.mkdir(parents=True, exist_ok=True)
     ms = int(time.time() * 1000)
-    raw = d / f".raw-{ms}.png"
+    import tempfile
+
+    tmp = Path(tempfile.mkdtemp(prefix="reach-screen-"))  # full-size raw never lands in captures/
+    raw = tmp / f"raw-{ms}.png"  # screencapture refuses dot-file names
     si = info() or {}
     note = ""
     win = si.get("window") if target == "window" else None
@@ -176,6 +180,7 @@ def capture(target: str = "display", run: Runner = run_cmd, info: Callable[[], d
         ow, oh, nw, nh = downsize(raw, png)
     finally:
         raw.unlink(missing_ok=True)
+        shutil.rmtree(tmp, ignore_errors=True)
     if not region[2] or not region[3]:  # no screen info: assume the capture's own pixel size at scale 1
         region = [0, 0, ow, oh]
     scale = nw / float(region[2])
