@@ -504,9 +504,6 @@ class ChromeMoveTab(Tool):
         return await _guarded(self.name, move_tab, args.tab_ref, args.to_window)
 
 
-CHROME_WRITE_TOOLS = frozenset({"chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"})
-
-
 def tools() -> list[Tool]:
     """Chrome tools. Only the read-only tab list is on by default: opening, switching, closing and moving tabs act on the
     owner's real browser, so they are off until REACH_CHROME_ACTIONS=1 is set (and even then only tabs Reach opened can
