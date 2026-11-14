@@ -99,6 +99,17 @@ class Receipt(BaseModel):
     duration_ms: int
     final_text: str = ""
     ndi_calls: int = Field(default=0, description="NDI calls (parse/ground) made for this task")
+    outcome: str | None = Field(
+        default=None, description="Computed, never model-written: done | not_done | aborted, from the last browser task"
+    )
+    write_outcome: str | None = Field(
+        default=None,
+        description="Computed from readbacks of native writes: verified, unverified or failed; None when nothing was written",
+    )
+    browser: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="One entry per browser_task: outcome, status, kind, reason, final_url, cost_usd, drex_calls",
+    )
 
 
 class Evidence(BaseModel):
@@ -155,3 +166,5 @@ Outbound = Annotated[
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 
 LEDGER_TYPES = frozenset({"decision", "nudge", "tool_guard"})
+
+BROWSER_TOOL = "browser_task"

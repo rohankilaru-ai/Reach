@@ -21,7 +21,7 @@ from .paths import drex_log, reach_dir, run_dir
 
 
 def _print_receipt(r: dict) -> None:
-    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls")
+    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls", "outcome", "browser", "write_outcome")
     print("\n--- receipt ---")
     print(json.dumps({k: r.get(k) for k in keys}, indent=2))
 

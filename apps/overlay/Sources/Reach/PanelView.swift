@@ -53,7 +53,7 @@ struct PanelView: View {
                     .foregroundStyle(.white.opacity(0.35))
             }
 
-            TextField("Ask Reach…", text: $model.draft)
+            TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
                 .textFieldStyle(.plain)
                 .font(.system(size: 15))
                 .foregroundStyle(.white)
@@ -61,6 +61,13 @@ struct PanelView: View {
                 .onSubmit { model.submit() }
                 .padding(.vertical, 8).padding(.horizontal, 10)
                 .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.06)))
+
+            if let line = model.voiceLine {
+                Label(line, systemImage: model.listening ? "mic.fill" : "mic")
+                    .font(.system(size: 11, weight: model.listening ? .semibold : .regular))
+                    .foregroundStyle(model.listening ? Palette.accent : .white.opacity(0.6))
+                    .lineLimit(2)
+            }
 
             if let note = model.selectionNote {
                 Label(note, systemImage: "viewfinder")
