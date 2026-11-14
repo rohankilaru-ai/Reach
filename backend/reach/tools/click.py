@@ -123,4 +123,4 @@ class ClickOnScreen(Tool):
         from . import guide
 
         outcome, text = await click_target(args.target, CURRENT_TASK.get(), emit=guide._emit)
-        return ToolOutput(content=f"outcome={outcome}\n{text}", is_error=outcome in ("not_found", "refused"))
+        return ToolOutput(status="error" if outcome in ("not_found", "refused") else "ok", content=f"outcome={outcome}\n{text}")
