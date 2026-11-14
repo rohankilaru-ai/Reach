@@ -256,6 +256,10 @@ if args.contains("--replay") {
         }
     }
     line("hover expand / collapse", trace == ["expand@0.3", "collapse@2.7"], trace.joined(separator: " "))
+    hover.collapsed()   // e.g. Esc with the mouse parked at the notch: no instant reopen
+    let parked = (0..<10).map { hover.update(mouse: CGPoint(x: 760, y: 970), now: 3 + Double($0) * 0.1, expanded: false, hot: hot,
+                                             panel: panelFrame, busy: false) }
+    line("hover stays closed after Esc until the mouse leaves", !parked.contains(.expand), "no reopen while parked at the notch")
 
     // receipts: the verdict is read from status, reason, write_outcome and outcome
     func verdict(_ fields: String) -> (Verdict?, Phase) {
@@ -277,6 +281,22 @@ if args.contains("--replay") {
 
     let spoken = SpokenText.clean("**Rent** is due on the 1st [E3]. See [the lease](file:///l.pdf).")
     line("spoken text", spoken == "Rent is due on the 1st. See the lease.", "\"\(spoken)\"")
+
+    // calm panel: one progress line, one sentence + one action, short pointer labels, lens never covers
+    let prog = ProgressLine.of(tool: "see_region")
+    line("progress is one line", prog == "Looking at your screen…" && ProgressLine.of(tool: "browser_task") == "Using the browser…", prog)
+    let plain = PlainState.of(verdict: .failed("the note write failed; the answer text claims success"))
+    line("failure is one sentence + one action", plain == PlainState(sentence: "The note wasn't saved.", action: .retry),
+         "\(plain?.sentence ?? "none") [\(plain?.actionLabel ?? "")]")
+    let shown = PlainText.display("**Rent** is due [E3].\n- pay online")
+    line("answer shows as plain text", shown == "Rent is due.\npay online", shown.replacingOccurrences(of: "\n", with: " / "))
+    let label = PointerLabel.short("Click the blue Save button in the lower right corner of the window") ?? ""
+    line("pointer label is short", label.count <= 30, "\"\(label)\"")
+    let lensO = LensPlacement.place(size: CGSize(width: 400, height: 300), avoid: [panelFrame, CGRect(x: 600, y: 300, width: 180, height: 120)],
+                                    near: CGRect(x: 600, y: 300, width: 180, height: 120), visible: CGRect(x: 0, y: 0, width: 1512, height: 945))
+    let lensR = CGRect(origin: lensO, size: CGSize(width: 400, height: 300))
+    line("lens covers neither panel nor circle", !lensR.intersects(panelFrame) && !lensR.intersects(CGRect(x: 600, y: 300, width: 180, height: 120)),
+         "lens at \(Int(lensO.x)),\(Int(lensO.y))")
 
     log("hub selftest \(allOK ? "PASS" : "FAIL")")
     return allOK ? 0 : 1

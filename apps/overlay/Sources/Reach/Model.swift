@@ -32,7 +32,17 @@ final class OverlayModel: ObservableObject {
     @Published var level: Float = 0
     /// Height the answer area may take (set from the screen by the app controller).
     @Published var answerMax: CGFloat = 360
+    /// The answer area's measured content height; publishing it makes the window refit after late layout changes.
+    @Published var measuredAnswer: CGFloat = 0
     @Published var speaking = false
+    /// The panel was summoned to type (tap or a circle without words): the text field shows.
+    @Published var typing = false
+    /// Receipt, Drex decisions, tools and cost sit behind a collapsed "Details" disclosure. Remembered.
+    @Published var showDetails: Bool = UserDefaults.standard.bool(forKey: "showDetails") {
+        didSet { UserDefaults.standard.set(showDetails, forKey: "showDetails") }
+    }
+    /// The last ask, for "Try again".
+    private var lastAsk: (String, Selection?, Bool)?
     /// Speak replies to voice asks automatically. Persisted.
     @Published var speakReplies: Bool = (UserDefaults.standard.object(forKey: "speakReplies") as? Bool) ?? true {
         didSet { UserDefaults.standard.set(speakReplies, forKey: "speakReplies") }
@@ -125,6 +135,8 @@ final class OverlayModel: ObservableObject {
         log("ask\(fromVoice ? " (voice)" : ""): \(text)" + (sel != nil ? " (with selection\(sel?.path != nil ? ", circle" : ""))" : ""))
         client.send(.ask(text: text, selection: sel))
         sentAsks.append((text, sel))
+        lastAsk = (text, sel, fromVoice)
+        typing = false
         draft = ""
         if selectionIsCircle || explicit?.path != nil {   // a circle belongs to one ask
             if selectionIsCircle { selection = nil; selectionNote = nil; selectionIsCircle = false }
@@ -145,6 +157,12 @@ final class OverlayModel: ObservableObject {
     func dropCircle() {
         if selectionIsCircle { selection = nil; selectionNote = nil; selectionIsCircle = false }
         zoomTarget = nil
+    }
+
+    func retryLast() {
+        guard let a = lastAsk else { return }
+        log("try again: \(a.0)")
+        submit(a.0, selection: a.1, fromVoice: a.2)
     }
 
     func abort() {

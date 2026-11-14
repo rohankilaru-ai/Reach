@@ -37,7 +37,8 @@ final class AppController: NSObject, NSApplicationDelegate {
                                                      },
                                                      onZoom: { [weak self] in
                                                          if let z = self?.model.zoomTarget { self?.openLens(z) }
-                                                     }))
+                                                     },
+                                                     onAction: { [weak self] a in self?.act(a) }))
         host.sizingOptions = [.intrinsicContentSize]  // fit() sizes the window, keeping its top edge
         self.host = host
         panel = ReachPanel(content: host)
@@ -52,7 +53,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.onZoom = { [weak self] sel in self?.openLens(sel) }
         model.onSpeak = { [weak self] text in self?.speaker.speak(text) }
         model.onStopSpeaking = { [weak self] in self?.speaker.stop() }
-        speaker.onSpeaking = { [weak self] on in self?.model.speaking = on }
+        speaker.onSpeaking = { [weak self] on in
+            self?.model.speaking = on
+            if !on { self?.lastActivity = Date() }   // the 8 s fold starts after the audio ends
+        }
         ready.onCircle = { [weak self] loop, box in self?.circleDrawn(loop, box: box) }
         ready.onTooSmall = { [weak self] in self?.model.selectionNote = "draw a bigger circle" }
 
@@ -83,7 +87,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func hoverTick() {
         guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
-        if !model.expanded { pillSize = panel.frame.size }
+        if !model.expanded, panel.frame.height < 64 { pillSize = panel.frame.size }   // not mid-animation
         let mouse = NSEvent.mouseLocation
         let hot = Hover.hotZone(anchor: anchor, pill: pillSize, screenTop: screen.frame.maxY)
         if Hover.keepZone(panel: panel.frame).contains(mouse), model.expanded { lastActivity = Date() }
@@ -202,6 +206,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     func collapse(why: String) {
         halo.hide()
         hover.collapsed()
+        model.typing = false
         guard model.expanded else { return }
         model.expanded = false
         DispatchQueue.main.async { [weak self] in
@@ -219,7 +224,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func toggle() {
-        if !panel.isVisible || !model.expanded { expand(focus: true, why: "hotkey") } else { collapse(why: "hotkey") }
+        // a hover-opened panel is not focused yet: the tap focuses the field instead of closing it
+        if !panel.isVisible || !model.expanded || !panel.isKeyWindow { model.typing = true; expand(focus: true, why: "hotkey") }
+        else { collapse(why: "hotkey") }
     }
 
     private func show() {
@@ -233,6 +240,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if gesture.phase != .idle {
             _ = gesture.cancel()
             ready.hide(); halo.hide()
+            _ = model.beginCapture()   // a late capture from this hold is now stale
             model.capturing = false
             voiceCancel()
             model.dropCircle()
@@ -354,6 +362,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         case .typeWithChip(let sel):
             log("hold -> circle attached, typing")
             model.attachCircle(sel, note: model.selectionNote ?? "circled")
+            model.typing = true
             model.voiceLine = "circle attached: type what to do"
             expand(focus: true, why: "circle without words")
         case .zoom(let sel):
@@ -369,7 +378,29 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func openLens(_ sel: Selection) {
-        lens.open(sel, near: CGPoint(x: panel.frame.midX, y: panel.frame.minY))
+        // never over the panel or the circled area
+        var avoid = [panel.frame]
+        var target = CGRect(x: panel.frame.midX, y: panel.frame.minY, width: 1, height: 1)
+        if let r = sel.region, r.count == 4 {
+            let top = NSScreen.screens.first?.frame.maxY ?? 0
+            target = CGRect(x: r[0], y: top - r[1] - r[3], width: r[2], height: r[3])
+            avoid.append(target)
+        }
+        let vis = (NSScreen.screens.first { $0.frame.intersects(target) } ?? NSScreen.main)?.visibleFrame ?? .zero
+        lens.open(sel) { size in LensPlacement.place(size: size, avoid: avoid, near: target, visible: vis) }
+    }
+
+    /// The one action an end state offers.
+    private func act(_ a: PlainState.Action) {
+        switch a {
+        case .retry: model.retryLast()
+        case .startServer: model.connect()
+        case .openScreenSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        case .openMicSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        case .circle, .none: break
+        }
     }
 
     // MARK: hold to talk
@@ -482,7 +513,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// One reusable ghost pointer. Task pointers rest 4 s; hand pointers (~15 Hz) fade calmly 1 s after the last one.
-    private func showPointer(x: Double, y: Double, label: String?, byHand: Bool) {
+    private func showPointer(x: Double, y: Double, label rawLabel: String?, byHand: Bool) {
+        let label = PointerLabel.short(rawLabel)   // at most 30 characters
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         let size = NSSize(width: 160, height: 34)
         let origin = NSPoint(x: x - 9, y: top - y - 9)

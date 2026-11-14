@@ -26,10 +26,17 @@ One key, **Option-Space**, and one calm hint line: "Hold Option-Space, circle wh
 - **Esc** cancels everything: the hold, the circle, listening, speech and the lens; it aborts a running ask and folds
   the panel when idle.
 
-The panel: a header with the status dot (idle grey, listening and working ripple, done green, needs-you amber,
-failed red), the state title and a speaker toggle; the text field; the circle chip with **Zoom**; the answer area
-(always shows the streamed answer, measured and scrollable, grows up to about 60% of the screen and never past the
-bottom) with evidence cards below it (click opens the PDF at the page); and the receipt as a quiet footer.
+The panel stays calm and shows only what matters. A header with the status dot (idle grey, listening and working
+ripple, done green, needs-you amber, failed red), one line and a speaker toggle. While listening: only the level meter
+and the live words. While working: one line of progress from the running tool ("Looking at your screen…",
+"Searching your documents…", "Using the browser…"), never a log. When done: the answer as plain text (markdown and
+citation brackets stripped, numbered steps kept; measured and scrollable, up to about 60% of the screen, never past the
+bottom), at most two evidence cards (click opens the PDF at the page), a Speak button, and a collapsed **Details**
+disclosure (remembered) holding the receipt line, tools, cost and Drex decisions. Failures and needs-you show one plain
+sentence and one action (Try again, Open Settings, Retry, or "Hold Option-Space and circle it"). A new ask replaces the
+previous answer; the panel folds back to the pill about 8 s after the answer and any spoken reply end. The zoom lens is
+placed so it never covers the panel or the circled area; guide pointer labels are cut to 30 characters and fade after
+4 s. The text field shows when you tap to type or circle without words.
 
 **Verdicts** come from the receipt's `status`, `reason`, `write_outcome` and `outcome`, never from the answer text:
 `Done`; `Needs you: Circle the thing you mean` for `needs_selection`; `Failed: the note write failed`;

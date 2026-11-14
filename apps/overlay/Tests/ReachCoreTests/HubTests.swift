@@ -163,6 +163,18 @@ import Testing
         #expect(t.update(mouse: away, now: 3.7, expanded: true, hot: hot, panel: panel, busy: false) == .collapse)
     }
 
+    @Test func hoverDisarmsAfterCollapseUntilTheMouseLeaves() {
+        var t = Hover.Tracker()
+        let hot = CGRect(x: 0, y: 900, width: 200, height: 80), panel = CGRect(x: 0, y: 600, width: 400, height: 300)
+        let inHot = CGPoint(x: 100, y: 950)
+        t.collapsed()   // Esc / tap / idle with the mouse parked at the notch
+        #expect(t.update(mouse: inHot, now: 0, expanded: false, hot: hot, panel: panel, busy: false) == .none)
+        #expect(t.update(mouse: inHot, now: 5, expanded: false, hot: hot, panel: panel, busy: false) == .none)
+        _ = t.update(mouse: CGPoint(x: 900, y: 100), now: 6, expanded: false, hot: hot, panel: panel, busy: false)
+        _ = t.update(mouse: inHot, now: 7, expanded: false, hot: hot, panel: panel, busy: false)
+        #expect(t.update(mouse: inHot, now: 7.2, expanded: false, hot: hot, panel: panel, busy: false) == .expand)
+    }
+
     @Test func hoverNeverClosesAKeyOpenedPanel() {
         var t = Hover.Tracker()
         t.openedElsewhere()
@@ -177,5 +189,45 @@ import Testing
         #expect(PanelBudget.answerMax(visibleHeight: 300, spaceBelowAnchor: 100, chrome: 200) == 60)
         #expect(HubStatus.of(phase: .working, listening: true) == .listening && HubStatus.listening.pulses)
         #expect(HubStatus.of(phase: .failed, listening: false) == .failed)
+    }
+}
+
+@Suite struct CalmPanelTests {
+    @Test func plainTextStripsMarkdownKeepsNumberedSteps() {
+        let a = "## Rent\n**Rent** is due on the *1st* [E3].\n- late fee applies\n1. Open the app\n2. Tap Pay"
+        #expect(PlainText.display(a) == "Rent\nRent is due on the 1st.\nlate fee applies\n1. Open the app\n2. Tap Pay")
+    }
+
+    @Test func progressFromToolNames() {
+        #expect(ProgressLine.of(tool: "see_region") == "Looking at your screen…")
+        #expect(ProgressLine.of(tool: "browser_task") == "Using the browser…")
+        #expect(ProgressLine.of(tool: "reach_search_docs") == "Searching your documents…")
+        #expect(ProgressLine.of(tool: nil) == "Thinking…")
+    }
+
+    @Test func endStatesAreOneSentenceOneAction() {
+        #expect(PlainState.of(verdict: .needsYou("x")) == PlainState(sentence: "Circle the thing you mean.", action: .circle))
+        #expect(PlainState.of(verdict: .failed("the note write failed"))?.sentence == "The note wasn't saved.")
+        #expect(PlainState.of(verdict: .failed("error: Boom 42"))?.sentence == "That didn't work.")
+        #expect(PlainState.of(verdict: .done) == nil)
+        #expect(PlainState.of(note: "allow Screen Recording for Reach").action == .openScreenSettings)
+        #expect(PlainState.of(note: "start `reach serve`").action == .startServer)
+    }
+
+    @Test func pointerLabelsStayShort() {
+        #expect(PointerLabel.short("Click Save") == "Click Save")
+        let s = PointerLabel.short("Click the blue Save button in the lower right corner")!
+        #expect(s.count <= 30 && s.hasSuffix("…"))
+        #expect(PointerLabel.short("  ") == nil)
+    }
+
+    @Test func lensAvoidsPanelAndCircle() {
+        let vis = CGRect(x: 0, y: 0, width: 1512, height: 945)
+        let panel = CGRect(x: 536, y: 560, width: 440, height: 379)
+        let circle = CGRect(x: 600, y: 300, width: 180, height: 120)
+        let size = CGSize(width: 400, height: 300)
+        let o = LensPlacement.place(size: size, avoid: [panel, circle], near: circle, visible: vis)
+        let r = CGRect(origin: o, size: size)
+        #expect(!r.intersects(panel) && !r.intersects(circle) && vis.contains(r))
     }
 }

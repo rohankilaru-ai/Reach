@@ -227,7 +227,7 @@ final class ZoomLensWindow {
 
     var isOpen: Bool { panel != nil }
 
-    func open(_ sel: Selection, near anchor: CGPoint) {
+    func open(_ sel: Selection, place: (CGSize) -> CGPoint) {
         close()
         guard let path = sel.image_path, let raw = NSImage(contentsOfFile: path) else { log("zoom: no captured image"); return }
         // show at point size (the capture is at the display's pixel scale)
@@ -245,9 +245,7 @@ final class ZoomLensWindow {
         p.isMovableByWindowBackground = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         p.contentView = host
-        let vis = NSScreen.main?.visibleFrame ?? .zero
-        let s = host.fittingSize
-        p.setFrameOrigin(Placement.clamp(CGPoint(x: anchor.x - s.width / 2, y: anchor.y - s.height - 40), size: s, in: vis))
+        p.setFrameOrigin(place(host.fittingSize))
         p.orderFrontRegardless()
         panel = p
         outside = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in

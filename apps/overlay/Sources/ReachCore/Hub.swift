@@ -229,6 +229,8 @@ public enum Hover {
         public static let dwell = 0.12
         public static let grace = 0.6
         public private(set) var openedByHover = false
+        /// After a collapse the mouse must leave the hot zone once before hover can open the panel again.
+        public private(set) var armed = true
         var enteredAt: Double?
         var leftAt: Double?
 
@@ -236,12 +238,13 @@ public enum Hover {
 
         /// The panel was opened another way (key, voice, answer): hover must not close it.
         public mutating func openedElsewhere() { openedByHover = false; enteredAt = nil; leftAt = nil }
-        public mutating func collapsed() { openedByHover = false; enteredAt = nil; leftAt = nil }
+        public mutating func collapsed() { openedByHover = false; enteredAt = nil; leftAt = nil; armed = false }
 
         public mutating func update(mouse: CGPoint, now: Double, expanded: Bool, hot: CGRect, panel: CGRect,
                                     busy: Bool) -> Action {
             if !expanded {
-                guard hot.contains(mouse) else { enteredAt = nil; return .none }
+                guard hot.contains(mouse) else { enteredAt = nil; armed = true; return .none }
+                guard armed else { return .none }
                 let t = enteredAt ?? now
                 enteredAt = t
                 if now - t >= Self.dwell - 1e-9 { enteredAt = nil; openedByHover = true; leftAt = nil; return .expand }
@@ -286,4 +289,118 @@ public enum HubStatus: String, Equatable, Sendable {
     }
 
     public var pulses: Bool { self == .listening || self == .working }
+}
+
+// MARK: - calm panel: plain text, one-line progress, one sentence + one action
+
+public enum PlainText {
+    /// The answer for display: markdown stripped (bold, headings, links, code ticks, citation brackets, leading
+    /// bullets), numbered steps kept, blank-line runs collapsed.
+    public static func display(_ answer: String) -> String {
+        var s = answer
+        s = s.replacingOccurrences(of: "```[a-zA-Z]*\\n?", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\[([^\\]]+)\\]\\([^)]*\\)", with: "$1", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\s?\\[(?:[A-Z]?\\d+(?:[,;\\s]+[A-Z]?\\d+)*|p\\.? ?\\d+)\\]", with: "",
+                                   options: [.regularExpression, .caseInsensitive])
+        s = s.replacingOccurrences(of: "(?m)^[ \\t]{0,3}(#{1,6}|>)[ \\t]+", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "(?m)^[ \\t]*[-*+•][ \\t]+", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\*\\*|__|(?<![\\w*])\\*(?=\\S)|(?<=\\S)\\*(?![\\w*])|`", with: "", options: .regularExpression)
+        s = s.replacingOccurrences(of: "\\n{3,}", with: "\n\n", options: .regularExpression)
+        return s.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
+public enum ProgressLine {
+    /// One short line of progress from the running tool's name; never a log.
+    public static func of(tool: String?) -> String {
+        let t = (tool ?? "").lowercased()
+        if t.isEmpty { return "Thinking…" }
+        if t.contains("browser") { return "Using the browser…" }
+        if t.contains("region") || t.contains("screen") || t.contains("capture") || t.contains("see") {
+            return "Looking at your screen…"
+        }
+        if t.contains("note") || t.contains("write") || t.contains("save") { return "Writing your note…" }
+        if t.contains("search") || t.contains("doc") || t.contains("ground") || t.contains("pdf") || t.contains("retriev")
+            || t.contains("passage") { return "Searching your documents…" }
+        if t.contains("web") { return "Searching the web…" }
+        if t.contains("point") || t.contains("guide") { return "Showing you where…" }
+        return "Working on it…"
+    }
+}
+
+/// What an end state says: one plain sentence and at most one action.
+public struct PlainState: Equatable, Sendable {
+    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer }
+    public var sentence: String
+    public var action: Action
+
+    public init(sentence: String, action: Action) { self.sentence = sentence; self.action = action }
+
+    public var actionLabel: String? {
+        switch action {
+        case .none: return nil
+        case .retry: return "Try again"
+        case .circle: return "Hold Option-Space and circle it"
+        case .openScreenSettings, .openMicSettings: return "Open Settings"
+        case .startServer: return "Retry"
+        }
+    }
+
+    public static func of(verdict: Verdict) -> PlainState? {
+        switch verdict {
+        case .done, .stopped: return nil
+        case .needsYou: return PlainState(sentence: "Circle the thing you mean.", action: .circle)
+        case .unverified: return PlainState(sentence: "I couldn't confirm the note was saved.", action: .retry)
+        case .failed(let why):
+            if why.contains("note write") { return PlainState(sentence: "The note wasn't saved.", action: .retry) }
+            if why.contains("browser") { return PlainState(sentence: "The browser task didn't finish.", action: .retry) }
+            return PlainState(sentence: "That didn't work.", action: .retry)
+        }
+    }
+
+    /// Needs-you notes raised locally (permissions, no server).
+    public static func of(note: String) -> PlainState {
+        let n = note.lowercased()
+        if n.contains("screen recording") { return PlainState(sentence: "Reach needs Screen Recording to see what you circle.", action: .openScreenSettings) }
+        if n.contains("microphone") || n.contains("speech") { return PlainState(sentence: "Reach needs the microphone to hear you.", action: .openMicSettings) }
+        if n.contains("reach serve") || n.contains("connection") || n.contains("server") || n.contains("token") {
+            return PlainState(sentence: "Reach's helper isn't running.", action: .startServer)
+        }
+        if n.contains("circle") { return PlainState(sentence: "Circle the thing you mean.", action: .circle) }
+        return PlainState(sentence: "Something needs you.", action: .none)
+    }
+}
+
+public enum PointerLabel {
+    public static let maxLength = 30
+    /// Guide pointer labels stay short: at most 30 characters, cut at a word with an ellipsis.
+    public static func short(_ s: String?) -> String? {
+        guard let t = s?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty else { return nil }
+        guard t.count > maxLength else { return t }
+        let head = String(t.prefix(maxLength - 1))
+        if let sp = head.lastIndex(of: " "), head.distance(from: head.startIndex, to: sp) > 10 { return String(head[..<sp]) + "…" }
+        return head + "…"
+    }
+}
+
+public enum LensPlacement {
+    /// Where the lens goes: never over the panel or the circled area, inside the visible frame. Tries below the
+    /// circle, above it, then to its right and left; falls back to the corner farthest from both.
+    public static func place(size: CGSize, avoid: [CGRect], near target: CGRect, visible: CGRect, gap: CGFloat = 16) -> CGPoint {
+        let cands = [
+            CGPoint(x: target.midX - size.width / 2, y: target.minY - gap - size.height),
+            CGPoint(x: target.midX - size.width / 2, y: target.maxY + gap),
+            CGPoint(x: target.maxX + gap, y: target.midY - size.height / 2),
+            CGPoint(x: target.minX - gap - size.width, y: target.midY - size.height / 2),
+        ]
+        for c in cands {
+            let o = Placement.clamp(c, size: size, in: visible)
+            let r = CGRect(origin: o, size: size)
+            if !avoid.contains(where: { $0.intersects(r) }) { return o }
+        }
+        let corners = [CGPoint(x: visible.minX, y: visible.minY), CGPoint(x: visible.maxX - size.width, y: visible.minY)]
+        return corners.max { a, b in
+            avoid.map { hypot($0.midX - a.x, $0.midY - a.y) }.min() ?? 0 < avoid.map { hypot($0.midX - b.x, $0.midY - b.y) }.min() ?? 0
+        } ?? corners[0]
+    }
 }

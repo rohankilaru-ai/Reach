@@ -79,6 +79,7 @@ struct PanelView: View {
     var onDragEnd: () -> Void = {}
     var onSpeak: () -> Void = {}
     var onZoom: () -> Void = {}
+    var onAction: (PlainState.Action) -> Void = { _ in }
 
     static let hint = "Hold Option-Space, circle what you mean, say what to do."
 
@@ -118,120 +119,163 @@ struct PanelView: View {
         .help(Self.hint)
     }
 
+    /// One plain sentence and at most one action for an end state that is not Done.
+    private var plain: PlainState? {
+        let s = model.state
+        if let v = s.verdict { return PlainState.of(verdict: v) }
+        if s.phase == .needsYou { return PlainState.of(note: s.note ?? "") }
+        if s.phase == .failed { return PlainState(sentence: "That didn't work.", action: .retry) }
+        return nil
+    }
+
     private var title: String {
         let s = model.state
-        if model.listening { return "Listening…" }
-        if s.phase == .working { return s.note.map { "Working · \($0)" } ?? "Working…" }
-        if let v = s.verdict, s.phase != .idle || s.note != nil { return v.title }
-        if s.phase == .needsYou { return "Needs you" + (s.note.map { ": \($0)" } ?? "") }
-        if s.phase == .failed { return "Failed" + (s.note.map { ": \($0)" } ?? "") }
-        return s.note ?? "Ready"
+        if model.listening { return "Listening" }
+        if s.phase == .working { return ProgressLine.of(tool: s.tool) }
+        if let p = plain { return p.sentence }
+        if s.phase == .done { return "Done" }
+        return "Reach"
+    }
+
+    /// The text field shows when typing makes sense: nothing on screen yet, the panel was summoned to type, or a
+    /// draft or circle chip is waiting.
+    private var showsField: Bool {
+        let s = model.state
+        if model.listening || s.phase == .working { return false }
+        return (s.answer.isEmpty && plain == nil) || model.typing || !model.draft.isEmpty || model.selectionIsCircle
     }
 
     private var expanded: some View {
         let s = model.state
         return VStack(alignment: .leading, spacing: 8) {
-            // header: status, speaker toggle, connection. Drag to move; double-click to snap back.
+            // header: status dot, one line, speaker toggle. Drag to move; double-click to snap back.
             HStack(spacing: 8) {
                 StatusDot(status: status, size: 10)
                 Text(title)
-                    .font(.system(size: 12, weight: .semibold, design: .rounded))
-                    .foregroundStyle(Palette.status(status))
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(status == .idle || status == .done ? .white.opacity(0.92) : Palette.status(status))
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
                 Spacer(minLength: 8)
-                if model.listening { LevelMeter(level: model.level) }
-                Button { model.speakReplies.toggle(); if !model.speakReplies, model.speaking { model.onStopSpeaking?() } } label: {
-                    Image(systemName: model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundStyle(model.speakReplies ? Palette.accent : .white.opacity(0.45))
-                        .frame(width: 24, height: 20)
+                if model.listening {
+                    LevelMeter(level: model.level)
+                } else {
+                    Button { model.speakReplies.toggle(); if !model.speakReplies, model.speaking { model.onStopSpeaking?() } } label: {
+                        Image(systemName: model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(model.speakReplies ? Palette.accent.opacity(0.9) : .white.opacity(0.4))
+                            .frame(width: 24, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.speakReplies ? "Replies to voice asks are spoken" : "Spoken replies off")
                 }
-                .buttonStyle(.plain)
-                .help(model.speakReplies ? "Spoken replies on for voice asks" : "Spoken replies off")
-                Circle().fill(s.connected ? Palette.color(.done).opacity(0.7) : Palette.color(.failed).opacity(0.7))
-                    .frame(width: 5, height: 5).help(s.connected ? "connected" : "offline")
             }
             .contentShape(Rectangle())
-            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd).allowsHitTesting(true)
-                .padding(.trailing, 44))
+            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd).padding(.trailing, 32))
+            .animation(.easeInOut(duration: 0.2), value: title)
 
-            TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
-                .foregroundStyle(.white)
-                .focused($focused)
-                .onSubmit { model.submit() }
-                .padding(.vertical, 8).padding(.horizontal, 10)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.07)))
+            if model.listening {
+                // listening: only the live words
+                if !model.draft.isEmpty {
+                    Text(model.draft).font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                if let p = plain, let label = p.actionLabel {
+                    if p.action == .circle {
+                        Text(label).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    } else {
+                        Chip(icon: p.action == .retry || p.action == .startServer ? "arrow.clockwise" : "gearshape", text: label) { onAction(p.action) }
+                    }
+                }
 
-            if let line = model.voiceLine {
-                Label(line, systemImage: model.listening ? "mic.fill" : "mic")
-                    .font(.system(size: 11, weight: model.listening ? .semibold : .regular))
-                    .foregroundStyle(model.listening ? Palette.accent : .white.opacity(0.6))
-                    .lineLimit(2)
-            }
+                if showsField {
+                    TextField("Ask Reach…", text: $model.draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .focused($focused)
+                        .onSubmit { model.submit() }
+                        .padding(.vertical, 8).padding(.horizontal, 10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.07)))
+                }
 
-            if let chip = s.handChip {
-                HandChipView(chip: chip) { model.clearSelection() }
-            }
+                if let chip = s.handChip {
+                    HandChipView(chip: chip) { model.clearSelection() }
+                }
 
-            if model.selectionIsCircle || model.zoomTarget != nil || model.selectionNote != nil {
-                HStack(spacing: 8) {
-                    if let note = model.selectionNote {
-                        Label(note, systemImage: "circle.dashed")
+                if model.selectionIsCircle || model.zoomTarget != nil {
+                    HStack(spacing: 8) {
+                        Label(model.selectionIsCircle ? "Circle attached" : "Circled", systemImage: "circle.dashed")
                             .font(.system(size: 11)).foregroundStyle(Palette.accent.opacity(0.95)).lineLimit(1)
-                    }
-                    Spacer(minLength: 0)
-                    if model.zoomTarget != nil {
-                        Chip(icon: "plus.magnifyingglass", text: "Zoom", action: onZoom).help("Magnify the circled area")
-                    }
-                    if model.selectionIsCircle {
-                        Button { model.clearSelection() } label: { Image(systemName: "xmark.circle.fill") }
-                            .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help("Drop the circle")
-                    }
-                }
-            }
-
-            if !s.answer.isEmpty || !s.evidence.isEmpty {
-                // the answer, then its evidence: measured, never clipped, scrolls past the budget
-                ScrollView(.vertical) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        if !s.answer.isEmpty {
-                            Text(s.answer)
-                                .font(.system(size: 13.5))
-                                .lineSpacing(2)
-                                .foregroundStyle(.white.opacity(0.94))
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .frame(maxWidth: .infinity, alignment: .leading)
+                        Spacer(minLength: 0)
+                        if model.zoomTarget != nil {
+                            Chip(icon: "plus.magnifyingglass", text: "Zoom", action: onZoom).help("Magnify the circled area")
                         }
-                        ForEach(s.evidence, id: \.stableID) { card in EvidenceRow(card: card) }
+                        if model.selectionIsCircle {
+                            Button { model.clearSelection() } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help("Drop the circle")
+                        }
                     }
-                    .padding(.trailing, 4)
-                    .background(GeometryReader { g in Color.clear.preference(key: ContentHeight.self, value: g.size.height) })
                 }
-                .frame(height: min(max(contentHeight, 20), model.answerMax))
-                .onPreferenceChange(ContentHeight.self) { contentHeight = $0 }
-            }
 
-            // footer: hint (or the receipt), and the speak button for typed asks
-            HStack(spacing: 8) {
-                if let r = s.receipt {
-                    Text(r.line)
+                if !s.answer.isEmpty || !s.evidence.isEmpty {
+                    // the answer (plain text), then at most two evidence cards: measured, never clipped, scrolls past the budget
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !s.answer.isEmpty {
+                                Text(PlainText.display(s.answer))
+                                    .font(.system(size: 13.5))
+                                    .lineSpacing(2)
+                                    .foregroundStyle(.white.opacity(0.94))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            ForEach(s.evidence.prefix(2), id: \.stableID) { card in EvidenceRow(card: card) }
+                        }
+                        .padding(.trailing, 4)
+                        .background(GeometryReader { g in Color.clear.preference(key: ContentHeight.self, value: g.size.height) })
+                    }
+                    .frame(height: min(max(contentHeight, 20), model.answerMax))
+                    .onPreferenceChange(ContentHeight.self) { h in
+                        contentHeight = h
+                        if abs(model.measuredAnswer - h) > 0.5 { model.measuredAnswer = h }
+                    }
+                }
+
+                // footer: details disclosure (receipt, decisions) and Speak; the hint only when nothing else shows
+                if s.receipt != nil || (!s.answer.isEmpty && s.phase != .working) {
+                    HStack(spacing: 8) {
+                        if s.receipt != nil {
+                            Button { model.showDetails.toggle() } label: {
+                                Label("Details", systemImage: model.showDetails ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 0)
+                        if !s.answer.isEmpty, s.phase != .working {
+                            Chip(icon: model.speaking ? "stop.fill" : "play.fill", text: model.speaking ? "Stop" : "Speak") {
+                                if model.speaking { model.onStopSpeaking?() } else { onSpeak() }
+                            }
+                        }
+                    }
+                    if model.showDetails, let r = s.receipt {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.line)
+                            if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
+                            if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
+                            ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                        }
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.42)).lineLimit(1).truncationMode(.middle)
-                } else {
+                        .foregroundStyle(.white.opacity(0.42))
+                        .lineLimit(1).truncationMode(.middle)
+                        .transition(.opacity)
+                    }
+                } else if showsField {
                     Text(Self.hint).font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
                 }
-                Spacer(minLength: 0)
-                if !s.answer.isEmpty, s.phase != .working {
-                    Chip(icon: model.speaking ? "stop.fill" : "play.fill", text: model.speaking ? "Stop" : "Speak") {
-                        if model.speaking { model.onStopSpeaking?() } else { onSpeak() }
-                    }
-                }
-            }
-            if s.receipt != nil {
-                Text(Self.hint).font(.system(size: 10)).foregroundStyle(.white.opacity(0.35)).lineLimit(1)
             }
         }
         .padding(16)
@@ -240,6 +284,8 @@ struct PanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Palette.status(status).opacity(0.22)))
         .padding(4)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.listening)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.showDetails)
         .onAppear { focused = true }
     }
 }
