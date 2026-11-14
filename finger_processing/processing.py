@@ -62,10 +62,11 @@ class TrackerCfg(BaseModel):
     min_tracking_confidence: float = 0.5
     delegate: Literal["cpu", "gpu"] = "cpu"
     swap_handedness: bool = True
+    num_hands: int = 1                  # 2 lets HandLock "closest" choose between two hands
 
 
 class HandLockCfg(BaseModel):
-    control_hand: Literal["right", "left", "any"] = "right"
+    control_hand: Literal["right", "left", "any", "closest"] = "right"  # closest = largest hand, then sticky
     handedness_vote_frames: int = 5
     handedness_vote_min: int = 3
     hold_frames: int = 3
@@ -79,6 +80,8 @@ class FeaturesCfg(BaseModel):
     pinch_enter: float = 0.25
     pinch_exit: float = 0.35
     pattern_hold_frames: int = 2
+    pinch_fingers: Literal["index", "index_or_middle"] = "index"  # index_or_middle: thumb to the closer of the two
+    middle_pinch_min_reach: float = 0.6  # middle pair counts only when its tip is this far (x scale) from its knuckle
 
 
 class PointerCfg(BaseModel):
@@ -177,6 +180,7 @@ class Frame:
     pinch_dist: float = float("inf")           # thumb tip to index tip / hand scale
     pinch_active: bool = False
     pinch_edge: Literal["down", "up"] | None = None
+    pinch_finger: Literal["index", "middle"] = "index"   # which finger the thumb pinched (index_or_middle mode)
     hand_scale: float = 0.0
     tracking_score: float = 0.0
     pointer_raw: tuple[float, float] | None = None     # cursor anchor before smoothing
@@ -309,6 +313,19 @@ def pinch_distance(pts: np.ndarray, scale: float) -> float:
     return float(np.linalg.norm(pts[THUMB_TIP] - pts[INDEX_TIP]) / scale)
 
 
+def pinch_distance_pair(pts: np.ndarray, scale: float,
+                        middle_min_reach: float = 0.6) -> tuple[float, str]:
+    """Thumb to the closer of index and middle tip: (distance / scale, finger). The middle pair is
+    ignored when the middle tip is curled onto its knuckle, so a point pose with the thumb resting
+    on the curled middle finger is not read as a pinch."""
+    d_index = pinch_distance(pts, scale)
+    d_middle = float(np.linalg.norm(pts[THUMB_TIP] - pts[MIDDLE_TIP]) / scale)
+    middle_reach = float(np.linalg.norm(pts[MIDDLE_TIP, :2] - pts[MIDDLE_MCP, :2]) / scale)
+    if middle_reach >= middle_min_reach and d_middle < d_index:
+        return d_middle, "middle"
+    return d_index, "index"
+
+
 def pointer_anchor(landmarks: np.ndarray, anchor: str, tip_weight: float) -> tuple[float, float]:
     tip, mcp = landmarks[INDEX_TIP, :2], landmarks[INDEX_MCP, :2]
     p = tip if anchor == "index_tip" else mcp if anchor == "index_mcp" else tip_weight * tip + (1 - tip_weight) * mcp
@@ -396,7 +413,23 @@ class HandLock:
         self._last_scale = 0.0
 
     def _matches(self, obs: Observation) -> bool:
-        return self.cfg.control_hand == "any" or obs.handedness == self.cfg.control_hand
+        return self.cfg.control_hand in ("any", "closest") or obs.handedness == self.cfg.control_hand
+
+    def choose(self, candidates: list[Observation], scales: list[float]) -> tuple[Observation | None, float]:
+        """control_hand=closest with several hands: unlocked, take the largest (closest to the camera);
+        locked, keep following the hand nearest the last wrist, never the other one because it grew.
+        Returns (None, 0) when the locked hand is not among the candidates (a dropout)."""
+        if not candidates:
+            return None, 0.0
+        if not self.locked or self._last is None:
+            i = int(np.argmax(scales))
+            return candidates[i], scales[i]
+        last = self._last.landmarks[0, :2]
+        dists = [float(np.linalg.norm(c.landmarks[0, :2] - last)) for c in candidates]
+        i = int(np.argmin(dists))
+        if dists[i] > self.cfg.swap_jump:
+            return None, 0.0
+        return candidates[i], scales[i]
 
     def update(self, obs: Observation | None, scale: float = 0.0) -> LockResult:
         if not self.locked:
@@ -774,7 +807,7 @@ class MediaPipeTracker:
         self._landmarker = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(model), delegate=delegate),
             running_mode=vision.RunningMode.VIDEO,
-            num_hands=1,
+            num_hands=max(1, cfg.num_hands),
             min_hand_detection_confidence=cfg.min_detection_confidence,
             min_hand_presence_confidence=cfg.min_presence_confidence,
             min_tracking_confidence=cfg.min_tracking_confidence,
@@ -803,6 +836,23 @@ class MediaPipeTracker:
         if self._swap:
             label = "left" if label == "right" else "right"
         return Observation(lm, label, float(cat.score))
+
+    def detect_all(self, bgr: np.ndarray, t: float) -> list[Observation]:
+        """Every detected hand (up to tracker.num_hands), mirrored like detect()."""
+        ts = max(int(t * 1000.0), self._last_ms + 1)
+        self._last_ms = ts
+        fmt, conv = ((self._mp.ImageFormat.SRGBA, cv2.COLOR_BGR2RGBA) if self._gpu
+                     else (self._mp.ImageFormat.SRGB, cv2.COLOR_BGR2RGB))
+        result = self._landmarker.detect_for_video(self._mp.Image(image_format=fmt, data=cv2.cvtColor(bgr, conv)), ts)
+        out = []
+        for hand, handed in zip(result.hand_landmarks or [], result.handedness or []):
+            lm = np.array([(p.x, p.y, p.z) for p in hand], dtype=np.float64)
+            lm[:, 0] = 1.0 - lm[:, 0]
+            label = handed[0].category_name.lower()
+            if self._swap:
+                label = "left" if label == "right" else "right"
+            out.append(Observation(lm, label, float(handed[0].score)))
+        return out
 
     def close(self) -> None:
         self._landmarker.close()
@@ -871,7 +921,10 @@ class FingerPipeline:
             return self._finish(None, raw.t_capture, raw.t_capture, motion, skipped, t_start)
 
         t_mp = time.perf_counter()
-        obs = self.tracker.detect(raw.image, raw.t_capture)
+        if self.cfg.hand_lock.control_hand == "closest" and hasattr(self.tracker, "detect_all"):
+            obs = self._choose_closest(self.tracker.detect_all(raw.image, raw.t_capture))
+        else:
+            obs = self.tracker.detect(raw.image, raw.t_capture)
         self.timer.record("landmarker", (time.perf_counter() - t_mp) * 1000)
         if self.on_observation is not None:
             self.on_observation(raw.t_capture, self._frame_id, obs)
@@ -880,6 +933,14 @@ class FingerPipeline:
     def process_observation(self, obs: Observation | None, t: float, motion: float = 0.0) -> Frame:
         """Replay path: skip camera and MediaPipe."""
         return self._finish(obs, t, t, motion, None, time.perf_counter())
+
+    def _choose_closest(self, candidates: list[Observation]) -> Observation | None:
+        scales = [hand_scale(to_metric(c.landmarks, self.aspect)) for c in candidates]
+        return self.lock.choose(candidates, scales)[0]
+
+    def process_observations(self, candidates: list[Observation], t: float, motion: float = 0.0) -> Frame:
+        """Replay path with several hands: the lock picks one (control_hand=closest)."""
+        return self._finish(self._choose_closest(candidates), t, t, motion, None, time.perf_counter())
 
     def _reset_hand(self) -> None:
         self.pinch.reset()
@@ -912,7 +973,10 @@ class FingerPipeline:
         pts = to_metric(lm, self.aspect)
         scale = hand_scale(pts)
         flags = fingers_extended(pts, scale, fc.extend_angle_deg, fc.thumb_extend_ratio)
-        pdist = pinch_distance(pts, scale)
+        if fc.pinch_fingers == "index_or_middle":
+            pdist, pfinger = pinch_distance_pair(pts, scale, fc.middle_pinch_min_reach)
+        else:
+            pdist, pfinger = pinch_distance(pts, scale), "index"
         edge = self.pinch.update(pdist)
 
         fingers = {}
@@ -944,6 +1008,7 @@ class FingerPipeline:
             handedness=obs.handedness,  # type: ignore[arg-type]
             landmarks=tuple(map(tuple, lm.tolist())),
             pinch_dist=pdist, pinch_active=self.pinch.active, pinch_edge=edge,  # type: ignore[arg-type]
+            pinch_finger=pfinger,  # type: ignore[arg-type]
             hand_scale=scale, tracking_score=obs.score,
             pointer_raw=raw_ptr, pointer=ptr, pointer_screen=screen,
             velocity=self.pointer_filter.velocity, scroll_velocity=self.scroll_filter.velocity,

@@ -11,6 +11,8 @@ func log(_ s: String) {
 final class OverlayModel: ObservableObject {
     @Published private(set) var state = PanelState()
     @Published var draft = ""
+    /// Hands mode (your hand moves the real mouse), as last requested from the menu.
+    @Published var handsOn = false
     @Published var selection: Selection?
     @Published var selectionNote: String?
     /// Voice line under the text field: "listening…", "heard: …", "didn't catch that". Survives `submitted()`.
