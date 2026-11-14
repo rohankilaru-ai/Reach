@@ -57,6 +57,10 @@ def newest_captures(root: Path) -> list[Path]:
     return sorted(found, key=lambda x: x.stat().st_mtime)
 
 
+MAX_DEFAULT_AGE_S = 120
+"""A capture older than this is never used by default; the user must select again."""
+
+
 def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
     """The PNG to look at: the given path, or the newest capture. Only files under .reach/ are readable."""
     root = (root or reach_dir()).resolve()
@@ -69,6 +73,14 @@ def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
         if not caps:
             raise FileNotFoundError("no screen capture yet; select a region first")
         p = caps[-1]
+        import time
+
+        age = time.time() - p.stat().st_mtime
+        if age > MAX_DEFAULT_AGE_S:
+            raise FileNotFoundError(
+                f"the newest capture is {int(age)} s old, so it is probably not what you mean; "
+                "ask the user to circle the thing on screen first"
+            )
     p = p.resolve()
     if not p.is_relative_to(root):
         raise PermissionError("refused: see_region reads only images under .reach/")
