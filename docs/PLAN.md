@@ -1,3 +1,5 @@
+> **Historical plan written at 11:15 AM.** It was revised as slices landed; `docs/STATUS.md` is the truth.
+
 # Reach build plan
 
 Status: plan, nothing built yet. Facts come from `docs/SOURCES.md` and the pinned upstream repos. Anything marked
