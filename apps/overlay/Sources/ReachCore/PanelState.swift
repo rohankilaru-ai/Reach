@@ -94,6 +94,9 @@ public struct PanelState: Equatable, Sendable {
                 if decisions.count > 3 { decisions.removeFirst(decisions.count - 3) }
             case "tool_call_start":
                 tool = body["name"]?.string ?? "a tool"
+            case "run_end", "task_end", "turn_end_final":
+                // the run is over even if its receipt is late or never comes (e.g. a task another client started)
+                if phase == .working { phase = .idle; tool = nil; taskID = nil; awaitingAccept = false }
             case "tool_call_end", "turn_start":
                 break
             default:

@@ -61,6 +61,21 @@ previous answer; the panel folds back to the pill about 8 s after the answer and
 placed so it never covers the panel or the circled area; guide pointer labels are cut to 30 characters and fade after
 4 s. The text field shows when you tap to type or circle without words.
 
+**Quiet task status.** While a run works, only the slim pill shows: a small spinner, one short line ("Using the
+browser…", "Looking at your screen…") and a tiny stop control, which exists only while working. A run that used an
+acting tool (browser or Chrome task, note write, Do mode, folder open, pointer steps) never opens the panel: the pill
+shows one line for about 3 s and folds away: a green check with "Done · Note saved", an amber "!" with
+"Needs you: <one short sentence>" and a small Retry chip, or a red "×" with "Couldn't finish" and Retry (needs-you and
+failures stay about 6 s). A soft system sound plays on completion (Tink when done, a quiet Basso otherwise); the menu
+bar has a **Sounds** toggle (on by default, remembered). Click or hover the pill for the full answer panel with Details.
+Plain questions (no acting tool) still end in the answer panel; it folds about 8 s after reading, and no Stop button
+stays once the run has ended (Speak only; the speaker toggle or Esc silences a reply). Done never shows next to Stop or
+Try again; Try again shows only on failure. A run that needs you puts a small dot on the menu bar icon until the next
+ask. The mapping is pure logic in `TaskEnd.of(receipt, verdict:)` (ReachCore). The expanded card is never empty: with
+nothing to show it shows the "Ask Reach…" row (`PanelContent`). In Auto mode nothing is drawn when idle: a pill that
+kept key focus after a typed ask no longer counts as busy, and a `run_end` event ends a working state even when its
+receipt never arrives (for example a task started by another client).
+
 **Verdicts** come from the receipt's `status`, `reason`, `write_outcome` and `outcome`, never from the answer text:
 `Done`; `Needs you: Circle the thing you mean` for `needs_selection`; `Failed: the note write failed`;
 `Unverified: the note write could not be read back`; `Failed: the browser task did not finish`; `Failed: <reason>`.
@@ -100,7 +115,10 @@ Screen Recording is preflight only there).
 `--hub-selftest` drives the hub headlessly (no windows, input events or network) and prints one PASS/FAIL line per
 scenario: hold -> circle -> release is one ask with transcript + selection, release before the capture finishes,
 circle without speech, speech without circle, no stale circle on the next hold, Esc cancel, the zoom word, hover
-expand/collapse, failed / unverified / needs_selection / verified receipts, and spoken-text cleaning.
+expand/collapse, failed / unverified / needs_selection / verified receipts, spoken-text cleaning, the quiet status
+(note saved -> pill Done, browser not done -> Couldn't finish + Retry, needs you -> amber + Retry, plain question ->
+answer panel, stopped -> nothing), the never-empty card, run_end clearing a stale working state, and Auto mode hiding
+the idle pill.
 
 ## Key-free check
 

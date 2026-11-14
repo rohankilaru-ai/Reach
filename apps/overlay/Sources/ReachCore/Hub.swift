@@ -414,3 +414,101 @@ public enum LensPlacement {
         } ?? corners[0]
     }
 }
+
+// MARK: - quiet task status: tool runs end in the pill, questions end in the panel
+
+/// The one-line result a tool-using run leaves in the pill for a few seconds before it folds away.
+public struct CompactResult: Equatable, Sendable {
+    public enum Kind: String, Equatable, Sendable { case done, needsYou = "needs you", failed }
+    public var kind: Kind
+    /// "Done · Note saved", "Needs you: Circle the thing you mean", "Couldn't finish".
+    public var line: String
+    /// Retry shows only for needs-you and failure; never next to Done.
+    public var retry: Bool { kind != .done }
+    /// Seconds the result stays in the pill before it folds.
+    public static let holdSeconds: Double = 3
+    /// The soft system sound for this result (NSSound name) and its volume.
+    public var sound: (name: String, volume: Float) {
+        kind == .done ? ("Tink", 0.6) : ("Basso", 0.25)
+    }
+    public init(kind: Kind, line: String) { self.kind = kind; self.line = line }
+    public static func == (a: CompactResult, b: CompactResult) -> Bool { a.kind == b.kind && a.line == b.line }
+}
+
+/// How a finished run is shown: tool-using runs end as a compact pill result, plain questions in the answer panel.
+public enum TaskEnd: Equatable, Sendable {
+    case compact(CompactResult)
+    case answerPanel
+    /// Stopped by the user: nothing to show.
+    case quiet
+
+    /// Tool names that act on the world (as opposed to reading or searching for an answer).
+    static let actionMarks = ["browser", "chrome", "note", "write", "save", "do_", "do-", "open", "folder", "launch",
+                              "point", "guide", "step", "click", "type_", "fill"]
+
+    /// The run used an acting tool: a browser task, a note write, Do mode, Chrome, a folder open or pointer steps.
+    public static func usedTool(_ r: Receipt) -> Bool {
+        if r.outcome != nil || r.write_outcome != nil { return true }
+        return (r.tools ?? []).contains { t in let l = t.lowercased(); return actionMarks.contains { l.contains($0) } }
+    }
+
+    public static func of(_ r: Receipt, verdict: Verdict) -> TaskEnd {
+        if case .stopped = verdict { return .quiet }
+        let tool = usedTool(r)
+        switch verdict {
+        case .needsYou(let s):
+            return .compact(CompactResult(kind: .needsYou, line: "Needs you: " + shortSentence(s)))
+        case .failed, .unverified:
+            return tool ? .compact(CompactResult(kind: .failed, line: "Couldn't finish")) : .answerPanel
+        case .done:
+            guard tool else { return .answerPanel }
+            let what = doneWords(r)
+            return .compact(CompactResult(kind: .done, line: what.map { "Done · \($0)" } ?? "Done"))
+        case .stopped:
+            return .quiet
+        }
+    }
+
+    /// A few words saying what got done, or nil.
+    public static func doneWords(_ r: Receipt) -> String? {
+        if r.write_outcome == "verified" { return "Note saved" }
+        let tools = (r.tools ?? []).map { $0.lowercased() }
+        if r.outcome == "done" || tools.contains(where: { $0.contains("browser") || $0.contains("chrome") }) { return "Browser task done" }
+        if tools.contains(where: { $0.contains("folder") || $0.contains("open") }) { return "Opened" }
+        if tools.contains(where: { $0.contains("point") || $0.contains("guide") || $0.contains("step") }) { return "Steps shown" }
+        if tools.contains(where: { $0.contains("note") || $0.contains("write") || $0.contains("save") }) { return "Saved" }
+        return nil
+    }
+
+    /// One short sentence: the first sentence, at most 48 characters, no trailing period.
+    public static func shortSentence(_ s: String) -> String {
+        var t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let dot = t.firstIndex(where: { $0 == "." || $0 == "\n" }) { t = String(t[..<dot]) }
+        if t.count > 48 { t = String(t.prefix(47)).trimmingCharacters(in: .whitespaces) + "…" }
+        return t.isEmpty ? "take a look" : t
+    }
+}
+
+/// What the expanded panel has to show. It never renders as an empty card: with nothing else to show, the input row shows.
+public struct PanelContent: Equatable, Sendable {
+    public var listening = false
+    public var hasAnswer = false
+    public var hasPlain = false
+    public var hasEvidence = false
+    public var hasHandChip = false
+    public var circleAttached = false
+    public var typing = false
+    public var hasDraft = false
+    public init(listening: Bool = false, hasAnswer: Bool = false, hasPlain: Bool = false, hasEvidence: Bool = false,
+                hasHandChip: Bool = false, circleAttached: Bool = false, typing: Bool = false, hasDraft: Bool = false) {
+        self.listening = listening; self.hasAnswer = hasAnswer; self.hasPlain = hasPlain; self.hasEvidence = hasEvidence
+        self.hasHandChip = hasHandChip; self.circleAttached = circleAttached; self.typing = typing; self.hasDraft = hasDraft
+    }
+    /// Something besides the header is on the card.
+    public var hasBody: Bool { listening || hasAnswer || hasPlain || hasEvidence || hasHandChip || circleAttached }
+    /// The "Ask Reach…" row: when typing, a draft or circle waits, or when the card would otherwise be empty.
+    public var showsField: Bool {
+        if listening { return false }
+        return !hasBody || typing || hasDraft || circleAttached
+    }
+}

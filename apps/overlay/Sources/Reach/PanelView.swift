@@ -101,12 +101,20 @@ struct PanelView: View {
     /// The idle island: a compact dark glass capsule that breathes softly. Drag it; double-click snaps it back.
     private var pill: some View {
         HStack(spacing: 8) {
-            StatusDot(status: status)
-            if model.listening {
-                LevelMeter(level: model.level)
-            } else {
-                Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
-            }
+            HStack(spacing: 8) {
+                pillLead
+                if model.listening {
+                    LevelMeter(level: model.level)
+                } else if model.state.phase == .working {
+                    Text(ProgressLine.of(tool: model.state.tool)).font(.system(size: 12, weight: .medium, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.85)).lineLimit(1)
+                        .contentTransition(.opacity).animation(.easeInOut(duration: 0.2), value: model.state.tool)
+                } else if let c = model.compact {
+                    Text(c.line).font(.system(size: 12, weight: .semibold, design: .rounded))
+                        .foregroundStyle(.white.opacity(0.92)).lineLimit(1)
+                } else {
+                    Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
+                }
             if model.handsFree {
                 // hands-free: a tiny pulsing dot with an ear glyph; dims for a moment when speech was ignored
                 HStack(spacing: 3) {
@@ -122,16 +130,61 @@ struct PanelView: View {
                 Text(chip).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(.white.opacity(0.1)))
             }
+            }
+            // click (or hover) opens the full answer with Details; double-click snaps back; drag moves
+            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } else { model.expandRequested?() } },
+                                onDragEnd: onDragEnd))
+            if model.state.phase == .working {
+                // the tiny stop control exists only while a run is working
+                Button { model.abort() } label: {
+                    Image(systemName: "stop.fill").font(.system(size: 8, weight: .bold)).foregroundStyle(.white.opacity(0.7))
+                        .frame(width: 16, height: 16).background(Circle().fill(.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain).help("Stop (Esc)")
+            } else if let c = model.compact, c.retry {
+                Button { model.compact = nil; model.retryLast() } label: {
+                    Label("Retry", systemImage: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+                        .padding(.horizontal, 7).padding(.vertical, 2).background(Capsule().fill(.white.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Capsule().fill(.black.opacity(0.9)))
-        .overlay(Capsule().stroke(Palette.status(status).opacity(breathe && status == .idle ? 0.28 : 0.10), lineWidth: 1))
-        .scaleEffect(breathe && status == .idle ? 1.02 : 1)
+        .overlay(Capsule().stroke(pillStroke.opacity(breathe && status == .idle ? 0.28 : 0.10), lineWidth: 1))
+        .scaleEffect(breathe && status == .idle && model.compact == nil ? 1.02 : 1)
         .padding(4)   // room for the breath, so nothing is clipped by the window
         .onAppear { withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) { breathe = true } }
-        .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } else { model.expandRequested?() } },
-                            onDragEnd: onDragEnd))
-        .help(Self.hint)
+        .animation(.easeInOut(duration: 0.2), value: model.compact)
+        .help(model.compact != nil ? "Click for the full answer and details" : Self.hint)
+    }
+
+    private var pillStroke: Color {
+        guard let c = model.compact else { return Palette.status(status) }
+        switch c.kind {
+        case .done: return Palette.status(.done)
+        case .needsYou: return Palette.status(.needsYou)
+        case .failed: return Palette.status(.failed)
+        }
+    }
+
+    /// The pill's leading mark: a small spinner while working, the result glyph after a tool run, else the status dot.
+    @ViewBuilder private var pillLead: some View {
+        if model.state.phase == .working, !model.listening {
+            ProgressView().controlSize(.mini).scaleEffect(0.8).frame(width: 12, height: 12).tint(.white)
+        } else if let c = model.compact {
+            let (icon, color): (String, Color) = {
+                switch c.kind {
+                case .done: return ("checkmark", Palette.status(.done))
+                case .needsYou: return ("exclamationmark", Palette.status(.needsYou))
+                case .failed: return ("xmark", Palette.status(.failed))
+                }
+            }()
+            Image(systemName: icon).font(.system(size: 10, weight: .heavy)).foregroundStyle(color).frame(width: 12, height: 12)
+        } else {
+            StatusDot(status: status)
+        }
     }
 
     /// One plain sentence and at most one action for an end state that is not Done.
@@ -156,8 +209,10 @@ struct PanelView: View {
     /// draft or circle chip is waiting.
     private var showsField: Bool {
         let s = model.state
-        if model.listening || s.phase == .working { return false }
-        return (s.answer.isEmpty && plain == nil) || model.typing || !model.draft.isEmpty || model.selectionIsCircle
+        return PanelContent(listening: model.listening, hasAnswer: !s.answer.isEmpty, hasPlain: plain != nil,
+                            hasEvidence: !s.evidence.isEmpty, hasHandChip: s.handChip != nil,
+                            circleAttached: model.selectionIsCircle || model.zoomTarget != nil, typing: model.typing,
+                            hasDraft: !model.draft.isEmpty).showsField
     }
 
     private var expanded: some View {
@@ -275,10 +330,9 @@ struct PanelView: View {
                             .buttonStyle(.plain)
                         }
                         Spacer(minLength: 0)
-                        if !s.answer.isEmpty, s.phase != .working {
-                            Chip(icon: model.speaking ? "stop.fill" : "play.fill", text: model.speaking ? "Stop" : "Speak") {
-                                if model.speaking { model.onStopSpeaking?() } else { onSpeak() }
-                            }
+                        if !s.answer.isEmpty, s.phase != .working, !model.speaking {
+                            // no Stop button once a run has ended; the speaker toggle above or Esc silences speech
+                            Chip(icon: "play.fill", text: "Speak") { onSpeak() }
                         }
                     }
                     if model.showDetails, let r = s.receipt {
