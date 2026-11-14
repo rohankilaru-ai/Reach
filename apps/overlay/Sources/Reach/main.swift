@@ -298,6 +298,47 @@ if args.contains("--replay") {
     line("lens covers neither panel nor circle", !lensR.intersects(panelFrame) && !lensR.intersects(CGRect(x: 600, y: 300, width: 180, height: 120)),
          "lens at \(Int(lensO.x)),\(Int(lensO.y))")
 
+    // quiet status: tool runs end as one line in the pill, questions in the answer panel
+    func ended(_ fields: String) -> (TaskEnd, PanelState) {
+        var st = PanelState(); st.apply(.ready(protocol: 1)); st.submitted(); st.apply(.accepted(taskID: "t"))
+        guard let m = try? ServerMessage.decode(#"{"type":"receipt","task_id":"t","system1_asks":1,"tokens":9,"duration_ms":5,"# + fields + "}"),
+              case .receipt(let rc) = m else { return (.quiet, st) }
+        st.apply(m)
+        return (TaskEnd.of(rc, verdict: st.verdict ?? .done), st)
+    }
+    func compactLine(_ e: TaskEnd) -> String {
+        switch e {
+        case .compact(let c): return "pill \(c.kind.rawValue): \"\(c.line)\"\(c.retry ? " [Retry]" : "") sound \(c.sound.name)"
+        case .answerPanel: return "answer panel"
+        case .quiet: return "quiet"
+        }
+    }
+    let note = ended(#""status":"ok","reason":"completed","write_outcome":"verified","tools":["note_append"]"#)
+    line("note saved -> pill Done, no Retry", note.0 == .compact(CompactResult(kind: .done, line: "Done · Note saved")), compactLine(note.0))
+    let web = ended(#""status":"ok","reason":"completed","outcome":"not_done","tools":["browser_task"]"#)
+    line("browser not done -> pill Couldn't finish + Retry", web.0 == .compact(CompactResult(kind: .failed, line: "Couldn't finish")),
+         compactLine(web.0))
+    let need = ended(#""status":"ok","reason":"needs_selection","tools":["see_region"]"#)
+    line("needs you -> amber pill + Retry", need.0 == .compact(CompactResult(kind: .needsYou, line: "Needs you: Circle the thing you mean")),
+         compactLine(need.0))
+    let q = ended(#""status":"ok","reason":"completed","tools":["evidence_search","see_screen"],"final_text":"Rent is due on the 1st.""#)
+    line("plain question -> answer panel, run ended", q.0 == .answerPanel && q.1.phase == .done && PlainState.of(verdict: .done) == nil,
+         "\(compactLine(q.0)); phase \(q.1.phase.rawValue), no Try again next to Done")
+    let stop = ended(#""status":"aborted","reason":"user","tools":["browser_task"]"#)
+    line("stopped run -> nothing shown", stop.0 == .quiet && stop.1.phase != .working, compactLine(stop.0))
+
+    // the expanded card is never empty; a run that ends elsewhere never leaves a stale "working"
+    let empty = PanelContent()
+    line("expanded with nothing to show -> input row", empty.showsField && !PanelContent(hasAnswer: true).showsField,
+         "no answer, no state: 'Ask Reach…' row shows")
+    var cli = PanelState(); cli.apply(.ready(protocol: 1)); cli.submitted(); cli.apply(.accepted(taskID: "cli-7"))
+    cli.apply(.event(taskID: "cli-7", kind: "tool_call_start", body: .object(["name": .string("browser_task")])))
+    cli.apply(.event(taskID: "cli-7", kind: "run_end", body: .object([:])))
+    if let m = try? ServerMessage.decode(#"{"type":"receipt","task_id":"cli-7","status":"ok","reason":"completed","outcome":"done","tools":["browser_task"],"system1_asks":1,"tokens":9,"duration_ms":5}"#) { cli.apply(m) }
+    line("receipt after run_end ends working", cli.phase == .done && cli.taskID == nil, "phase \(cli.phase.rawValue), no stale working")
+    let auto = PillVisibility.shouldShow(mode: .auto, expanded: false, busy: false)
+    line("Auto mode idle -> pill hidden", !auto, "nothing drawn when idle")
+
     log("hub selftest \(allOK ? "PASS" : "FAIL")")
     return allOK ? 0 : 1
 }

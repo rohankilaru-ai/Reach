@@ -94,6 +94,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             [weak self] in self?.handsFree.flip()
         }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
+        model.onCompact = { [weak self] c in self?.showCompact(c) }
+        model.onBadge = { [weak self] on in self?.menuBar?.setBadge(on) }
         model.onPointer = { [weak self] x, y, label, byHand in self?.showPointer(x: x, y: y, label: label, byHand: byHand) }
         model.onHandSelection = { [weak self] _ in
             // open without taking focus: the user's hand is on whatever they were reading
@@ -253,6 +255,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         hover.collapsed()
         lastActivity = Date()   // Auto / Hidden: the folded pill stays about 8 s before it leaves
         model.typing = false
+        model.compact = nil   // a result read in the panel does not come back in the pill
         guard model.expanded else { return }
         model.expanded = false
         DispatchQueue.main.async { [weak self] in
@@ -274,7 +277,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func hidePillIfIdle() {
         guard let panel, panel.isVisible, Date().timeIntervalSince(lastActivity) > Self.collapseAfter else { return }
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
-            || model.capturing || model.speaking || model.typing || panel.isKeyWindow || ptt.phase != .idle
+            || model.capturing || model.speaking || model.typing || ptt.phase != .idle || model.compact != nil
+            || (panel.isKeyWindow && model.expanded)   // a folded pill that kept key focus after a typed ask is idle
             || model.handsFree   // the listening indicator is always visible while hands-free is on
             || NSEvent.pressedMouseButtons != 0
         guard !PillVisibility.shouldShow(mode: pillMode, expanded: model.expanded, busy: busy) else { return }
@@ -355,8 +359,22 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Quiet status: while working only the pill shows (spinner, one line, tiny stop); a tool run ends as a one-line
+    /// result in the pill; a plain question ends in the answer panel.
     private func phaseChanged(_ phase: Phase) {
-        if phase != .idle { expand(focus: false, why: "answer \(phase.rawValue)") }
+        if phase == .working {
+            if !panel.isVisible { panel.orderFrontRegardless() }
+            hover.collapsed()
+            model.typing = false
+            if model.expanded { model.expanded = false; log("panel: pill (working)") }   // keeps any circle halo
+            refitPill()
+        } else if model.compact != nil {
+            refitPill()   // showCompact plays the sound and schedules the fold
+        } else if phase != .idle {
+            expand(focus: false, why: "answer \(phase.rawValue)")
+        } else {
+            refitPill()
+        }
         if phase == .working, escHotkey == nil {
             escHotkey = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: 0, name: "Esc (abort)") { [weak self] in
                 self?.model.abort()
@@ -365,6 +383,36 @@ final class AppController: NSObject, NSApplicationDelegate {
             Hotkeys.shared.unregister(id)
             escHotkey = nil
         }
+    }
+
+    private var compactFold: DispatchWorkItem?
+
+    private func refitPill() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, !self.model.expanded else { return }
+            self.fit(animated: true)
+        }
+    }
+
+    private func showCompact(_ c: CompactResult) {
+        lastActivity = Date()
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        if model.soundsOn, let snd = NSSound(named: NSSound.Name(c.sound.name)) {
+            snd.volume = c.sound.volume
+            snd.play()
+        }
+        log("pill: \(c.line)\(c.retry ? " [Retry]" : "")")
+        refitPill()
+        compactFold?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self, self.model.compact == c, !self.model.expanded else { return }
+            self.model.compact = nil
+            self.refitPill()
+            log("pill: result folded")
+        }
+        compactFold = work
+        // needs-you and failures stay a little longer than Done so the Retry chip can be reached
+        DispatchQueue.main.asyncAfter(deadline: .now() + CompactResult.holdSeconds * (c.retry ? 2 : 1), execute: work)
     }
 
     // MARK: one gesture: hold, circle, speak, release

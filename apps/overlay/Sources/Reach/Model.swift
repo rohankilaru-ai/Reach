@@ -41,6 +41,16 @@ final class OverlayModel: ObservableObject {
     @Published var showDetails: Bool = UserDefaults.standard.bool(forKey: "showDetails") {
         didSet { UserDefaults.standard.set(showDetails, forKey: "showDetails") }
     }
+    /// A tool-using run's one-line result, shown in the pill for ~3 s instead of opening the panel.
+    @Published var compact: CompactResult?
+    /// A run ended needing the user: the menu bar icon shows a dot until the next ask.
+    @Published var needsYouBadge = false
+    var onCompact: ((CompactResult) -> Void)?
+    var onBadge: ((Bool) -> Void)?
+    /// Soft system sounds on completion. Persisted, default on.
+    @Published var soundsOn: Bool = (UserDefaults.standard.object(forKey: "sounds") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(soundsOn, forKey: "sounds") }
+    }
     /// The last ask, for "Try again".
     private var lastAsk: (String, Selection?, Bool)?
     /// Speak replies to voice asks automatically. Persisted.
@@ -156,6 +166,8 @@ final class OverlayModel: ObservableObject {
         let sel = explicit ?? selection
         lastAskFromVoice = fromVoice
         log("state working")
+        compact = nil
+        if needsYouBadge { needsYouBadge = false; onBadge?(false) }
         mutate { $0.submitted() }
         log("ask\(fromVoice ? " (voice)" : ""): \(text)" + (sel != nil ? " (with selection\(sel?.path != nil ? ", circle" : ""))" : ""))
         client.send(.ask(text: text, selection: sel))
@@ -279,7 +291,15 @@ final class OverlayModel: ObservableObject {
         var after = state
         after.apply(msg)
         if after.phase != before { log("state \(after.phase.rawValue)") }
+        // decided before the phase change reaches the app, so a tool run never opens the panel
+        if case .receipt(let r) = msg, before == .working, after.phase != .working, let v = after.verdict {
+            let end = TaskEnd.of(r, verdict: v)
+            if case .compact(let c) = end { compact = c; log("compact: \(c.line)") } else { compact = nil }
+            let needs = { if case .needsYou = v { return true }; return false }()
+            if needs != needsYouBadge { needsYouBadge = needs; onBadge?(needs) }
+        }
         mutate { $0.apply(msg) }
+        if case .receipt = msg, let c = compact, before == .working { onCompact?(c) }
         if case .selection(let sel) = msg, !sel.isEmpty { onHandSelection?(sel) }
         if case .ready = msg, let q = pendingAsk { pendingAsk = nil; submit(q.0, fromVoice: q.1) }
         if case .receipt = msg, before == .working, state.phase != .working, let v = state.verdict {

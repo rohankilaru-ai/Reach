@@ -15,10 +15,29 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var onHandsFree: () -> Void = {}
     var onPauseHandsFree: () -> Void = {}
 
+    private var listening = false
+    private var badge = false
+
     /// Menu bar icon: an ear while hands-free is listening.
-    func setListening(_ on: Bool) {
-        let img = NSImage(systemSymbolName: on ? "ear" : "circle.dashed", accessibilityDescription: on ? "Reach (listening)" : "Reach")
-        img?.isTemplate = true
+    func setListening(_ on: Bool) { listening = on; redraw() }
+
+    /// A tiny dot on the icon while a run needs the user (until the next ask).
+    func setBadge(_ on: Bool) { badge = on; redraw() }
+
+    private func redraw() {
+        let name = listening ? "ear" : "circle.dashed"
+        let desc = (listening ? "Reach (listening)" : "Reach") + (badge ? ", needs you" : "")
+        guard let base = NSImage(systemSymbolName: name, accessibilityDescription: desc) else { return }
+        guard badge else { base.isTemplate = true; item.button?.image = base; return }
+        let size = NSSize(width: max(base.size.width, 16) + 3, height: max(base.size.height, 16))
+        let img = NSImage(size: size, flipped: false) { r in
+            base.draw(in: NSRect(x: 0, y: (r.height - base.size.height) / 2, width: base.size.width, height: base.size.height))
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: NSRect(x: r.width - 6, y: r.height - 6, width: 5, height: 5)).fill()
+            return true
+        }
+        img.isTemplate = true   // monochrome dot, follows the menu bar appearance
+        img.accessibilityDescription = desc
         item.button?.image = img
     }
 
@@ -50,6 +69,7 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
             self.model.speakReplies.toggle()
             if !self.model.speakReplies, self.model.speaking { self.model.onStopSpeaking?() }
         }
+        add("Sounds", on: model.soundsOn) { [weak self] in self?.model.soundsOn.toggle() }
         menu.addItem(.separator())
         add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
         if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
