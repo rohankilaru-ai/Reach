@@ -60,6 +60,7 @@ final class Hotkeys {
 
 enum Keys {
     static let space = kVK_Space
+    static let h = kVK_ANSI_H
     static let escape = kVK_Escape
     static let option = optionKey
     static let shift = shiftKey
