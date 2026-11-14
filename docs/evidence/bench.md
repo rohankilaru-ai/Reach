@@ -27,24 +27,32 @@ Held-out accuracy by input source:
 - N is small (40 held-out, 20 dev); one item is 2.5 points of held-out accuracy, and p95 over 40 calls is the 38th value.
 - The utterances are hand-written by the builder, not recorded from users; lip-reading items are simulated hypothesis
   lists, not output of a real lip reader.
-- The prompt, threshold and margin were tuned on `dev` only; `held_out` was run once with them frozen.
+- Held-out is NOT clean: the label descriptions in the prompt were written after the fixtures and quote held-out
+  phrasings almost verbatim ("what is this" h01, "click into" h06, "page down"/"move further down" h08/h10, "wait for
+  a moment" h15, "resume"/"carry on" h17/h18, "forget it" h27, "stop talking"/"halt" h33/h35). Both models saw them.
+  Nothing was changed after the dev run and held-out ran once, but held-out accuracy is not a generalisation number;
+  a rerun with descriptions that do not echo held-out items is the first follow-up.
 - Drex probabilities come from the model's choice head. Qwen's probabilities are self-reported in JSON and are not
   calibrated; the same abstain rule is applied to both.
 - Latency is client wall-clock from this machine, sequential, same HTTP code path. Drex's own `evaluation_time_ms` is
   in bench.json per item.
-- Cost: Drex responses carry tokens but no price. The Drex column is input tokens x $0.12/M, the Drex Max input price
-  in the Nace docs (output tokens are not billed). Qwen is DeepInfra list price ($0.20/M in, $2.50/M out) before any
-  discount. Thinking was disabled for Qwen (`chat_template_kwargs.enable_thinking=false`).
+- Cost: Drex responses carry tokens but no price, so Drex is reported in tokens. The Drex `est $` column is only
+  conditional: input tokens x $0.12/M, the Drex Max input price in the docs' browser-run price table (the direct-API
+  price page is a placeholder in the docs we have); output tokens are not billed. Qwen is DeepInfra list price ($0.20/M in, $2.50/M out) before any
+  discount. Qwen emits a 12-way probability JSON (~114 output tokens per item), which dominates its latency and cost;
+  a one-label reply (7 output tokens, ~0.7 s in a probe) would narrow the gap. Thinking was disabled for Qwen (`chat_template_kwargs.enable_thinking=false`).
 
 ## Verdict (written by hand after the run)
 
-- **Accuracy is a tie, and this set cannot separate the two models.** Both got 40/40 held-out and 20/20 dev, with no
-  wrong commands and all 8 out-of-vocabulary items abstained. The fixtures are too easy to rank accuracy; a harder set
-  (real lip-reader output, real dictation errors, more confusable pairs such as pause/stop/cancel) is needed for that.
-- **Drex Max is faster and cheaper on the same task.** Held-out p50 260 ms vs 2414 ms (about 9x), p95 389 ms vs 4188 ms.
-  Drex's server-side `evaluation_time_ms` p50 was 156 ms. Estimated cost for all 60 items: $0.0026 Drex vs $0.0209
-  Qwen (Drex from the docs' input price, Qwen at list price).
+- **Accuracy is a tie and this set cannot separate the two models.** Both got 40/40 held-out and 20/20 dev, with no
+  wrong commands and all 8 out-of-vocabulary items abstained. The prompt's label descriptions echo 10 held-out items
+  (see caveats), and the fixtures are easy; a clean, harder set (real lip-reader output, real dictation, confusable
+  pairs like pause/stop/cancel) is needed to rank accuracy.
+- **Latency: Drex p50 260 ms vs Qwen 2414 ms on held-out (p95 389 vs 4188)**, but much of Qwen's time is its 12-way JSON
+  output; with a one-label reply the gap would shrink (a one-off probe took ~0.7 s). Drex `evaluation_time_ms` p50 was
+  156 ms.
+- **Tokens:** Drex 21,662 input for 60 items (output not billed); Qwen 18,842 in + 6,847 out = $0.0209 at list price.
+  Drex has no price in its response; at the docs' browser-run Max price it would be ~$0.0026. Not a cost finding.
 - Confidence on held-out command items: Drex mean top p 0.947 (min 0.595, 3 below 0.9); Qwen self-reported mean 0.960
-  (min 0.700). Qwen's numbers are not calibrated probabilities, so this is not a like-for-like comparison.
-- No prompt, threshold or margin change was needed: the first draft scored 20/20 on dev for both, so the frozen
-  settings are the first draft. Held-out was run once.
+  (min 0.700). Qwen's numbers are not calibrated, so this is not like-for-like.
+- No prompt, threshold or margin change was made after the dev run (first draft scored 20/20 on dev for both).

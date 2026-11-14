@@ -230,14 +230,20 @@ CAVEATS = """## Caveats
 - N is small (40 held-out, 20 dev); one item is 2.5 points of held-out accuracy, and p95 over 40 calls is the 38th value.
 - The utterances are hand-written by the builder, not recorded from users; lip-reading items are simulated hypothesis
   lists, not output of a real lip reader.
-- The prompt, threshold and margin were tuned on `dev` only; `held_out` was run once with them frozen.
+- Held-out is NOT clean: the label descriptions in the prompt were written after the fixtures and quote held-out
+  phrasings almost verbatim ("what is this" h01, "click into" h06, "page down"/"move further down" h08/h10, "wait for
+  a moment" h15, "resume"/"carry on" h17/h18, "forget it" h27, "stop talking"/"halt" h33/h35). Both models saw them.
+  Nothing was changed after the dev run and held-out ran once, but held-out accuracy is not a generalisation number;
+  a rerun with descriptions that do not echo held-out items is the first follow-up.
 - Drex probabilities come from the model's choice head. Qwen's probabilities are self-reported in JSON and are not
   calibrated; the same abstain rule is applied to both.
 - Latency is client wall-clock from this machine, sequential, same HTTP code path. Drex's own `evaluation_time_ms` is
   in bench.json per item.
-- Cost: Drex responses carry tokens but no price. The Drex column is input tokens x $0.12/M, the Drex Max input price
-  in the Nace docs (output tokens are not billed). Qwen is DeepInfra list price ($0.20/M in, $2.50/M out) before any
-  discount. Thinking was disabled for Qwen (`chat_template_kwargs.enable_thinking=false`).
+- Cost: Drex responses carry tokens but no price, so Drex is reported in tokens. The Drex `est $` column is only
+  conditional: input tokens x $0.12/M, the Drex Max input price in the docs' browser-run price table (the direct-API
+  price page is a placeholder in the docs we have); output tokens are not billed. Qwen is DeepInfra list price ($0.20/M in, $2.50/M out) before any
+  discount. Qwen emits a 12-way probability JSON (~114 output tokens per item), which dominates its latency and cost;
+  a one-label reply (7 output tokens, ~0.7 s in a probe) would narrow the gap. Thinking was disabled for Qwen (`chat_template_kwargs.enable_thinking=false`).
 """
 
 

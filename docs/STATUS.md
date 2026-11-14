@@ -22,5 +22,5 @@ Facts found in S0
 | B DeepInfra browser helper | merged; direct browser run passed (19 s, $0.0012) |
 | S2 overlay | building |
 | S4 browser task as Intern tool | building |
-| S8a part 1: command router + bench (experimental) | PR open (`rohan/router`): `reach route`, `reach ask --route`, `reach bench`; held-out 40/40 for Drex Max and Qwen, Drex p50 260 ms vs 2414 ms; see `docs/evidence/bench.md` |
+| S8a part 1: command router + bench (experimental) | PR open (`rohan/router`): `reach route`, `reach ask --route`, `reach bench`; held-out 40/40 for both (not clean: prompt echoes 10 held-out phrasings), Drex p50 260 ms vs Qwen 2414 ms (Qwen emits 12-way JSON); see `docs/evidence/bench.md` |
 | S5 verified completion, S6 pinch, S8a silent path | not started |
