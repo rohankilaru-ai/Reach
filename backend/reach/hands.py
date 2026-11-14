@@ -172,6 +172,8 @@ def start(preview: bool = False) -> dict:
     run_dir().mkdir(parents=True, exist_ok=True)
     log = open(run_dir() / "hands.log", "ab")
     cmd = command() + ([] if preview else ["--no-preview"])
+    if os.environ.get("REACH_HAND_SELECT") != "1":
+        cmd.append("--no-select")  # pinch-drag region selection fired when nobody meant it; opt in with REACH_HAND_SELECT=1
     # Only the server (which set an emitter) reads the child's state lines; the one-shot CLI must not pipe, or the
     # child would die on a closed pipe once `reach hands on` returns.
     piped = _emit is not None
