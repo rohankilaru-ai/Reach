@@ -47,6 +47,16 @@ def camera_status() -> str:
     return {0: "not_determined", 1: "restricted", 2: "denied", 3: "authorized"}.get(s, "unknown")
 
 
+def request_camera_access() -> None:
+    """Ask macOS to show the Camera permission prompt for this app. Does not open the camera or wait for the answer."""
+    try:
+        import AVFoundation as AVF
+
+        AVF.AVCaptureDevice.requestAccessForMediaType_completionHandler_(AVF.AVMediaTypeVideo, lambda granted: None)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def open_camera(index: int = 0):
     """The only place the camera is opened. Callers must check camera_status() == 'authorized' first."""
     import cv2
@@ -54,15 +64,21 @@ def open_camera(index: int = 0):
     cap = cv2.VideoCapture(index, cv2.CAP_AVFOUNDATION)
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
+    cap.set(cv2.CAP_PROP_FPS, 30)
     return cap
 
 
 def require_camera() -> bool:
     st = camera_status()
-    if st != "authorized":
-        print(f"[silent] camera permission: {st}. {PERMISSION_MSG}")
+    if st == "authorized":
+        return True
+    if st == "not_determined":  # macOS lists the app under Camera only after it has asked once
+        request_camera_access()
+        print("[silent] camera permission: not_determined. macOS should now show a Camera prompt for your terminal: "
+              "answer it, quit and reopen the terminal if you allowed it, then rerun. The camera was NOT opened.")
         return False
-    return True
+    print(f"[silent] camera permission: {st}. {PERMISSION_MSG}")
+    return False
 
 
 # ---- backend bridge (localhost WebSocket, contracts.py)
@@ -166,12 +182,40 @@ def cmd_selftest(args) -> int:
             report["clips"].append({"seconds": secs, "total_ms": round(total * 1000), **out["timings_ms"]})
             print(f"[selftest] {secs:.1f}s clip ({len(crops)} frames): {total * 1000:.0f} ms {out['timings_ms']}; "
                   f"top hyp {msg['hypotheses'][0]!r}; {describe(result, local) if args.send else 'not sent'}")
+        report["still_face"] = _still_face_stage(reader)
     finally:
         reader.close()
     report["peak_rss_mb"] = round(_rss_mb())
     print("[selftest] " + json.dumps(report))
     print("[selftest] OK (shapes and timing only; no accuracy measured)")
     return 0
+
+
+def _still_face_stage(reader) -> dict:
+    """Face detection -> mouth crop -> model on a STILL public-domain face photo (scikit-image `astronaut`), tiled to
+    1.5 s in memory. Exercises mouth.py; a still mouth says nothing, so this is NOT an accuracy test either."""
+    import numpy as np
+
+    try:
+        from skimage.data import astronaut
+
+        from .mouth import MouthCropper
+
+        frames = np.repeat(astronaut()[None], int(1.5 * FPS), axis=0)  # (T,512,512,3) RGB, never written
+        cropper = MouthCropper()
+        try:
+            t = time.perf_counter()
+            crops, found = cropper(frames)
+            crop_ms = round((time.perf_counter() - t) * 1000)
+        finally:
+            cropper.close()
+        out = reader.read(crops, list(PHRASES.values()), n=5)
+        res = {"ok": True, "frames": len(frames), "face_frames": found, "crop_shape": list(crops.shape),
+               "crop_ms": crop_ms, **out["timings_ms"], "top_hyp": out["nbest"][0][0] if out["nbest"] else ""}
+    except Exception as e:  # noqa: BLE001 - report, do not hide
+        res = {"ok": False, "error": f"{type(e).__name__}: {str(e)[:160]}"}
+    print(f"[selftest] still face photo through mouth.py + model (NOT an accuracy test): {res}")
+    return res
 
 
 def cmd_camera_check(args) -> int:
@@ -241,8 +285,8 @@ def cmd_on(args) -> int:
                 out = reader.read(crops, list(PHRASES.values()), n=5)
                 msg, result, local = route_hypotheses(out["nbest"], out["closed"])
                 last = f"'{msg['hypotheses'][0]}' -> " + describe(result, local).split("] ", 1)[1]
-            except RuntimeError as e:
-                last = f"no read: {e}"
+            except Exception as e:  # noqa: BLE001 - one bad clip must not end the session
+                last = f"no read: {type(e).__name__}: {str(e)[:80]}"
             frames, stamps = [], []
             print(f"[silent] {last}", flush=True)
     finally:

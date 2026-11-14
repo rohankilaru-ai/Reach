@@ -80,10 +80,13 @@ def test_no_camera_without_the_flag(no_camera, capsys):
 
 @pytest.mark.parametrize("status", ["denied", "not_determined", "restricted", "unknown"])
 def test_camera_not_opened_without_permission(no_camera, monkeypatch, status, capsys):
+    asked = []
     monkeypatch.setattr(worker, "camera_status", lambda: status)
+    monkeypatch.setattr(worker, "request_camera_access", lambda: asked.append(1))
     assert worker.main(["--camera-check"]) == 2
     assert worker.main(["--on"]) == 2
     assert "NOT opened" in capsys.readouterr().out
+    assert len(asked) == (2 if status == "not_determined" else 0)  # prompt only; never opens the camera
 
 
 def test_typed_hyp_path_without_backend(no_camera, monkeypatch, tmp_path, capsys):
