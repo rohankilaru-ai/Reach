@@ -18,7 +18,6 @@ import sys
 
 from reach.tools import ax
 
-DOC = "Reach do-mode gate"
 SENTENCE = "Reach typed this sentence through the Accessibility API."
 
 
