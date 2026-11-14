@@ -1,6 +1,6 @@
 # Third-party software and services
 
-Reach's own code is MIT (see `LICENSE`). Nothing below is vendored into this repository; each is installed or cloned by the setup steps.
+Reach's own code is MIT (see `LICENSE`). Nothing below is vendored into this repository; each is installed or cloned by the setup steps (the one exception is the adapted silent-chat code and patch, noted in its row).
 
 | Component | Source | Licence | How Reach uses it |
 | --- | --- | --- | --- |
@@ -11,6 +11,11 @@ Reach's own code is MIT (see `LICENSE`). Nothing below is vendored into this rep
 | Qwen3.8-27B on DeepInfra | deepinfra.com | DeepInfra terms | System 2: planning and answers. |
 | Qwen3-VL-235B-A22B-Instruct on DeepInfra | deepinfra.com | DeepInfra terms | Reads screen regions (`see_region`) and is the browser harness's helper model. |
 | MediaPipe (`mediapipe` 1.2.2, hand landmarker model) | github.com/google-ai-edge/mediapipe | Apache-2.0 | Hand tracking for the experimental pinch worker in `perception/`. The model file is downloaded at setup, not committed. |
+| silent-chat | github.com/Input-Labs-HQ/silent-chat | MIT, Copyright (c) 2026 justbenzo | EXPERIMENTAL silent speech (`perception/silent/`): `mouth.py` and `lipreader.py` adapt its `vsr.py` (face keypoints, Auto-AVSR model setup, hybrid MPS/CPU beam search, closed-set scoring), and `perception/silent/patches/auto_avsr-ctc-device.patch` is its patch. Its Claude dispatch is not used. MIT notice: "Permission is hereby granted, free of charge, to any person obtaining a copy of this software ... The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software." (full text at the source). |
+| Auto-AVSR code | github.com/mpc001/auto_avsr at commit `182b628` | Apache-2.0 | Cloned by `perception/silent/setup.sh` into the gitignored `third_party/`, with the CTC-device patch above. Not committed. |
+| **Auto-AVSR lip-reading weights** `vsr_trlrs2lrs3vox2avsp_base.pth` | Auto-AVSR authors (Google Drive link used by silent-chat's `setup.command`) | **Research / non-commercial only**: trained on LRS2, LRS3, VoxCeleb2 and AVSpeech | EXPERIMENTAL silent speech only. Downloaded by `perception/silent/setup.sh` into the gitignored `perception/silent/models/`; never committed and must not ship in a product. |
+| MediaPipe face detector (`blaze_face_short_range.tflite`) | Google MediaPipe | Apache-2.0 | Face keypoints for the mouth crop in `perception/silent/`. Downloaded at setup, not committed. |
+| PyTorch 2.15.0, torchvision 0.29.2 | pytorch.org | BSD-3-Clause | Runs the lip-reading model, in `perception/silent/`'s own venv only. |
 | Apple frameworks (Speech, Vision, AppKit) | macOS | Apple terms | On-device voice transcription, on-screen text reading, and the overlay. |
 
 DeepInfra is a hackathon partner tool. Adobe and Keenable are not used.

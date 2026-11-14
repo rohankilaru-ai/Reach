@@ -75,7 +75,19 @@ class PointerIn(BaseModel):
     state: Literal["hover", "pinch"] | None = None
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn, Field(discriminator="type")]
+class Hypotheses(BaseModel):
+    """EXPERIMENTAL (S8a): N-best transcript hypotheses for one utterance, best first, e.g. from the lip-reading
+    worker (perception/silent). The server routes them with the 12-command router and broadcasts a `transcript`
+    result. It never runs an agent task."""
+
+    type: Literal["transcript"] = "transcript"
+    hypotheses: list[Annotated[str, Field(max_length=200)]] = Field(min_length=1, max_length=10)
+    scores: list[float] | None = Field(default=None, description="log-probabilities, same order as hypotheses")
+    source: str = Field(default="lipreading", max_length=40)
+    experimental: bool = True
+
+
+Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses, Field(discriminator="type")]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -177,6 +189,13 @@ class Transcript(BaseModel):
     task_id: str
     role: Literal["user", "assistant"]
     text: str
+    # S8a additive fields: set only on a routed `transcript` (hypotheses) result. `uncertain` results never act.
+    command: str | None = None
+    probability: float | None = None
+    uncertain: bool | None = None
+    reason: str | None = None
+    source: str | None = None
+    experimental: bool | None = None
 
 
 class SelectionMsg(BaseModel):
