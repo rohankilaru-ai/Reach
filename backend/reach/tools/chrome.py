@@ -135,12 +135,16 @@ tell application "Google Chrome"
   set wi to 0
   repeat with w in windows
     set wi to wi + 1
-    set aid to id of active tab of w
-    set ti to 0
-    repeat with t in tabs of w
-      set ti to ti + 1
-      set out to out & wi & US & (id of w) & US & ti & US & (id of t) & US & (title of t) & US & (URL of t) & US & ((id of t) = aid) & RS
-    end repeat
+    try
+      set wid to id of w
+      set aid to id of active tab of w
+      set ids to id of every tab of w
+      set titles to title of every tab of w
+      set urls to URL of every tab of w
+      repeat with ti from 1 to (count of ids)
+        set out to out & wi & US & wid & US & ti & US & (item ti of ids) & US & (item ti of titles) & US & (item ti of urls) & US & ((item ti of ids) = aid) & RS
+      end repeat
+    end try
   end repeat
 end tell
 return out
@@ -158,7 +162,7 @@ tell application "Google Chrome"
     if target is "front" then
       set w to window 1
     else
-      set w to window id (target as integer)
+      set w to window id target
     end if
     set t to make new tab at end of tabs of w with properties {URL:u}
   end if
@@ -167,28 +171,28 @@ end tell
 end run"""
 
 TAB_STATE = """on run argv
-set tid to (item 1 of argv) as integer
+set tid to item 1 of argv
 tell application "Google Chrome"
   repeat with w in windows
-    repeat with i from 1 to (count of tabs of w)
-      set t to tab i of w
-      if (id of t) = tid then return "1" & (character id 31) & ((loading of t) as text) & (character id 31) & (URL of t) & (character id 31) & ((id of w) as text)
-    end repeat
+    set hits to (every tab of w whose id is tid)
+    if (count of hits) > 0 then
+      set t to item 1 of hits
+      return "1" & (character id 31) & ((loading of t) as text) & (character id 31) & (URL of t) & (character id 31) & ((id of w) as text)
+    end if
   end repeat
 end tell
 return "0"
 end run"""
 
 CLOSE = """on run argv
-set tid to (item 1 of argv) as integer
+set tid to item 1 of argv
 tell application "Google Chrome"
   repeat with w in windows
-    repeat with i from 1 to (count of tabs of w)
-      if (id of tab i of w) = tid then
-        close tab i of w
-        return "closed"
-      end if
-    end repeat
+    set hits to (every tab of w whose id is tid)
+    if (count of hits) > 0 then
+      close (item 1 of hits)
+      return "closed"
+    end if
   end repeat
 end tell
 return "missing"
@@ -231,6 +235,8 @@ def _call(run: Runner, script: str, argv: list[str]) -> RunResult:
 
 def list_tabs(run: Runner = run_osascript, pid: int | None = None) -> list[dict[str, Any]]:
     r = _call(run, LIST, [])
+    if not r.ok:  # tabs changing mid-read (Chrome opening/closing one): read once more
+        r = _call(run, LIST, [])
     if not r.ok:
         raise RuntimeError(f"Chrome did not answer: {r.err[:120]}")
     owned = load_owned(pid)
@@ -246,6 +252,8 @@ def list_tabs(run: Runner = run_osascript, pid: int | None = None) -> list[dict[
 
 def tab_state(tab_id: int, run: Runner) -> dict[str, Any] | None:
     r = _call(run, TAB_STATE, [str(tab_id)])
+    if not r.ok:
+        r = _call(run, TAB_STATE, [str(tab_id)])
     if not r.ok:
         raise RuntimeError(f"Chrome did not answer: {r.err[:120]}")
     f = r.out.split(US)
@@ -489,5 +497,12 @@ CHROME_WRITE_TOOLS = frozenset({"chrome_open_url", "chrome_activate_tab", "chrom
 
 
 def tools() -> list[Tool]:
-    return [ChromeListTabs(), ChromeOpenUrl(), ChromeActivateTab(), ChromeCloseTab(), ChromeMoveTab()]
+    """Chrome tools. Only the read-only tab list is on by default: opening, switching, closing and moving tabs act on the
+    owner's real browser, so they are off until REACH_CHROME_ACTIONS=1 is set (and even then only tabs Reach opened can
+    be closed or moved)."""
+    import os
+
+    if os.environ.get("REACH_CHROME_ACTIONS") == "1":
+        return [ChromeListTabs(), ChromeOpenUrl(), ChromeActivateTab(), ChromeCloseTab(), ChromeMoveTab()]
+    return [ChromeListTabs()]
 
