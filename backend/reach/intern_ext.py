@@ -95,6 +95,9 @@ class ReachTools(Extension):
         from .tools.vision import SeeRegion
 
         mac_tools: list[Tool] = [*chrome.tools(), TableToNote()]
+        from .tools import ax, finder
+
+        mac_tools += ax.tools() + finder.tools()  # finder_list always; Do mode tools only with REACH_DO_MODE=1
         # The bridge drops Intern's base pack (shell, write, edit); read comes back here, fenced by guard_policy.
         return mac_tools + [
             ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(),
