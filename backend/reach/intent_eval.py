@@ -67,7 +67,7 @@ def score(split: str) -> dict[str, Any]:
             amb[0] += hit
             amb[1] += 1
         pred = {"risky": res.flag("risky_or_irreversible") >= intent.THRESHOLDS["risky_or_irreversible"],
-                "needs_screen_region": res.action == "needs_selection"}
+                "needs_screen_region": not has_sel and res.flag("needs_screen_region") >= intent.THRESHOLDS["needs_screen_region"]}
         for k in tp:
             if pred[k] and it[k]:
                 tp[k] += 1
