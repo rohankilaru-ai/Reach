@@ -1,0 +1,33 @@
+{
+  "task_id": "c48f3437a22c",
+  "status": "ok",
+  "reason": "completed",
+  "tools": [
+    "evidence_search"
+  ],
+  "refused": [],
+  "system1_asks": 3,
+  "tokens": 10470,
+  "est_cost_usd": 9e-05,
+  "duration_ms": 6534,
+  "ndi_calls": 1,
+  "outcome": null,
+  "browser": [],
+  "write_outcome": null,
+  "intent": {
+    "kind": "document_question",
+    "probs": {
+      "document_question": 0.996,
+      "needs_documents": 0.999,
+      "needs_screen_region": 0.003,
+      "writes_user_data": 0.001,
+      "risky_or_irreversible": 0.0,
+      "ambiguous": 0.003
+    },
+    "hint_used": true,
+    "action": "hint",
+    "latency_ms": 445,
+    "error": null
+  },
+  "screen_captured": false
+}
