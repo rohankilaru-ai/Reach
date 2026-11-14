@@ -316,6 +316,16 @@ def normalize_for_match(s: str) -> str:
 def pin(pid: str, quote: str | None = None) -> bool:
     if get_passage(pid) is None:
         return False
+    if quote is None:  # keep the quote the last card for this id showed
+        cards = reach_dir() / "logs" / "evidence.jsonl"
+        if cards.exists():
+            for line in cards.read_text().splitlines():
+                try:
+                    c = json.loads(line)
+                except ValueError:
+                    continue
+                if c.get("id") == pid and c.get("quote"):
+                    quote = c["quote"]
     with connect() as con:
         con.execute("INSERT OR REPLACE INTO shelf VALUES (?,?,?)", (pid, quote, time.time()))
     return True
