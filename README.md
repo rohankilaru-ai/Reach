@@ -2,7 +2,7 @@
 
 **A desktop assistant you can type to, talk to, circle things for, and that acts on your Mac. Drex decides, Intern runs it, and every action is checked.**
 
-Reach lives at the top of your Mac screen. Ask it a question, hold a key and speak, or circle something on screen while you talk. It answers from your documents with cited quotes, looks at your screen, points at where to click, runs browser tasks, opens Chrome tabs, writes into your notes and reads the result back to confirm it landed. Every ask goes through Nace's Intern harness with Drex Max supervising each step.
+Reach lives at the top of your Mac screen. Ask it a question, hold a key and speak while you circle what you mean, or use your hand as the mouse. It answers from your documents with cited quotes, looks at your screen and points at where to click, clicks what you name, opens Chrome tabs and Gmail drafts (never sent), copies to the clipboard, runs web tasks, and writes notes, then reads each result back to confirm it landed. It can take dictation into any text box, listen hands-free, and switch modes with hand signals. Every ask goes through Nace's Intern harness with Drex Max checking each step.
 
 Built for the Drexathon, Wildcard track. All code here was written on 2026-11-14.
 
@@ -27,7 +27,7 @@ Demo script: [`docs/DEMO.md`](docs/DEMO.md).
 | **Qwen3-30B-A3B on DeepInfra** | Language model | **System 2.** Plans, picks tools and writes the answers you read. Chosen for speed (about 0.5 s per tool-calling turn versus 1.45 s for Qwen3.8-27B in our timing); `REACH_SYSTEM2` switches models, and Qwen3.8-27B was used for the router benchmark and early runs |
 | **NDI** (`nace-sdk`) | Document pipeline | Parses PDFs; grounds each cited quote to a page and region |
 | **Nace's hosted browser** (`nace-sdk` browser runs) | Cloud browser agent, Drex Max driving | `browser_cloud`: web research and actions on public pages in Nace's sandboxed cloud browser; no logins; Nace refuses banking, payment, identity, large social and government sites |
-| **Nace browser harness** (patched) | Local browser agent and Chrome extension | `browser_task` runs web tasks in its own hidden browser; `browser_in_chrome` (experimental) hands a task to the harness's extension in your signed-in Chrome |
+| **Nace browser harness** (patched) | Local browser agent and Chrome extension | `browser_task` runs web tasks in its own hidden browser; `browser_in_chrome`  hands a task to the harness's extension in your signed-in Chrome |
 | **Qwen3-VL-235B on DeepInfra** | Vision model | Reads your screen or a circled region, tables, and points at form fields; also the browser harness's helper |
 | **Whisper large-v3-turbo and Kokoro-82M on DeepInfra** | Speech | Cloud transcription and spoken replies (on-device Apple speech is the fallback) |
 
@@ -48,34 +48,34 @@ Drex Max never writes the answers: it answers typed questions with calibrated pr
 
 ## Status
 
-Labels: **implemented** = a gate passed on a fresh input; **experimental** = runs, but not reliable or not verified by a person; **planned** = not built. Evidence is in `docs/evidence/`.
+Labels: **working** = a test or live run passed on a fresh input; **new** = built and unit-tested, still being tried by people; **planned** = not built. Evidence is in `docs/evidence/`.
 
 | Feature | Label | Evidence and caveats |
 | --- | --- | --- |
-| Intern as harness; Drex Max as System 1; Qwen3-30B-A3B (DeepInfra) as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `receipt.json` |
-| Drex task understanding before every ask (kind, needs-screen, risky, continues-previous) | implemented | `docs/evidence/intent.md`: held-out kind accuracy 22/25; 0 wrong risky calls; p50 257 ms |
-| Conversation memory: Drex decides whether a message continues the last exchange | implemented | live check: follow-up scored 0.98, unrelated topic 0.009 |
-| NDI evidence: add a PDF, cited quotes grounded to page and region | implemented | two real PDFs; `docs/GROUND_SHAPE.md` |
-| Browser task in the local harness browser (`browser_task`), Drex judges each call | implemented | `docs/evidence/browser-run.json`; runs hidden by default (a visible window lost runs in a test); search engines show this browser a CAPTCHA |
-| Browser task in Nace's hosted cloud browser (`browser_cloud`), Drex Max driving | implemented | one live test on a public site succeeded in 15.6 s for 0.003 USD (measured in session; no evidence file); sandboxed, no logins, capped per run; Nace refuses banking, payment, identity, large social and government sites; unit tests use a fake client |
-| Browser task in your own signed-in Chrome (`browser_in_chrome`): drives the Nace Chrome extension through its pairing server | experimental | only tested against a fake pairing server, never with a real extension; needs the extension loaded and `REACH_PAIRING_CODE` set. Setup: `docs/EXTENSION.md` |
-| Verified notes (file, TextEdit, Notes) with read-back (`write_outcome`) | implemented | receipt field `write_outcome` |
-| Screen look with no circle (`see_screen`) and circled regions (`see_region`) | implemented | `docs/evidence/auto-screen.md`; vision answers can be wrong, especially on dense images such as chess boards |
-| Pointers that show where to click or type (`point_at`) | implemented on generated screens | 54/54 steps on 10 clean mock-ups (`docs/evidence/guide.md`); not tested on dense real apps |
-| Chrome tabs: list, open, switch, close and move tabs Reach opened | implemented | never closes tabs you opened yourself; listing sends tab titles to the model |
-| Overlay: top pill, hover to expand, one-gesture circle plus voice, zoom lens, permission checklist | experimental | unit and headless tests pass; gestures not yet verified by hand on every path |
-| Voice: hold Option-Space to talk; cloud Whisper transcription and Kokoro replies, Apple on-device as fallback | experimental | `docs/evidence/cloud-voice.md`: on clean test audio Apple's recogniser was more accurate and 4 to 8 times faster; microphone audio goes to DeepInfra when the cloud setting is on |
-| Hands-free listening: wake word "Reach", Drex decides whether speech is meant for Reach (Option-Shift-Space toggles) | experimental | `docs/evidence/addressed.md`: held-out precision 0.94, recall 0.79 on 40 hand-written utterances; always-on listening is off at launch, recognition runs on the Mac |
-| Hands mode: your hand is the mouse (point to move, pinch to click or drag, two fingers to scroll, open palm to stop); Option-Shift-H toggles it from the pill | experimental | `hands_mode/` on the teammate's finger tracking: 109 unit tests (hands mode plus the finger tracker) including a mirror-direction proof; closest-hand lock; releases a held click when the hand drops out of frame; not yet verified live by a person. It is the one module that sends mouse events |
-| Dictation: speak into any focused text box (Option-Shift-D) | experimental | types only into editable fields, through Accessibility or a paste (Cmd-V) fallback, never into secure fields; on-device recognition, no model calls; 108 Swift tests and a headless self-test pass; not yet tried by hand |
-| Gmail drafts (`email_draft`) and clipboard copy (`clipboard_copy`) | implemented / experimental | the draft opens in your signed-in Chrome and is never sent; the clipboard write is read back (verified live) |
-| Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | experimental | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
-| Do mode click (`click_on_screen`): finds what you name with the vision model, shows a pointer, then makes one real mouse click (`REACH_DO_MODE=1`) | experimental | refuses targets that spend, send, delete or sign out; does not verify the result itself; unit tests (`backend/tests/test_click.py`); no live run is recorded in `docs/evidence/` |
-| Mode gestures in hands mode: thumbs-up toggles dictation, peace sign toggles listen-to-me (each held about 0.6 s) | experimental | unit tests only; not tried live; `REACH_HAND_SIGNALS=0` turns them off |
-| 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
-| Hand pointer and pinch-to-select with MediaPipe | experimental | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
-| Hands mode: hand tracking (`finger_processing/`) driving the cursor (`hands_mode/`): point to move, pinch thumb to index to click or drag, curl the index to click, two fingers to scroll, pinch thumb to middle and draw a loop to select for the overlay | experimental | own tests; not an agent tool |
-| Silent speech: lip reading into the 12-command router (research-only weights, not shipped) | experimental | model runs (0.4 s per 1.5 s clip); no accuracy measured, no live mouthed run |
+| Intern as harness; Drex Max as System 1; Qwen3-30B-A3B (DeepInfra) as System 2 | working | `docs/evidence/drex-log.jsonl`, `receipt.json` |
+| Drex task understanding before every ask (kind, needs-screen, risky, continues-previous) | working | `docs/evidence/intent.md`: held-out kind accuracy 22/25; 0 wrong risky calls; p50 257 ms |
+| Conversation memory: Drex decides whether a message continues the last exchange | working | live check: follow-up scored 0.98, unrelated topic 0.009 |
+| NDI evidence: add a PDF, cited quotes grounded to page and region | working | two real PDFs; `docs/GROUND_SHAPE.md` |
+| Browser task in the local harness browser (`browser_task`), Drex judges each call | working | `docs/evidence/browser-run.json`; runs hidden by default (a visible window lost runs in a test); search engines show this browser a CAPTCHA |
+| Browser task in Nace's hosted cloud browser (`browser_cloud`), Drex Max driving | working | one live test on a public site succeeded in 15.6 s for 0.003 USD (measured in session; no evidence file); sandboxed, no logins, capped per run; Nace refuses banking, payment, identity, large social and government sites; unit tests use a fake client |
+| Browser task in your own signed-in Chrome (`browser_in_chrome`): drives the Nace Chrome extension through its pairing server | new | only tested against a fake pairing server, never with a real extension; needs the extension loaded and `REACH_PAIRING_CODE` set. Setup: `docs/EXTENSION.md` |
+| Verified notes (file, TextEdit, Notes) with read-back (`write_outcome`) | working | receipt field `write_outcome` |
+| Screen look with no circle (`see_screen`) and circled regions (`see_region`) | working | `docs/evidence/auto-screen.md`; vision answers can be wrong, especially on dense images such as chess boards |
+| Pointers that show where to click or type (`point_at`) | working on generated screens | 54/54 steps on 10 clean mock-ups (`docs/evidence/guide.md`); not tested on dense real apps |
+| Chrome tabs: list, open, switch, close and move tabs Reach opened | working | never closes tabs you opened yourself; listing sends tab titles to the model |
+| Overlay: top pill, hover to expand, one-gesture circle plus voice, zoom lens, permission checklist | new | unit and headless tests pass; gestures not yet verified by hand on every path |
+| Voice: hold Option-Space to talk; cloud Whisper transcription and Kokoro replies, Apple on-device as fallback | new | `docs/evidence/cloud-voice.md`: on clean test audio Apple's recogniser was more accurate and 4 to 8 times faster; microphone audio goes to DeepInfra when the cloud setting is on |
+| Hands-free listening: wake word "Reach", Drex decides whether speech is meant for Reach (Option-Shift-Space toggles) | new | `docs/evidence/addressed.md`: held-out precision 0.94, recall 0.79 on 40 hand-written utterances; always-on listening is off at launch, recognition runs on the Mac |
+| Hands mode: your hand is the mouse (point to move, pinch to click or drag, two fingers to scroll, open palm to stop); Option-Shift-H toggles it from the pill | new | `hands_mode/` on the teammate's finger tracking: 109 unit tests (hands mode plus the finger tracker) including a mirror-direction proof; closest-hand lock; releases a held click when the hand drops out of frame; not yet verified live by a person. It is the one module that sends mouse events |
+| Dictation: speak into any focused text box (Option-Shift-D) | new | types only into editable fields, through Accessibility or a paste (Cmd-V) fallback, never into secure fields; on-device recognition, no model calls; 108 Swift tests and a headless self-test pass; not yet tried by hand |
+| Gmail drafts (`email_draft`) and clipboard copy (`clipboard_copy`) | working / new | the draft opens in your signed-in Chrome and is never sent; the clipboard write is read back (verified live) |
+| Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | new | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
+| Do mode click (`click_on_screen`): finds what you name with the vision model, shows a pointer, then makes one real mouse click (`REACH_DO_MODE=1`) | new | refuses targets that spend, send, delete or sign out; does not verify the result itself; unit tests (`backend/tests/test_click.py`); no live run is recorded in `docs/evidence/` |
+| Mode gestures in hands mode: thumbs-up toggles dictation, peace sign toggles listen-to-me (each held about 0.6 s) | new | unit tests only; not tried live; `REACH_HAND_SIGNALS=0` turns them off |
+| 12-command router and benchmark against Qwen | new | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
+| Hand pointer and pinch-to-select with MediaPipe | new | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
+| Hands mode: hand tracking (`finger_processing/`) driving the cursor (`hands_mode/`): point to move, pinch thumb to index to click or drag, curl the index to click, two fingers to scroll, pinch thumb to middle and draw a loop to select for the overlay | new | own tests; not an agent tool |
+| Silent speech: lip reading into the 12-command router (research-only weights, not shipped) | new | model runs (0.4 s per 1.5 s clip); no accuracy measured, no live mouthed run |
 | Agent tools that send mouse or keyboard events | not done on purpose | Reach's agent tools use scripting interfaces, files and the Accessibility API. The exceptions are the opt-in hands mode (mouse events), `click_on_screen` in Do mode (one mouse click), and dictation's paste fallback (Cmd-V, Cmd-Z) |
 | Gaze, Adobe and Keenable | planned | |
 

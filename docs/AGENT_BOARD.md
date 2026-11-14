@@ -22,4 +22,4 @@ Several people and agents build Reach at once. These rules keep merges boring.
 | Docs and evidence | `README.md`, `docs/**`, `THIRD_PARTY.md` | the driver |
 
 ## Where to find things
-`docs/STATUS.md` is the live status. `docs/SOURCES.md` has the verified upstream facts. `AGENTS.md` has the commands.
+The README status table is the live status. `docs/SOURCES.md` has the verified upstream facts. `AGENTS.md` has the commands.
