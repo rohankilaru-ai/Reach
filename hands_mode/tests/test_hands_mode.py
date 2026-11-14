@@ -199,8 +199,8 @@ class Clock:
 
 
 def F(present=True, pose=("index",), pinch=False, edge=None, at=(500, 400), vy=0.0, v=(0.0, 0.0),
-      landmarks=((0.5, 0.6, 0.0), (0.5, 0.4, 0.0))):
-    fingers = {n: types.SimpleNamespace(extended=n in pose, tip=(0.5, 0.5))
+      landmarks=((0.5, 0.6, 0.0), (0.5, 0.4, 0.0)), tip=(0.5, 0.5)):
+    fingers = {n: types.SimpleNamespace(extended=n in pose, tip=tip)
                for n in ("thumb", "index", "middle", "ring", "pinky")}
     return types.SimpleNamespace(hand_present=present, fingers=fingers if present else {},
                                  pointer_screen=at if present else None, pinch_active=pinch,
@@ -369,7 +369,7 @@ def test_hand_leaving_downward_mid_pinch_releases_and_blocks_pinch():
     e, m, c = engine()
     pinch_down(e, c)
     c.t += 0.03
-    e.update(F(pinch=True, v=(0.0, 2.0)))                  # fast downward motion
+    e.update(F(pinch=True, v=(0.0, 2.0), tip=(0.5, 0.9)))   # fast down, fingertip near the bottom
     assert not e.button_down and "leaving" in e.state
     c.t += 0.2
     pinch_down(e, c)                                       # lowering hand "pinches": ignored
@@ -382,12 +382,45 @@ def test_hand_leaving_downward_mid_pinch_releases_and_blocks_pinch():
 
 def test_half_visible_hand_at_edge_never_clicks():
     e, m, c = engine()
-    edge_lm = ((0.5, 0.99, 0.0), (0.5, 0.8, 0.0))
-    pinch_down(e, c, landmarks=edge_lm)
+    pinch_down(e, c, tip=(0.5, 0.99))
     assert kinds(m) == [] and not e.button_down
     _drag_start(e, c)
-    e.update(F(pinch=True, at=(170, 100), landmarks=edge_lm))
+    e.update(F(pinch=True, at=(170, 100), tip=(0.5, 0.99)))
     assert not e.button_down
+
+
+def test_low_hand_still_moves_cursor_to_the_bottom():
+    e, m, c = engine()
+    e.update(F(at=(500, 890), landmarks=((0.5, 0.99, 0.0),), tip=(0.5, 0.8)))
+    e.update(F(at=(500, 899), landmarks=((0.5, 0.995, 0.0),), tip=(0.5, 0.985)))   # tips at the border too
+    assert [a[2] for a in m.log if a[0] == "move"] == [890, 899]
+
+
+def test_fast_downward_moves_mid_frame_are_not_a_drop():
+    e, m, c = engine()
+    e.update(F(at=(500, 300), v=(0.0, 3.0)))               # fast point down, mid-frame
+    assert m.log[-1] == ("move", 500, 300)
+    _drag_start(e, c)
+    c.t += 0.03
+    e.update(F(pinch=True, at=(160, 300), v=(0.0, 3.0)))   # fast drag down, mid-frame
+    assert e.button_down and m.log[-1][0] == "drag"
+    e.update(F(pinch=True, at=(160, 340), v=(0.0, 3.0), landmarks=((0.5, 0.85, 0.0),), tip=(0.5, 0.6)))
+    assert e.button_down                                   # low wrist, mid-frame tip: still dragging
+
+
+def test_index_pinch_lands_where_the_cursor_was():
+    """A real index pinch curls the index: the pose leaves 'point' and the pointer drifts before the pinch
+    fires. The click must land where the cursor was (where you aimed), and a drag follows the hand's delta."""
+    e, m, c = engine()
+    e.update(F(at=(500, 400)))
+    for i, at in enumerate([(506, 404), (514, 410), (522, 416)]):   # index curling: clutch, pointer drifts
+        c.t += 0.033
+        e.update(F(pose=(), at=at))
+    pinch_down(e, c, pose=(), at=(528, 420))
+    assert m.log[-1] == ("down", 500, 400, "clicks=1")
+    c.t += 0.033
+    e.update(F(pose=(), pinch=True, at=(578, 420)))        # hand moves 50 px right while pinched
+    assert m.log[-1] == ("drag", 550, 400)
 
 
 def test_one_frame_pinch_jitter_does_not_click():

@@ -19,7 +19,10 @@ import signal
 import sys
 import time
 
+from pathlib import Path
+
 from finger_processing import FingerProcessor, load_config
+from finger_processing.processing import resolve_path
 
 from hands_mode.actions import ActionCfg, HandsEngine, MacActionMouse, PrintMouse
 
@@ -51,6 +54,9 @@ def hands_config(config_path: str | None = None, region=None):
     cfg.pointer.pinch_freeze_ms = max(cfg.pointer.pinch_freeze_ms, 150.0)
     if region:
         cfg.calibration.default_region = tuple(region)
+    shared = Path(__file__).resolve().parents[1] / "perception" / "models" / "hand_landmarker.task"
+    if not resolve_path(cfg.tracker.model_path).exists() and shared.exists():
+        cfg.tracker.model_path = str(shared)   # same MediaPipe model the pinch worker already downloaded
     return cfg
 
 
