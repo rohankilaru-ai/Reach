@@ -31,7 +31,7 @@ from ..ledger import append_tool_entry
 from ..paths import reach_dir
 
 OSASCRIPT_TIMEOUT_S = 10
-LOAD_WAIT_S = 15.0
+LOAD_WAIT_S = 6.0
 POLL_S = 0.5
 US, RS = "\x1f", "\x1e"  # unit / record separators: titles can contain anything else
 PERMISSION_MSG = "needs you: allow Terminal to control Google Chrome in Privacy & Security > Automation"
