@@ -54,7 +54,8 @@ def prompt_for(ask: Ask, intent: Any = None) -> str:
     if ask.selection and ask.selection.image_path:
         text += (f"\n\nThe user selected a screen region, saved at {ask.selection.image_path}. To answer about what "
                  f"is in it, call see_region with that image_path and the question. To show where to click or type, or how to "
-                 f"fill it in, call point_at (it moves an on-screen pointer; it never clicks), then explain the steps.")
+                 f"fill it in or use it, call point_at directly instead (it looks at the image itself and moves an "
+                 f"on-screen pointer; it never clicks), then explain the steps in words.")
     text += "\n\n" + NOTES_HINT
     try:
         if evidence.has_documents():
