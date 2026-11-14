@@ -14,6 +14,9 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var handsFreeOn: () -> Bool = { false }
     var onHandsFree: () -> Void = {}
     var onPauseHandsFree: () -> Void = {}
+    var dictationOn: () -> Bool = { false }
+    var onDictation: () -> Void = {}
+    var onHandsMode: () -> Void = {}
 
     private var listening = false
     private var badge = false

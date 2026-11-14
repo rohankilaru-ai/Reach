@@ -51,9 +51,11 @@ def test_kind_mapping_and_hint(kind):
 
 def test_hint_names_the_tool_family():
     it = intent.understand("find flights", post=fake(resp("browser_task", 0.93)))
-    assert "use browser_task" in intent.prompt_addendum(it)
+    assert "browser_task" in intent.prompt_addendum(it)
     mac = intent.understand("open spotify", post=fake(resp("mac_control", 0.9)))
-    assert "no tool for controlling the Mac" in intent.prompt_addendum(mac)
+    hint = intent.prompt_addendum(mac)
+    assert "chrome_open_url" in hint and "finder_open" in hint and "clipboard_copy" in hint
+    assert "has no tool for controlling the Mac" not in hint  # the old, wrong refusal text
 
 
 def test_low_confidence_abstains_to_other_without_hint():
@@ -139,8 +141,8 @@ def test_receipt_dict_and_prompt_hook():
 
     it = intent.understand("find flights", post=fake(resp("browser_task", 0.93)))
     p = prompt_for(Ask(text="find flights", selection=Selection(text="x")), it)
-    assert "Drex (a fast classifier) judged this a browser task (p=0.93); use browser_task" in p
-    assert "duckduckgo.com" in p and "email_draft" in p
+    assert "Drex (a fast classifier) judged this a browser task (p=0.93)" in p
+    assert "chrome_open_url" in p and "email_draft" in p
     d = it.receipt_dict()
     assert d["kind"] == "browser_task" and d["hint_used"] and d["action"] == "hint"
     assert d["probs"]["browser_task"] == 0.93 and "risky_or_irreversible" in d["probs"]

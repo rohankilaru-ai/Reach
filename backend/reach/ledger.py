@@ -11,7 +11,7 @@ from typing import Any
 
 from .contracts import BROWSER_TOOL, LEDGER_TYPES, Receipt
 
-WRITE_TOOLS = frozenset({"note_append", "shelf_to_note"})
+WRITE_TOOLS = frozenset({"note_append", "shelf_to_note", "clipboard_copy"})
 WRITE_TOOLS = WRITE_TOOLS | frozenset({"table_to_note", "chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"})
 WRITE_TOOLS = WRITE_TOOLS | frozenset({"ax_press", "ax_set_text", "finder_open", "finder_reveal"})  # Do mode (EXPERIMENTAL)
 

@@ -67,10 +67,15 @@ THRESHOLDS: dict[str, float] = {
 TOOL_FAMILY: dict[str, str] = {
     "document_question": "use evidence_search on the user's documents and cite passage ids",
     "browser_task": (
-        "use browser_task; for a web search start at https://duckduckgo.com/?q=<url-encoded query> (google.com "
-        "serves automated browsers a bot check); for email use email_draft, which opens a Gmail draft and never sends"
+        "for a web SEARCH use chrome_open_url with https://www.google.com/search?q=<url-encoded query> in the user's "
+        "own Chrome (their signed-in browser is not bot-checked), then see_screen to read the results; use "
+        "browser_task for navigating or filling forms on ordinary sites (search engines show it a CAPTCHA); for email "
+        "use email_draft, which opens a Gmail draft and never sends"
     ),
-    "write_to_notes": "use note_append (or shelf_to_note for evidence ids)",
+    "write_to_notes": (
+        "use note_append (or shelf_to_note for evidence ids); to copy text so the user can paste it use "
+        "clipboard_copy; for 'email X about Y' use email_draft (opens a Gmail draft, never sends)"
+    ),
     "screen_question": (
         "use see_region for 'what is this' about a circled region image (otherwise the selected text); with nothing "
         "selected and a question about the screen, call see_screen; use point_at for 'where do I click / how do I "
@@ -78,7 +83,12 @@ TOOL_FAMILY: dict[str, str] = {
         "where, the user clicks and types (never claim you did)"
     ),
     "chat": "answer directly; no tool is needed",
-    "mac_control": "Reach has no tool for controlling the Mac; say what you cannot do rather than pretend",
+    "mac_control": (
+        "use chrome_open_url / chrome_list_tabs / chrome_activate_tab / chrome_close_tab for Chrome tabs, finder_open "
+        "and finder_list for folders and files, ax_describe then ax_press / ax_set_text to press a button or type in "
+        "another app (when those tools exist), clipboard_copy to copy text, email_draft for email; if no tool fits, "
+        "say what you cannot do rather than pretend"
+    ),
 }
 
 NEEDS_SELECTION_REPLY = (

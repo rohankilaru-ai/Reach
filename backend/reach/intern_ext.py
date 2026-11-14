@@ -98,9 +98,10 @@ class ReachTools(Extension):
         from .tools.guide import PointAt
         from .tools.vision import SeeRegion
 
+        from .tools.clipboard import ClipboardCopy
         from .tools.email import EmailDraft
 
-        mac_tools: list[Tool] = [*chrome.tools(), TableToNote()]
+        mac_tools: list[Tool] = [*chrome.tools(), TableToNote(), ClipboardCopy()]
         if os.environ.get("REACH_CHROME_ACTIONS") == "1":
             mac_tools.append(EmailDraft())  # opens a Gmail draft in Chrome; never sends
         from .tools import ax, finder
