@@ -47,7 +47,8 @@ final class SpeechInput: @unchecked Sendable {
     var available: Bool { recognizer?.isAvailable ?? false }
 
     /// Starts the mic tap. `onResult` is called on the main queue with partials, then once with the final.
-    func start(onResult: @escaping (Heard) -> Void, onError: @escaping (String) -> Void) {
+    func start(onResult: @escaping (Heard) -> Void, onError: @escaping (String) -> Void,
+               onLevel: ((Float) -> Void)? = nil) {
         guard let recognizer, recognizer.isAvailable else { onError("speech recognition unavailable"); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -56,7 +57,17 @@ final class SpeechInput: @unchecked Sendable {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { onError("no microphone input"); return }
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in req.append(buf) }
+        let level = onLevel
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in
+            req.append(buf)
+            if let level, let ch = buf.floatChannelData?[0], buf.frameLength > 0 {
+                var sum: Float = 0
+                for i in 0..<Int(buf.frameLength) { sum += ch[i] * ch[i] }
+                let rms = (sum / Float(buf.frameLength)).squareRoot()
+                let v = min(1, max(0, (20 * log10(max(rms, 1e-5)) + 50) / 40))   // -50 dB..-10 dB -> 0..1
+                DispatchQueue.main.async { level(v) }
+            }
+        }
         engine.prepare()
         do { try engine.start() } catch {
             input.removeTap(onBus: 0)
