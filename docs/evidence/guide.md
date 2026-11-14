@@ -30,6 +30,10 @@ its `target` names (the input box for a field, not its caption); a step naming n
 |---|---|---|---|---|---|---|
 | 30 | 54 | 54 | **100%** | 30/30 | 0 | $0.0079 |
 
+The score checks the element each step names; to rule out a step that names the wrong field, the 24 one-step answers were checked against the question by eye: all 24 named the element the question asked for (e.g. 'show me how to open the Initech invoice' -> Open on the INV-103 row).
+
+The real overlay shows these pointers: `Model.swift` calls `onPointer` for every `pointer` with a task id (no task filter there), so steps arriving after the receipt still move the ghost pointer. Follow-up: the ghost window is 160 pt wide at 11 pt, so a label like '5. Click Pay now to submit' may be cut off.
+
 Read this honestly: the screens are clean, high-contrast, generated mock-ups with distinct labels, so this shows the
 coordinate pipeline (convention, retina scale, origin) is right and that the model picks the right control on simple
 layouts. It is not a measure on real, dense apps; expect lower there. Step quality is also not perfect: for
