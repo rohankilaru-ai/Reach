@@ -6,7 +6,7 @@ Every ask runs in a real Intern session with custom tools. Reach answers questio
 
 You can use it hands-free: hold a key and speak while circling what you mean, dictate into any text box, or use your hand as the mouse (point to move, pinch to click or drag, two fingers to scroll) with hand signals to switch modes.
 
-Built for the Drexathon, Wildcard track. Code written on 2026-11-14.
+Built for the Drexathon, Wildcard track. Code written on 2026-11-14. Demo video: [`docs/demo/reach-demo.mp4`](docs/demo/reach-demo.mp4) (68 s).
 
 ## How it works
 
