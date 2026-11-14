@@ -260,10 +260,12 @@ def test_newest_capture_includes_pinch_selections(tmp_path):
     old.write_bytes(b"\x89PNG old")
     sel = root / "selection-1700000000000.png"
     sel.write_bytes(b"\x89PNG new")
-    os.utime(old, (1, 1))
+    now = time.time()  # recent times: a default capture older than 2 minutes is refused
+    os.utime(old, (now - 60, now - 60))
+    os.utime(sel, (now - 10, now - 10))
     assert vision.resolve_image(None, root) == sel.resolve()
-    os.utime(sel, (0, 0))
-    os.utime(old, (5, 5))
+    os.utime(sel, (now - 90, now - 90))
+    os.utime(old, (now - 20, now - 20))
     assert vision.resolve_image(None, root) == old.resolve()
 
 
