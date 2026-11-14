@@ -230,6 +230,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     func collapse(why: String) {
         halo.hide()
         hover.collapsed()
+        lastActivity = Date()   // Auto / Hidden: the folded pill stays about 8 s before it leaves
         model.typing = false
         guard model.expanded else { return }
         model.expanded = false
@@ -250,9 +251,10 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Auto / Hidden: the collapsed pill leaves the screen once nothing is going on.
     private func hidePillIfIdle() {
-        guard let panel, panel.isVisible else { return }
+        guard let panel, panel.isVisible, Date().timeIntervalSince(lastActivity) > Self.collapseAfter else { return }
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
             || model.capturing || model.speaking || model.typing || panel.isKeyWindow || ptt.phase != .idle
+            || NSEvent.pressedMouseButtons != 0
         guard !PillVisibility.shouldShow(mode: pillMode, expanded: model.expanded, busy: busy) else { return }
         guard panel.frame.height < 64 else { return }   // wait for the fold animation to finish
         panel.orderOut(nil)

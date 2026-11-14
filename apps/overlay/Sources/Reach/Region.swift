@@ -21,7 +21,7 @@ final class RegionHalo {
         let pad: CGFloat = 10
         let frame = rect.insetBy(dx: -pad, dy: -pad)
         let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)   // above the ready layer
+        w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)   // above the ready layer and the panel (click-through)
         w.backgroundColor = .clear
         w.isOpaque = false
         w.ignoresMouseEvents = true
