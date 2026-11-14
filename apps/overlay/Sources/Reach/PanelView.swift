@@ -185,8 +185,13 @@ struct PanelView: View {
                     if p.action == .circle {
                         Text(label).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                     } else {
-                        Chip(icon: p.action == .retry || p.action == .startServer ? "arrow.clockwise" : "gearshape", text: label) { onAction(p.action) }
+                        Chip(icon: p.action == .retry || p.action == .startServer || p.action == .relaunch ? "arrow.clockwise" : "gearshape",
+                             text: label) { onAction(p.action) }
                     }
+                }
+                if let d = plain?.detail {
+                    Text(d).font(.system(size: 11)).foregroundStyle(.white.opacity(0.55))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 if showsField {

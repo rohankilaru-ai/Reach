@@ -21,7 +21,7 @@ final class RegionHalo {
         let pad: CGFloat = 10
         let frame = rect.insetBy(dx: -pad, dy: -pad)
         let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)   // above the ready layer
+        w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)   // above the ready layer and the panel (click-through)
         w.backgroundColor = .clear
         w.isOpaque = false
         w.ignoresMouseEvents = true
@@ -91,10 +91,12 @@ nonisolated(unsafe) private var askedForCapture = false
 enum RegionCapture {
     /// Captures `rect` (global Cocoa coordinates) with ScreenCaptureKit and writes a PNG into `dir`.
     static func capture(_ rect: NSRect, into dir: URL) async throws -> (CGImage, URL) {
-        guard CGPreflightScreenCaptureAccess() else {
-            // Ask macOS once per run so the first capture shows the system prompt; then the panel says "needs you".
-            if !askedForCapture { askedForCapture = true; _ = CGRequestScreenCaptureAccess() }
-            throw CaptureError.permission
+        // Robust check: preflight can say no while capture works (and the reverse right after a grant), so a false
+        // preflight asks macOS once per run and then lets the real capture below decide; only a throw means missing.
+        if !CGPreflightScreenCaptureAccess(), !askedForCapture {
+            askedForCapture = true
+            _ = CGRequestScreenCaptureAccess()
+            await MainActor.run { PermissionProbe.askedScreenThisRun = true }
         }
         guard let screen = await MainActor.run(body: { NSScreen.screens.first { $0.frame.intersects(rect) } }),
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
@@ -120,7 +122,7 @@ enum RegionCapture {
         let filter = SCContentFilter(display: display, excludingApplications: mine, exceptingWindows: [])
         let image: CGImage
         do { image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) }
-        catch { throw CaptureError.failed(error.localizedDescription) }
+        catch { throw CGPreflightScreenCaptureAccess() ? CaptureError.failed(error.localizedDescription) : CaptureError.permission }
 
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("region-\(Int(Date().timeIntervalSince1970 * 1000)).png")

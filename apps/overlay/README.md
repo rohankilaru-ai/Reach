@@ -10,6 +10,29 @@ Native macOS panel for Reach (SwiftPM, AppKit + SwiftUI, macOS 14+). It speaks o
   with text in the field). Drag it anywhere; the spot is remembered per display. Double-click the pill or the panel
   header to snap back under the notch.
 
+**Pill visibility** (menu bar item > Pill, remembered): **Auto** (default) draws nothing at the top of the screen
+when idle; the pill appears when the mouse moves to the top-centre notch area, when Option-Space goes down, or when an
+answer or needs-you state arrives, and it folds away again about 8 s later (never while listening, working, speaking or
+typing). **Always** keeps the pill on screen. **Hidden (hotkey only)** ignores hover; Option-Space and answers still
+show it.
+
+**Menu bar item** (a small monochrome dashed circle): Show/Hide pill, Pill: Auto / Always / Hidden, Voice: Cloud /
+On-device, Speak replies (checkmark), Set up Reach…, Quit Reach. All settings persist in UserDefaults.
+
+**Set up Reach** (permissions checklist): opened from the menu bar item, from the Fix action, and automatically once
+per launch when a required permission is missing. Each row has a live dot (green granted, grey not yet) and a Grant
+button: Screen Recording, Microphone and Speech Recognition are required; Accessibility (Do mode only) and Camera (hand
+tracking only) are optional and never block; Automation for Chrome, Finder, Notes and TextEdit is listed as "asked the
+first time it is used". Grant raises the native prompt and, for Screen Recording, Accessibility or anything already
+denied, also opens the exact Privacy & Security pane. The window polls every second; when the required set turns green
+it shows "All set" and closes after 1.5 s (a window opened with everything already green stays open). Screen Recording
+uses a robust check: `CGPreflightScreenCaptureAccess`, and when that says no, one real 1x1 ScreenCaptureKit capture of
+the main display decides. If Reach asked during this run and capture still fails, the row offers **Relaunch Reach**
+(opens its own bundle, then quits). The panel's needs-you state for Screen Recording uses the same wording: one
+sentence, a Fix action, and "If Reach is already switched on there, remove it with the minus button, add it with the
+plus button, then reopen Reach." While Option-Space is held the panel drops under the circle layer, so a loop drawn
+under the notch is never covered. Ghost pointer windows size to their label (up to about 220 pt).
+
 One key, **Option-Space**, and one calm hint line: "Hold Option-Space, circle what you mean, say what to do."
 
 - **Hold** (over 0.25 s): listening starts, a level meter shows in the pill and header, and the screen goes soft and
@@ -33,7 +56,7 @@ and the live words. While working: one line of progress from the running tool ("
 citation brackets stripped, numbered steps kept; measured and scrollable, up to about 60% of the screen, never past the
 bottom), at most two evidence cards (click opens the PDF at the page), a Speak button, and a collapsed **Details**
 disclosure (remembered) holding the receipt line, tools, cost and Drex decisions. Failures and needs-you show one plain
-sentence and one action (Try again, Open Settings, Retry, or "Hold Option-Space and circle it"). A new ask replaces the
+sentence and one action (Try again, Fix, Open Settings, Relaunch Reach, Retry, or "Hold Option-Space and circle it"). A new ask replaces the
 previous answer; the panel folds back to the pill about 8 s after the answer and any spoken reply end. The zoom lens is
 placed so it never covers the panel or the circled area; guide pointer labels are cut to 30 characters and fade after
 4 s. The text field shows when you tap to type or circle without words.
@@ -71,6 +94,8 @@ line, a thumbnail when there is an image, and a clear button. It is used by the 
 `pointer` messages move the ghost pointer, which fades 1 s after the last one. Real-hand use is untested; the gate is
 `uv run --project backend python smoke/pinch_relay_gate.py --overlay apps/overlay/build/Reach.app/Contents/MacOS/Reach`.
 `--panel-selftest` shows pill -> panel -> pill and logs each frame (real windows, no input events).
+`--permissions-selftest` prints each permission's status and exits (reads only: no prompts, no ScreenCaptureKit, so
+Screen Recording is preflight only there).
 `--lasso-selftest` runs the circle state machine and the tap/hold key logic on synthetic strokes (no windows).
 `--hub-selftest` drives the hub headlessly (no windows, input events or network) and prints one PASS/FAIL line per
 scenario: hold -> circle -> release is one ask with transcript + selection, release before the capture finishes,
