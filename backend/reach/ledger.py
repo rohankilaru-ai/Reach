@@ -20,6 +20,29 @@ def append_drex(path: Path, event: dict[str, Any], task_id: str) -> bool:
     return True
 
 
+def append_ndi(path: Path, task_id: str, op: str, **fields: Any) -> None:
+    """Log one NDI call (parse / ground) next to the Drex decisions. Timestamp in ms like Intern events."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"task_id": task_id, "type": "ndi", "op": op, "timestamp": int(time.time() * 1000), **fields}
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def count_ndi(path: Path, task_id: str | None = None) -> int:
+    """NDI calls in the log, for one task or all."""
+    if not path.exists():
+        return 0
+    n = 0
+    for line in path.read_text().splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        if e.get("type") == "ndi" and (task_id is None or e.get("task_id") == task_id):
+            n += 1
+    return n
+
+
 def _answer(answers: dict[str, Any] | None) -> tuple[str, float | None]:
     """The compact answer of a decision: 'q=choice' (or 'q=noul') and its probability."""
     if not answers:
@@ -57,6 +80,13 @@ def format_log_line(entry: dict[str, Any]) -> str:
         return f"{ts} guard     {entry.get('name', '?'):<14} refused:{entry.get('rule', '')[:24]:<23} {p:<7} $0.0000"
     if kind == "nudge":
         return f"{ts} nudge     {entry.get('reason', '?'):<14} {entry.get('text', '')[:32]:<32} p=-     $0.0000"
+    if kind == "ndi":
+        ok = "FAILED " + str(entry.get("error")) if entry.get("ok") is False else "ok"
+        if entry.get("op") == "parse":
+            what = f"{entry.get('file', '?')[:20]} {entry.get('pages', '?')}p"
+        else:
+            what = f"found {entry.get('found', '-')}/{entry.get('targets', '?')}"
+        return f"{ts} ndi       {entry.get('op', '?'):<14} {what:<32} {ok:<7} units={entry.get('units', '-')}"
     return f"{ts} {kind}"
 
 

@@ -1,0 +1,16 @@
+{
+  "result_type": "parse",
+  "file_name": "small.pdf",
+  "lane": "pdf",
+  "units": 2,
+  "document": {
+    "page_count": 2,
+    "markdown": "--- Page 1 ---\n# Lighthouse Maintenance Notes\n\nThe keeper inspects the lamp mechanism every morning before sunrise. A clean lens doubles the visible range of the beam on clear nights.\n\n| Item | Interval |\n| --- | --- |\n| Lens | Daily |\n\n--- Page 2 ---\n## Fuel\n\nKerosene lamps were replaced by electric bulbs in most stations after 1920. The backup generator is tested once a week under full load.\n",
+    "content_url": null,
+    "text": null,
+    "blocks": null,
+    "chunks": [],
+    "ocr": null,
+    "spreadsheet": null
+  }
+}
