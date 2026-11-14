@@ -164,6 +164,9 @@ class Server:
         def sink(task_id: str, event: dict) -> None:
             out.put_nowait(EventMsg(task_id=task_id, event=event).model_dump_json())
 
+        from .ledger import CURRENT_OUT
+
+        CURRENT_OUT.set(out.put_nowait)  # Do mode: tools can show the ghost pointer before acting
         try:
             receipt = await self.bridge.run(task, sink)
             stopped = False  # aborted while grounding (an abort during bridge.run is already in the receipt)

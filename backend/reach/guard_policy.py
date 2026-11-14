@@ -30,6 +30,8 @@ FILE_TOOLS = frozenset({"read", "grep", "find", "write", "edit"})
 SHELL_TOOLS = frozenset({"bash", "process", "shell"})
 # Reach tools whose arguments are only free text the user sees; their text is not a path.
 TEXT_ONLY_TOOLS = frozenset({"note_append", "shelf_to_note", "open_source", "evidence_search", "reach_now"})
+# Do mode (EXPERIMENTAL): Finder tools keep paths inside the home folder themselves; only the secret check applies here.
+HOME_PATH_TOOLS = frozenset({"finder_list", "finder_open", "finder_reveal"})
 ALLOWED_REACH_SUBDIRS = ("workspace", "captures", "browser")
 
 REASON = "Reach does not let the assistant read keys, secret files or environment dumps."
@@ -181,7 +183,7 @@ def check(name: str, args: dict[str, Any], cwd: Path | str, roots: list[Path] | 
         low = value.lower()
         if low.startswith("file:"):
             return "a local file through the browser"
-        if key.endswith("path") and value:
+        if key.endswith("path") and value and name not in HOME_PATH_TOOLS:
             if reason := _path_reason(value, cwd, roots):
                 return reason
     return None

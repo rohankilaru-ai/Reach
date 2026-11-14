@@ -13,6 +13,7 @@ from .contracts import BROWSER_TOOL, LEDGER_TYPES, Receipt
 
 WRITE_TOOLS = frozenset({"note_append", "shelf_to_note"})
 WRITE_TOOLS = WRITE_TOOLS | frozenset({"table_to_note", "chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"})
+WRITE_TOOLS = WRITE_TOOLS | frozenset({"ax_press", "ax_set_text", "finder_open", "finder_reveal"})  # Do mode (EXPERIMENTAL)
 
 
 def parse_outcome(content: str) -> str | None:
@@ -61,6 +62,9 @@ def append_ndi(path: Path, task_id: str, op: str, **fields: Any) -> None:
 
 CURRENT_TASK: ContextVar[str] = ContextVar("reach_task", default="-")
 """Set by the bridge for each run, so tools can log under the task id."""
+
+CURRENT_OUT: ContextVar[Any] = ContextVar("reach_out", default=None)
+"""Set by the server for each run: puts one raw JSON message (e.g. a `pointer`) on the asking client's queue."""
 
 
 def append_tool_entry(kind: str, path: Path | None = None, **fields: Any) -> None:
