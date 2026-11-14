@@ -264,6 +264,13 @@ struct PanelView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
+                if model.handsOn, let g = s.gesture {  // what Hands mode is doing (EXPERIMENTAL)
+                    Text("✋ \(g.line)")
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(Palette.accent.opacity(0.9))
+                        .lineLimit(1)
+                }
+
                 if showsField {
                     TextField("Ask Reach…", text: $model.draft)
                         .textFieldStyle(.plain)

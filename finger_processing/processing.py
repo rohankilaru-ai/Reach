@@ -5,12 +5,13 @@ consumers run after the Frame is published):
 
   capture thread (newest frame only)
     -> small grayscale -> Sobel motion gate (skips MediaPipe when idle)
-    -> MediaPipe Hand Landmarker (VIDEO mode, one hand)
-    -> one-hand lock (acquire control hand, hold dropouts, detect swaps)
-    -> features: hand scale, curled/extended per finger, pinch hysteresis
-    -> One Euro smoothing of every fingertip and the pointer
-    -> camera -> screen homography
-    -> Frame (with a Finger entry for thumb/index/middle/ring/pinky)
+    -> MediaPipe Hand Landmarker (VIDEO mode, up to two hands)
+    -> assign detections to the left/right slot (continuity first, then label)
+    -> per hand: lock (acquire, hold dropouts, detect swaps), curled/extended
+       per finger, pinch hysteresis, One Euro smoothing, screen homography
+    -> Frame: `hands` = {"left": Hand, "right": Hand} (whichever are present);
+       the top-level fields (fingers, pointer_screen, ...) read from the
+       primary hand (the closest one by default), which drives the cursor and gestures
 
 Coordinates: normalized image coords (0..1), mirrored so moving your hand to
 your right moves the point right. MediaPipe gets the unmirrored image and only
@@ -19,6 +20,7 @@ the landmark x is flipped, so no pixel copy is spent on mirroring.
 
 from __future__ import annotations
 
+import itertools
 import json
 import math
 import queue
@@ -61,17 +63,35 @@ class TrackerCfg(BaseModel):
     min_presence_confidence: float = 0.5
     min_tracking_confidence: float = 0.5
     delegate: Literal["cpu", "gpu"] = "cpu"
-    swap_handedness: bool = True
-    num_hands: int = 1                  # 2 lets HandLock "closest" choose between two hands
+    swap_handedness: bool = False  # MediaPipe's label already matches the user's hand on this camera
 
 
 class HandLockCfg(BaseModel):
-    control_hand: Literal["right", "left", "any", "closest"] = "right"  # closest = largest hand, then sticky
+    """Lock settings for one hand slot."""
+
+    control_hand: Literal["right", "left", "any"] = "right"
     handedness_vote_frames: int = 5
     handedness_vote_min: int = 3
     hold_frames: int = 3
     swap_jump: float = 0.30
     swap_scale_ratio: float = 0.40
+
+
+class HandsCfg(BaseModel):
+    max_hands: Literal[1, 2] = 2
+    primary: Literal["closest", "left", "right"] = "closest"  # hand that drives the cursor and gestures;
+                                                 # closest = the larger hand on screen, sticky until clearly smaller
+    primary_fallback: bool = False               # use the other hand when the primary is absent
+    handedness_vote_frames: int = 5
+    handedness_vote_min: int = 3
+    hold_frames: int = 3
+    swap_jump: float = 0.30
+    swap_scale_ratio: float = 0.40
+
+    def lock_cfg(self, side: str) -> HandLockCfg:
+        return HandLockCfg(control_hand=side, handedness_vote_frames=self.handedness_vote_frames,
+                           handedness_vote_min=self.handedness_vote_min, hold_frames=self.hold_frames,
+                           swap_jump=self.swap_jump, swap_scale_ratio=self.swap_scale_ratio)
 
 
 class FeaturesCfg(BaseModel):
@@ -121,7 +141,7 @@ class ScreenCfg(BaseModel):
 class Config(BaseModel):
     camera: CameraCfg = CameraCfg()
     tracker: TrackerCfg = TrackerCfg()
-    hand_lock: HandLockCfg = HandLockCfg()
+    hands: HandsCfg = HandsCfg()
     features: FeaturesCfg = FeaturesCfg()
     pointer: PointerCfg = PointerCfg()
     smoothing: SmoothingCfg = SmoothingCfg()
@@ -167,17 +187,17 @@ class Finger:
         return "extended" if self.extended else "curled"
 
 
-@dataclass(frozen=True, slots=True)
-class Frame:
-    """Everything finger processing knows about one camera frame."""
+SIDES = ("left", "right")
 
-    t: float                                   # capture time, monotonic seconds
-    frame_id: int
-    hand_present: bool
-    fingers: dict[str, Finger] = field(default_factory=dict)  # empty when no hand
-    handedness: Literal["left", "right"] | None = None
-    landmarks: tuple[tuple[float, float, float], ...] = ()    # all 21 joints, mirrored normalized
-    pinch_dist: float = float("inf")           # thumb tip to index tip / hand scale
+
+@dataclass(frozen=True, slots=True)
+class Hand:
+    """One tracked hand, every frame it is present."""
+
+    side: Literal["left", "right"]
+    fingers: dict[str, Finger]                         # thumb, index, middle, ring, pinky
+    landmarks: tuple[tuple[float, float, float], ...]  # all 21 joints, mirrored normalized
+    pinch_dist: float = float("inf")                   # thumb tip to index tip / hand scale
     pinch_active: bool = False
     pinch_edge: Literal["down", "up"] | None = None
     pinch_finger: Literal["index", "middle"] = "index"   # which finger the thumb pinched (index_or_middle mode)
@@ -185,19 +205,143 @@ class Frame:
     tracking_score: float = 0.0
     pointer_raw: tuple[float, float] | None = None     # cursor anchor before smoothing
     pointer: tuple[float, float] | None = None         # cursor anchor, smoothed
-    pointer_screen: tuple[int, int] | None = None      # cursor position in screen pixels
+    pointer_screen: tuple[int, int] | None = None      # cursor anchor in screen pixels
     velocity: tuple[float, float] = (0.0, 0.0)         # pointer velocity, normalized units/s
     scroll_velocity: tuple[float, float] = (0.0, 0.0)  # index+middle midpoint velocity
-    source: Literal["landmarker", "hold", "none"] = "none"
-    motion: float = 0.0
-    trigger: str | None = None                 # hand_appear | hand_lost | pinch_down | pinch_up | pattern
-    should_classify: bool = False
-    t_capture: float = 0.0
-    t_publish: float = 0.0
+    source: Literal["landmarker", "hold"] = "landmarker"
+    trigger: str | None = None                         # hand_appear | pinch_down | pinch_up | pattern
+    finger_angles: dict[str, float] = field(default_factory=dict)  # middle-joint angle, deg; 180 = straight
 
     @property
     def fingers_extended(self) -> dict[str, bool]:
         return {name: f.extended for name, f in self.fingers.items()}
+
+
+@dataclass(frozen=True, slots=True)
+class Frame:
+    """Everything finger processing knows about one camera frame.
+
+    `hands` streams every present hand. The flat fields below (`hand_present`,
+    `fingers`, `pointer_screen`, ...) are read from the primary hand, the one
+    that drives the cursor and gestures (config `hands.primary`, default closest).
+    """
+
+    t: float                                   # capture time, monotonic seconds
+    frame_id: int
+    hands: dict[str, Hand] = field(default_factory=dict)      # "left" / "right", present hands only
+    primary_side: Literal["left", "right"] = "left"
+    triggers: dict[str, str] = field(default_factory=dict)    # side -> trigger, incl. hand_lost
+    motion: float = 0.0
+    should_classify: bool = False
+    t_capture: float = 0.0
+    t_publish: float = 0.0
+
+    # --- per-side access --------------------------------------------------------
+    @property
+    def left(self) -> Hand | None:
+        return self.hands.get("left")
+
+    @property
+    def right(self) -> Hand | None:
+        return self.hands.get("right")
+
+    @property
+    def primary(self) -> Hand | None:
+        return self.hands.get(self.primary_side)
+
+    # --- primary hand (drives cursor/gestures) ------------------------------------
+    @property
+    def hand_present(self) -> bool:
+        return self.primary is not None
+
+    @property
+    def handedness(self) -> str | None:
+        return self.primary_side if self.primary is not None else None
+
+    @property
+    def fingers(self) -> dict[str, Finger]:
+        h = self.primary
+        return h.fingers if h else {}
+
+    @property
+    def fingers_extended(self) -> dict[str, bool]:
+        h = self.primary
+        return h.fingers_extended if h else {}
+
+    @property
+    def landmarks(self) -> tuple[tuple[float, float, float], ...]:
+        h = self.primary
+        return h.landmarks if h else ()
+
+    @property
+    def pinch_dist(self) -> float:
+        h = self.primary
+        return h.pinch_dist if h else float("inf")
+
+    @property
+    def pinch_active(self) -> bool:
+        h = self.primary
+        return h.pinch_active if h else False
+
+    @property
+    def pinch_edge(self) -> str | None:
+        h = self.primary
+        return h.pinch_edge if h else None
+
+    @property
+    def pinch_finger(self) -> str:
+        h = self.primary
+        return h.pinch_finger if h else "index"
+
+    @property
+    def finger_angles(self) -> dict[str, float]:
+        h = self.primary
+        return h.finger_angles if h else {}
+
+    @property
+    def hand_scale(self) -> float:
+        h = self.primary
+        return h.hand_scale if h else 0.0
+
+    @property
+    def tracking_score(self) -> float:
+        h = self.primary
+        return h.tracking_score if h else 0.0
+
+    @property
+    def pointer_raw(self) -> tuple[float, float] | None:
+        h = self.primary
+        return h.pointer_raw if h else None
+
+    @property
+    def pointer(self) -> tuple[float, float] | None:
+        h = self.primary
+        return h.pointer if h else None
+
+    @property
+    def pointer_screen(self) -> tuple[int, int] | None:
+        h = self.primary
+        return h.pointer_screen if h else None
+
+    @property
+    def velocity(self) -> tuple[float, float]:
+        h = self.primary
+        return h.velocity if h else (0.0, 0.0)
+
+    @property
+    def scroll_velocity(self) -> tuple[float, float]:
+        h = self.primary
+        return h.scroll_velocity if h else (0.0, 0.0)
+
+    @property
+    def source(self) -> str:
+        h = self.primary
+        return h.source if h else "none"
+
+    @property
+    def trigger(self) -> str | None:
+        """The primary hand's trigger this frame (hand_appear, hand_lost, pinch_*, pattern)."""
+        return self.triggers.get(self.primary_side)
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -293,6 +437,14 @@ def _angle_deg(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
     if n < 1e-9:
         return 0.0
     return float(np.degrees(np.arccos(np.clip(np.dot(v1, v2) / n, -1.0, 1.0))))
+
+
+def finger_angles(pts: np.ndarray) -> dict[str, float]:
+    """Bend at each finger's middle joint in degrees (thumb: at its IP joint). 180 = straight, lower = curled."""
+    out = {"thumb": _angle_deg(pts[2], pts[3], pts[THUMB_TIP])}
+    for name, (mcp, pip, tip) in FINGER_JOINTS.items():
+        out[name] = _angle_deg(pts[mcp], pts[pip], pts[tip])
+    return {f: round(out[f], 1) for f in FINGERS}
 
 
 def fingers_extended(pts: np.ndarray, scale: float, extend_angle_deg: float,
@@ -413,23 +565,7 @@ class HandLock:
         self._last_scale = 0.0
 
     def _matches(self, obs: Observation) -> bool:
-        return self.cfg.control_hand in ("any", "closest") or obs.handedness == self.cfg.control_hand
-
-    def choose(self, candidates: list[Observation], scales: list[float]) -> tuple[Observation | None, float]:
-        """control_hand=closest with several hands: unlocked, take the largest (closest to the camera);
-        locked, keep following the hand nearest the last wrist, never the other one because it grew.
-        Returns (None, 0) when the locked hand is not among the candidates (a dropout)."""
-        if not candidates:
-            return None, 0.0
-        if not self.locked or self._last is None:
-            i = int(np.argmax(scales))
-            return candidates[i], scales[i]
-        last = self._last.landmarks[0, :2]
-        dists = [float(np.linalg.norm(c.landmarks[0, :2] - last)) for c in candidates]
-        i = int(np.argmin(dists))
-        if dists[i] > self.cfg.swap_jump:
-            return None, 0.0
-        return candidates[i], scales[i]
+        return self.cfg.control_hand == "any" or obs.handedness == self.cfg.control_hand
 
     def update(self, obs: Observation | None, scale: float = 0.0) -> LockResult:
         if not self.locked:
@@ -460,6 +596,10 @@ class HandLock:
         self._missing, self._last, self._last_scale = 0, obs, scale
         return LockResult(obs)
 
+    @property
+    def last_wrist(self) -> np.ndarray | None:
+        return self._last.landmarks[0, :2] if self._last is not None else None
+
     def _is_swap(self, obs: Observation, scale: float) -> bool:
         if self._last is None:
             return False
@@ -467,6 +607,42 @@ class HandLock:
             return True
         return (self._last_scale > 0 and scale > 0
                 and abs(scale - self._last_scale) / self._last_scale > self.cfg.swap_scale_ratio)
+
+
+# Assignment costs. A locked slot costs its wrist distance (per-frame motion is
+# well under swap_jump), so it beats any unlocked slot (>= UNLOCKED_MATCH) and a
+# one-frame left/right label flip can't steal a tracked hand.
+UNLOCKED_MATCH, UNLOCKED_MISMATCH, LOCKED_TOO_FAR = 0.3, 1.0, 2.0
+
+
+def assign_hands(observations: list[Observation], locks: dict[str, HandLock]) -> dict[str, Observation | None]:
+    """Map up to two detections onto the "left"/"right" slots.
+
+    Tracked hands keep their slot by continuity (nearest wrist); new hands go by
+    MediaPipe's label. If two hands carry the same label, the one further left
+    in the mirrored view is taken as the left hand.
+    """
+    out: dict[str, Observation | None] = {s: None for s in SIDES}
+    obs = list(observations)[:2]
+    if not obs:
+        return out
+    if len(obs) == 2 and obs[0].handedness == obs[1].handedness:
+        a, b = sorted(obs, key=lambda o: o.landmarks[0, 0])
+        obs = [Observation(a.landmarks, "left", a.score), Observation(b.landmarks, "right", b.score)]
+
+    def cost(o: Observation, side: str) -> float:
+        lock = locks[side]
+        wrist = lock.last_wrist
+        if lock.locked and wrist is not None:
+            d = float(np.linalg.norm(o.landmarks[0, :2] - wrist))
+            return d if d <= lock.cfg.swap_jump else LOCKED_TOO_FAR + d
+        return UNLOCKED_MATCH if o.handedness == side else UNLOCKED_MISMATCH
+
+    best = min(itertools.permutations(SIDES, len(obs)),
+               key=lambda sides: sum(cost(o, s) for o, s in zip(obs, sides)))
+    for o, s in zip(obs, best):
+        out[s] = o
+    return out
 
 
 # ================================================================ motion gate
@@ -480,7 +656,8 @@ def gradient_magnitude(gray_small: np.ndarray) -> np.ndarray:
 
 
 def hand_roi(landmarks_mirrored: np.ndarray, pad: float = 0.1) -> tuple[float, float, float, float]:
-    """Hand bounding box in unmirrored normalized coords, padded."""
+    """Hand bounding box in unmirrored normalized coords, padded. Pass several
+    hands stacked (N*21 x 3) to get the box around all of them."""
     xs, ys = 1.0 - landmarks_mirrored[:, 0], landmarks_mirrored[:, 1]
     return float(xs.min() - pad), float(ys.min() - pad), float(xs.max() + pad), float(ys.max() + pad)
 
@@ -783,16 +960,26 @@ class VideoFileSource:
 # ================================================================== MediaPipe
 
 class HandTracker(Protocol):
-    def detect(self, bgr: np.ndarray, t: float) -> Observation | None: ...
+    def detect(self, bgr: np.ndarray, t: float) -> list[Observation]: ...
     def close(self) -> None: ...
 
 
-class MediaPipeTracker:
-    """Hand Landmarker, Tasks API, VIDEO mode, one hand. VIDEO mode is synchronous
-    (landmarks for frame N come back for frame N) and tracks between frames
-    instead of re-running palm detection."""
+def as_observations(result: Observation | list[Observation] | None) -> list[Observation]:
+    """Normalize a tracker result (one hand, a list, or nothing) to a list."""
+    if result is None:
+        return []
+    if isinstance(result, Observation):
+        return [result]
+    return list(result)
 
-    def __init__(self, cfg: TrackerCfg):
+
+class MediaPipeTracker:
+    """Hand Landmarker, Tasks API, VIDEO mode, up to `num_hands` hands. VIDEO mode
+    is synchronous (landmarks for frame N come back for frame N) and tracks
+    between frames instead of re-running palm detection. With num_hands=2, palm
+    detection keeps running while fewer than two hands are tracked."""
+
+    def __init__(self, cfg: TrackerCfg, num_hands: int = 2):
         import mediapipe as mp
         from mediapipe.tasks.python import vision
         from mediapipe.tasks.python.core.base_options import BaseOptions
@@ -807,17 +994,17 @@ class MediaPipeTracker:
         self._landmarker = vision.HandLandmarker.create_from_options(vision.HandLandmarkerOptions(
             base_options=BaseOptions(model_asset_path=str(model), delegate=delegate),
             running_mode=vision.RunningMode.VIDEO,
-            num_hands=max(1, cfg.num_hands),
+            num_hands=num_hands,
             min_hand_detection_confidence=cfg.min_detection_confidence,
             min_hand_presence_confidence=cfg.min_presence_confidence,
             min_tracking_confidence=cfg.min_tracking_confidence,
         ))
         self._mp = mp
         self._gpu = cfg.delegate == "gpu"   # the Metal path only accepts 4-channel input
-        self._swap = cfg.swap_handedness    # unmirrored input -> MediaPipe's label is inverted
+        self._swap = cfg.swap_handedness    # flip MediaPipe's left/right label if a camera reports it inverted
         self._last_ms = -1
 
-    def detect(self, bgr: np.ndarray, t: float) -> Observation | None:
+    def detect(self, bgr: np.ndarray, t: float) -> list[Observation]:
         ts = max(int(t * 1000.0), self._last_ms + 1)  # VIDEO mode needs increasing timestamps
         self._last_ms = ts
         if self._gpu:
@@ -827,31 +1014,15 @@ class MediaPipeTracker:
             image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB,
                                    data=cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
         result = self._landmarker.detect_for_video(image, ts)
-        if not result.hand_landmarks:
-            return None
-        lm = np.array([(p.x, p.y, p.z) for p in result.hand_landmarks[0]], dtype=np.float64)
-        lm[:, 0] = 1.0 - lm[:, 0]
-        cat = result.handedness[0][0]
-        label = cat.category_name.lower()
-        if self._swap:
-            label = "left" if label == "right" else "right"
-        return Observation(lm, label, float(cat.score))
-
-    def detect_all(self, bgr: np.ndarray, t: float) -> list[Observation]:
-        """Every detected hand (up to tracker.num_hands), mirrored like detect()."""
-        ts = max(int(t * 1000.0), self._last_ms + 1)
-        self._last_ms = ts
-        fmt, conv = ((self._mp.ImageFormat.SRGBA, cv2.COLOR_BGR2RGBA) if self._gpu
-                     else (self._mp.ImageFormat.SRGB, cv2.COLOR_BGR2RGB))
-        result = self._landmarker.detect_for_video(self._mp.Image(image_format=fmt, data=cv2.cvtColor(bgr, conv)), ts)
         out = []
-        for hand, handed in zip(result.hand_landmarks or [], result.handedness or []):
-            lm = np.array([(p.x, p.y, p.z) for p in hand], dtype=np.float64)
+        for landmarks, handedness in zip(result.hand_landmarks, result.handedness):
+            lm = np.array([(p.x, p.y, p.z) for p in landmarks], dtype=np.float64)
             lm[:, 0] = 1.0 - lm[:, 0]
-            label = handed[0].category_name.lower()
+            cat = handedness[0]
+            label = cat.category_name.lower()
             if self._swap:
                 label = "left" if label == "right" else "right"
-            out.append(Observation(lm, label, float(handed[0].score)))
+            out.append(Observation(lm, label, float(cat.score)))
         return out
 
     def close(self) -> None:
@@ -877,100 +1048,55 @@ class StageTimer:
         return {k: (float(np.percentile(v, 50)), float(np.percentile(v, 95))) for k, v in snap.items()}
 
 
-class FingerPipeline:
-    """Single-threaded per-frame processing: RawFrame (or recorded observation) -> Frame."""
+class HandChannel:
+    """Per-hand state for one slot ("left" or "right"): lock, filters, pinch,
+    pattern watcher and the pinch cursor freeze."""
 
-    def __init__(self, cfg: Config, tracker: HandTracker | None, calibration: Calibration,
-                 capture_size: tuple[int, int], live_clock: bool = False):
+    def __init__(self, side: str, cfg: Config):
+        self.side = side
         self.cfg = cfg
-        self.tracker = tracker
-        self.calibration = calibration
-        self.aspect = capture_size[0] / capture_size[1]
-        self.live_clock = live_clock
-        self.timer = StageTimer()
-        self.on_observation: Callable[[float, int, Observation | None], None] | None = None
-
         sm = cfg.smoothing
         new_filter = lambda: OneEuro2D(sm.min_cutoff, sm.beta, sm.d_cutoff)  # noqa: E731
-        self.lock = HandLock(cfg.hand_lock)
+        self.lock = HandLock(cfg.hands.lock_cfg(side))
         self.pinch = PinchDetector(cfg.features.pinch_enter, cfg.features.pinch_exit)
         self.pattern = PatternWatcher(cfg.features.pattern_hold_frames)
-        self.gate = MotionGate(cfg.gating)
         self.pointer_filter = new_filter()
         self.scroll_filter = new_filter()
         self.tip_filters = {name: new_filter() for name in FINGERS}
-
-        self._frame_id = 0
-        self._hand_present = False
-        self._landmarks: np.ndarray | None = None
+        self.present = False
+        self.landmarks: np.ndarray | None = None
         self._last_screen: tuple[int, int] | None = None
         self._freeze_until = -1e9
         self._frozen_screen: tuple[int, int] | None = None
 
-    def process(self, raw: RawFrame) -> Frame:
-        t_start = time.perf_counter()
-        g = self.cfg.gating
-        small = cv2.cvtColor(cv2.resize(raw.image, (g.small_width, g.small_height),
-                                        interpolation=cv2.INTER_LINEAR), cv2.COLOR_BGR2GRAY)
-        roi = hand_roi(self._landmarks) if self._landmarks is not None else None
-        motion = self.gate.motion(small, roi)
-        self.timer.record("gate", (time.perf_counter() - t_start) * 1000)
-
-        if self.tracker is None or not self.gate.should_run_landmarker(raw.t_capture, self.lock.locked, motion):
-            skipped = None if self.lock.locked else LockResult(None)  # locked: count it as a dropout
-            return self._finish(None, raw.t_capture, raw.t_capture, motion, skipped, t_start)
-
-        t_mp = time.perf_counter()
-        if self.cfg.hand_lock.control_hand == "closest" and hasattr(self.tracker, "detect_all"):
-            obs = self._choose_closest(self.tracker.detect_all(raw.image, raw.t_capture))
-        else:
-            obs = self.tracker.detect(raw.image, raw.t_capture)
-        self.timer.record("landmarker", (time.perf_counter() - t_mp) * 1000)
-        if self.on_observation is not None:
-            self.on_observation(raw.t_capture, self._frame_id, obs)
-        return self._finish(obs, raw.t_capture, raw.t_capture, motion, None, t_start)
-
-    def process_observation(self, obs: Observation | None, t: float, motion: float = 0.0) -> Frame:
-        """Replay path: skip camera and MediaPipe."""
-        return self._finish(obs, t, t, motion, None, time.perf_counter())
-
-    def _choose_closest(self, candidates: list[Observation]) -> Observation | None:
-        scales = [hand_scale(to_metric(c.landmarks, self.aspect)) for c in candidates]
-        return self.lock.choose(candidates, scales)[0]
-
-    def process_observations(self, candidates: list[Observation], t: float, motion: float = 0.0) -> Frame:
-        """Replay path with several hands: the lock picks one (control_hand=closest)."""
-        return self._finish(self._choose_closest(candidates), t, t, motion, None, time.perf_counter())
-
-    def _reset_hand(self) -> None:
+    def reset(self) -> None:
         self.pinch.reset()
         self.pattern.reset()
         self.pointer_filter.reset()
         self.scroll_filter.reset()
         for f in self.tip_filters.values():
             f.reset()
-        self._landmarks, self._last_screen, self._freeze_until = None, None, -1e9
+        self.landmarks, self._last_screen, self._freeze_until = None, None, -1e9
 
-    def _finish(self, obs: Observation | None, t: float, t_capture: float, motion: float,
-                res: LockResult | None, t_start: float) -> Frame:
-        if res is None:
-            scale = hand_scale(to_metric(obs.landmarks, self.aspect)) if obs is not None else 0.0
+    def step(self, obs: Observation | None, t: float, aspect: float, calibration: Calibration,
+             skipped: bool = False) -> tuple[Hand | None, str | None]:
+        """Advance this hand by one frame. Returns (Hand or None, trigger or None)."""
+        if skipped and not self.lock.locked:
+            res = LockResult(None)
+        else:
+            scale = hand_scale(to_metric(obs.landmarks, aspect)) if obs is not None else 0.0
             res = self.lock.update(obs, scale)
-        t_feat = time.perf_counter()
-        frame_id, self._frame_id = self._frame_id, self._frame_id + 1
 
         if res.obs is None:
-            lost = self._hand_present or res.event in ("lost", "swap")
+            lost = self.present or res.event in ("lost", "swap")
             if lost:
-                self._reset_hand()
-            self._hand_present = False
-            return self._publish(Frame(t=t, frame_id=frame_id, hand_present=False, motion=motion,
-                                       trigger="hand_lost" if lost else None, should_classify=lost,
-                                       t_capture=t_capture), t_start, t_feat)
+                self.reset()
+            self.present = False
+            return None, ("hand_lost" if lost else None)
 
         fc, pc = self.cfg.features, self.cfg.pointer
         obs, lm = res.obs, res.obs.landmarks
-        pts = to_metric(lm, self.aspect)
+        pts = to_metric(lm, aspect)
         scale = hand_scale(pts)
         flags = fingers_extended(pts, scale, fc.extend_angle_deg, fc.thumb_extend_ratio)
         if fc.pinch_fingers == "index_or_middle":
@@ -983,14 +1109,13 @@ class FingerPipeline:
         for name, idx in FINGERTIPS.items():
             raw_tip = (float(lm[idx, 0]), float(lm[idx, 1]))
             tip = self.tip_filters[name](raw_tip[0], raw_tip[1], t)
-            fingers[name] = Finger(name, flags[name], tip, raw_tip, self.calibration.apply(*tip),
-                                   float(lm[idx, 2]))
+            fingers[name] = Finger(name, flags[name], tip, raw_tip, calibration.apply(*tip), float(lm[idx, 2]))
 
         raw_ptr = pointer_anchor(lm, pc.anchor, pc.blend_tip_weight)
         ptr = self.pointer_filter(raw_ptr[0], raw_ptr[1], t)
         mid = 0.5 * (lm[INDEX_TIP, :2] + lm[MIDDLE_TIP, :2])
         self.scroll_filter(float(mid[0]), float(mid[1]), t)
-        screen = self.calibration.apply(*ptr)
+        screen = calibration.apply(*ptr)
         if edge is not None:  # freeze where the cursor was before the pinch pulled the index tip
             self._frozen_screen = self._last_screen or screen
             self._freeze_until = t + pc.pinch_freeze_ms / 1000.0
@@ -999,31 +1124,112 @@ class FingerPipeline:
         self._last_screen = screen
 
         pattern_changed = False if res.held else self.pattern.update(flags)
-        trigger = ("hand_appear" if res.event == "acquired" or not self._hand_present
+        trigger = ("hand_appear" if res.event == "acquired" or not self.present
                    else f"pinch_{edge}" if edge else "pattern" if pattern_changed else None)
-        self._hand_present, self._landmarks = True, lm
+        self.present, self.landmarks = True, lm
 
-        return self._publish(Frame(
-            t=t, frame_id=frame_id, hand_present=True, fingers=fingers,
-            handedness=obs.handedness,  # type: ignore[arg-type]
-            landmarks=tuple(map(tuple, lm.tolist())),
+        return Hand(
+            side=self.side,  # type: ignore[arg-type]
+            fingers=fingers, landmarks=tuple(map(tuple, lm.tolist())),
             pinch_dist=pdist, pinch_active=self.pinch.active, pinch_edge=edge,  # type: ignore[arg-type]
             pinch_finger=pfinger,  # type: ignore[arg-type]
             hand_scale=scale, tracking_score=obs.score,
             pointer_raw=raw_ptr, pointer=ptr, pointer_screen=screen,
             velocity=self.pointer_filter.velocity, scroll_velocity=self.scroll_filter.velocity,
-            source="hold" if res.held else "landmarker", motion=motion, trigger=trigger,
-            should_classify=trigger is not None or motion > self.cfg.gating.classify_motion,
-            t_capture=t_capture,
-        ), t_start, t_feat)
+            source="hold" if res.held else "landmarker", trigger=trigger,
+            finger_angles=finger_angles(pts),
+        ), trigger
 
-    def _publish(self, frame: Frame, t_start: float, t_feat: float) -> Frame:
+
+class FingerPipeline:
+    """Single-threaded per-frame processing: RawFrame (or recorded observations) -> Frame."""
+
+    def __init__(self, cfg: Config, tracker: HandTracker | None, calibration: Calibration,
+                 capture_size: tuple[int, int], live_clock: bool = False):
+        self.cfg = cfg
+        self.tracker = tracker
+        self.calibration = calibration
+        self.aspect = capture_size[0] / capture_size[1]
+        self.live_clock = live_clock
+        self.timer = StageTimer()
+        self.on_observation: Callable[[float, int, list[Observation]], None] | None = None
+        self.gate = MotionGate(cfg.gating)
+        self.channels = {side: HandChannel(side, cfg) for side in SIDES}
+        self._frame_id = 0
+        self._closest: str | None = None
+
+    def process(self, raw: RawFrame) -> Frame:
+        t_start = time.perf_counter()
+        g = self.cfg.gating
+        small = cv2.cvtColor(cv2.resize(raw.image, (g.small_width, g.small_height),
+                                        interpolation=cv2.INTER_LINEAR), cv2.COLOR_BGR2GRAY)
+        tracked = [c.landmarks for c in self.channels.values() if c.landmarks is not None]
+        roi = hand_roi(np.vstack(tracked)) if tracked else None
+        motion = self.gate.motion(small, roi)
+        self.timer.record("gate", (time.perf_counter() - t_start) * 1000)
+
+        any_locked = any(c.lock.locked for c in self.channels.values())
+        if self.tracker is None or not self.gate.should_run_landmarker(raw.t_capture, any_locked, motion):
+            return self._finish([], raw.t_capture, raw.t_capture, motion, t_start, skipped=True)
+
+        t_mp = time.perf_counter()
+        observations = as_observations(self.tracker.detect(raw.image, raw.t_capture))
+        self.timer.record("landmarker", (time.perf_counter() - t_mp) * 1000)
+        if self.on_observation is not None:
+            self.on_observation(raw.t_capture, self._frame_id, observations)
+        return self._finish(observations, raw.t_capture, raw.t_capture, motion, t_start)
+
+    def process_observation(self, obs: Observation | list[Observation] | None, t: float,
+                            motion: float = 0.0) -> Frame:
+        """Replay path: skip camera and MediaPipe. Takes one hand, a list, or None."""
+        return self._finish(as_observations(obs), t, t, motion, time.perf_counter())
+
+    def _pick_primary(self, hands: dict[str, Hand]) -> str:
+        """The side that drives the cursor and gestures this frame."""
+        want = self.cfg.hands.primary
+        if want != "closest":
+            if want not in hands and self.cfg.hands.primary_fallback and hands:
+                return next(iter(hands))
+            return want
+        if not hands:
+            return self._closest or "left"
+        biggest = max(hands, key=lambda s: hands[s].hand_scale)
+        cur = self._closest
+        # sticky: switch only when the current hand is gone or clearly smaller (stops flicker between similar hands)
+        if cur not in hands or hands[cur].hand_scale < 0.85 * hands[biggest].hand_scale:
+            self._closest = biggest
+        return self._closest
+
+    def _finish(self, observations: list[Observation], t: float, t_capture: float, motion: float,
+                t_start: float, skipped: bool = False) -> Frame:
+        t_feat = time.perf_counter()
+        frame_id, self._frame_id = self._frame_id, self._frame_id + 1
+        if self.cfg.hands.max_hands == 1:
+            observations = observations[:1]
+        assigned = assign_hands(observations, {s: c.lock for s, c in self.channels.items()})
+
+        hands: dict[str, Hand] = {}
+        triggers: dict[str, str] = {}
+        for side, channel in self.channels.items():
+            hand, trigger = channel.step(assigned[side], t, self.aspect, self.calibration, skipped)
+            if hand is not None:
+                hands[side] = hand
+            if trigger is not None:
+                triggers[side] = trigger
+
+        primary = self._pick_primary(hands)
+        frame = Frame(
+            t=t, frame_id=frame_id, hands=hands, primary_side=primary,  # type: ignore[arg-type]
+            triggers=triggers, motion=motion,
+            should_classify=bool(triggers) or (bool(hands) and motion > self.cfg.gating.classify_motion),
+            t_capture=t_capture,
+        )
         now = time.perf_counter()
         self.timer.record("features", (now - t_feat) * 1000)
         self.timer.record("total", (now - t_start) * 1000)
         t_pub = time.monotonic()
         if self.live_clock:
-            self.timer.record("capture_to_publish", (t_pub - frame.t_capture) * 1000)
+            self.timer.record("capture_to_publish", (t_pub - t_capture) * 1000)
         object.__setattr__(frame, "t_publish", t_pub)
         return frame
 
@@ -1076,16 +1282,15 @@ class FingerProcessor:
         cal = Calibration.load(self.calibration_path)
         if cal is None or not cal.matches(self.screen, self.source.size, self.source.camera_index):
             cal = Calibration.default(self.cfg.calibration.default_region, self.screen, self.source.size)
-        self.pipeline = FingerPipeline(self.cfg, tracker or MediaPipeTracker(self.cfg.tracker), cal,
+        self.pipeline = FingerPipeline(self.cfg, tracker or MediaPipeTracker(self.cfg.tracker, self.cfg.hands.max_hands), cal,
                                        self.source.size, live_clock=getattr(self.source, "live", False))
         self._writer = None
         if record:
             self._writer = JsonlWriter(record)
-            self.pipeline.on_observation = lambda t, fid, o: self._writer.write({
+            self.pipeline.on_observation = lambda t, fid, obs: self._writer.write({
                 "t": t, "frame_id": fid,
-                "landmarks": o.landmarks.tolist() if o else None,
-                "handedness": o.handedness if o else None,
-                "score": o.score if o else 0.0})
+                "hands": [{"landmarks": o.landmarks.tolist(), "handedness": o.handedness, "score": o.score}
+                          for o in obs]})
 
         self._cond = threading.Condition()
         self._latest: Frame | None = None
@@ -1191,8 +1396,10 @@ def finger_stream(config: Config | str | Path | None = None, *, video: str | Non
     """Continuous loop of Frames, one per processed camera frame.
 
         for frame in finger_stream():
-            for finger in frame.fingers.values():
-                print(finger.name, finger.state, finger.tip)
+            for side, hand in frame.hands.items():          # both hands
+                for finger in hand.fingers.values():
+                    print(side, finger.name, finger.state, finger.tip)
+            frame.fingers                                     # primary (left) hand only
 
     Stops when the source ends; breaking out of the loop releases the camera.
     """
@@ -1210,14 +1417,20 @@ def finger_stream(config: Config | str | Path | None = None, *, video: str | Non
             yield frame
 
 
-def read_observations(path: str | Path) -> Iterator[tuple[float, Observation | None]]:
+def read_observations(path: str | Path) -> Iterator[tuple[float, list[Observation]]]:
+    """Yield (t, hands) from a recording. Reads both the two-hand format
+    ({"hands": [...]}) and the older one-hand format ({"landmarks": ...})."""
+    def obs(d: dict) -> Observation:
+        return Observation(np.array(d["landmarks"], dtype=np.float64), d["handedness"], d["score"])
+
     with open(path) as f:
         for line in f:
             if line.strip():
                 d = json.loads(line)
-                lm = d.get("landmarks")
-                yield d["t"], (Observation(np.array(lm, dtype=np.float64), d["handedness"], d["score"])
-                               if lm is not None else None)
+                if "hands" in d:
+                    yield d["t"], [obs(h) for h in d["hands"]]
+                else:
+                    yield d["t"], [obs(d)] if d.get("landmarks") is not None else []
 
 
 def replay(path: str | Path, config: Config | None = None, capture_size=(640, 480),
@@ -1226,4 +1439,4 @@ def replay(path: str | Path, config: Config | None = None, capture_size=(640, 48
     cfg = config or load_config()
     cal = Calibration.default(cfg.calibration.default_region, screen, capture_size)
     pipeline = FingerPipeline(cfg, None, cal, capture_size)
-    return [pipeline.process_observation(obs, t) for t, obs in read_observations(path)]
+    return [pipeline.process_observation(hands, t) for t, hands in read_observations(path)]

@@ -18,6 +18,7 @@ public struct PanelState: Equatable, Sendable {
     public var tool: String?
     public var evidence: [EvidenceCard] = []
     public var decisions: [DrexDecision] = []   // newest last, at most 3
+    public var gesture: HandStatus?               // what Hands mode is doing, from .reach/logs/hands.jsonl (EXPERIMENTAL)
     public var pointer: (x: Double, y: Double, label: String?)? {
         get { pointerStore.map { ($0.x, $0.y, $0.label) } }
         set { pointerStore = newValue.map { PointerSpot(x: $0.x, y: $0.y, label: $0.label) } }
@@ -51,6 +52,11 @@ public struct PanelState: Equatable, Sendable {
         tool = nil
         evidence = []
         pointer = nil
+    }
+
+    /// Newest Hands mode status tailed from `.reach/logs/hands.jsonl`; independent of the current task.
+    public mutating func gestureDecided(_ g: HandStatus) {
+        gesture = g
     }
 
     /// Something only the user can fix (no server, no token, a missing permission).
@@ -142,7 +148,7 @@ public struct PanelState: Equatable, Sendable {
     public static func == (a: PanelState, b: PanelState) -> Bool {
         a.phase == b.phase && a.connected == b.connected && a.taskID == b.taskID && a.answer == b.answer
             && a.note == b.note && a.receipt == b.receipt && a.verdict == b.verdict && a.tool == b.tool && a.evidence == b.evidence && a.decisions == b.decisions
-            && a.pointerStore == b.pointerStore && a.handSelection == b.handSelection
+            && a.pointerStore == b.pointerStore && a.handSelection == b.handSelection && a.gesture == b.gesture
     }
 }
 

@@ -23,6 +23,7 @@ from finger_processing.processing import (
     CalibrationRoutine,
     FingerProcessor,
     Frame,
+    Hand,
     finger_stream,
     inset_targets,
 )
@@ -38,37 +39,56 @@ TIP_COLORS = {  # BGR
 }
 
 
+def _dim(color: tuple[int, int, int], k: float = 0.45) -> tuple[int, int, int]:
+    return tuple(int(c * k) for c in color)  # type: ignore[return-value]
+
+
+def draw_hand(img: np.ndarray, hand: Hand, primary: bool) -> None:
+    """Skeleton plus color-coded fingertips (filled = extended, ring = curled).
+    The primary hand is drawn in full color, the other one dimmed."""
+    h, w = img.shape[:2]
+    pts = [(int(x * w), int(y * h)) for x, y, _ in hand.landmarks]
+    for a, b in CONNECTIONS:
+        cv2.line(img, pts[a], pts[b], (200, 200, 200) if primary else (110, 110, 110), 1, cv2.LINE_AA)
+    tips = set(FINGERTIPS.values())
+    for i, p in enumerate(pts):
+        if i not in tips:
+            cv2.circle(img, p, 2, (0, 200, 255) if primary else (90, 90, 90), -1)
+    for name, finger in hand.fingers.items():
+        p = (int(finger.tip[0] * w), int(finger.tip[1] * h))
+        color = TIP_COLORS[name] if primary else _dim(TIP_COLORS[name])
+        cv2.circle(img, p, 9 if primary else 7, color, -1 if finger.extended else 2, cv2.LINE_AA)
+        cv2.circle(img, p, 10 if primary else 8, (0, 0, 0), 1, cv2.LINE_AA)
+    if primary and hand.pointer_raw:
+        cv2.circle(img, (int(hand.pointer_raw[0] * w), int(hand.pointer_raw[1] * h)), 5, (0, 0, 255), 1)
+    label = ("L" if hand.side == "left" else "R") + ("*" if primary else "")
+    wx, wy = pts[0]
+    for color, thick in (((0, 0, 0), 4), ((255, 255, 255) if primary else (160, 160, 160), 2)):
+        cv2.putText(img, label, (wx - 10, wy + 26), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, thick, cv2.LINE_AA)
+
+
 def draw_hud(raw_img: np.ndarray, frame: Frame | None, fp: FingerProcessor) -> np.ndarray:
     img = cv2.flip(raw_img, 1)  # display only; the pipeline never flips pixels
     h, w = img.shape[:2]
     scr = fp.screen
-    lines = [f"cam {getattr(fp.source, 'measured_fps', 0):.0f} fps"]
-    if frame is not None and frame.hand_present:
-        pts = [(int(x * w), int(y * h)) for x, y, _ in frame.landmarks]
-        for a, b in CONNECTIONS:
-            cv2.line(img, pts[a], pts[b], (200, 200, 200), 1, cv2.LINE_AA)
-        tips = set(FINGERTIPS.values())
-        for i, p in enumerate(pts):
-            if i not in tips:
-                cv2.circle(img, p, 2, (0, 200, 255), -1)
-        # Fingertips: color per finger; filled = extended, ring = curled.
-        for name, finger in frame.fingers.items():
-            p = (int(finger.tip[0] * w), int(finger.tip[1] * h))
-            cv2.circle(img, p, 9, TIP_COLORS[name], -1 if finger.extended else 2, cv2.LINE_AA)
-            cv2.circle(img, p, 10, (0, 0, 0), 1, cv2.LINE_AA)
-        if frame.pointer_raw:
-            cv2.circle(img, (int(frame.pointer_raw[0] * w), int(frame.pointer_raw[1] * h)), 5, (0, 0, 255), 1)
-        flags = "".join(f[0].upper() if frame.fingers[f].extended else "." for f in FINGERS)
-        lines += [
-            f"{frame.handedness} [{frame.source}] score {frame.tracking_score:.2f}",
-            f"fingers {flags}  pinch {frame.pinch_dist:.2f} {'DOWN' if frame.pinch_active else ''}",
-            f"vel {frame.velocity[0]:+.2f},{frame.velocity[1]:+.2f}  cursor {frame.pointer_screen}",
-        ]
-    else:
-        lines.append("no hand")
+    lines = [f"cam {getattr(fp.source, 'measured_fps', 0):.0f} fps   * = primary (cursor/gestures)"]
     if frame is not None:
+        for side in ("left", "right"):
+            hand = frame.hands.get(side)
+            primary = side == frame.primary_side
+            tag = f"{side}{'*' if primary else ' '}"
+            if hand is None:
+                lines.append(f"{tag:<6} -")
+                continue
+            draw_hand(img, hand, primary)
+            flags = "".join(f[0].upper() if hand.fingers[f].extended else "." for f in FINGERS)
+            line = f"{tag:<6} {flags} pinch {hand.pinch_dist:.2f}{' DOWN' if hand.pinch_active else ''} [{hand.source}]"
+            if primary:
+                line += f" cursor {hand.pointer_screen}"
+            lines.append(line)
+        trig = ", ".join(f"{s}:{t}" for s, t in frame.triggers.items())
         lines.append(f"motion {frame.motion:.3f}  classify {'Y' if frame.should_classify else '-'}"
-                     + (f"  trig {frame.trigger}" if frame.trigger else ""))
+                     + (f"  trig {trig}" if trig else ""))
     for stage, (p50, p95) in sorted(fp.pipeline.timer.summary().items()):
         lines.append(f"{stage:<18} p50 {p50:5.1f}  p95 {p95:5.1f} ms")
     if fp.calibration.is_default:
@@ -128,14 +148,16 @@ def run_calibration(fp: FingerProcessor) -> None:
 
 
 def print_fingers(args) -> None:
-    """Example downstream consumer: the continuous finger loop."""
+    """Example downstream consumer: the continuous finger loop, both hands."""
     for frame in finger_stream(args.config, video=args.video, record=args.record):
-        if not frame.hand_present:
-            print(f"{frame.frame_id:6d}  no hand", flush=True)
+        if not frame.hands:
+            print(f"{frame.frame_id:6d}  no hands", flush=True)
             continue
-        parts = [f"{f.name}:{'EXT' if f.extended else 'cur'}({f.tip[0]:.3f},{f.tip[1]:.3f})"
-                 for f in frame.fingers.values()]
-        print(f"{frame.frame_id:6d}  " + "  ".join(parts), flush=True)
+        for side, hand in frame.hands.items():
+            star = "*" if side == frame.primary_side else " "
+            parts = [f"{f.name}:{'EXT' if f.extended else 'cur'}({f.tip[0]:.3f},{f.tip[1]:.3f})"
+                     for f in hand.fingers.values()]
+            print(f"{frame.frame_id:6d} {side:<5}{star} " + "  ".join(parts), flush=True)
 
 
 def main() -> None:
@@ -162,9 +184,13 @@ def main() -> None:
             while time.monotonic() < end and not fp.finished.is_set():
                 time.sleep(1.0)
                 f = fp.latest()
-                state = (" ".join(f"{n[0].upper()}{'+' if g.extended else '-'}" for n, g in f.fingers.items())
-                         if f and f.hand_present else "no hand")
-                print(f"cam {getattr(fp.source, 'measured_fps', 0):.1f} fps | {state}")
+                parts = []
+                for side in ("left", "right"):
+                    hand = f.hands.get(side) if f else None
+                    flags = ("".join(n[0].upper() if g.extended else "." for n, g in hand.fingers.items())
+                             if hand else "-----")
+                    parts.append(f"{side} {flags}")
+                print(f"cam {getattr(fp.source, 'measured_fps', 0):.1f} fps | " + " | ".join(parts))
             print("\nstage                p50 ms   p95 ms")
             for stage, (p50, p95) in sorted(fp.pipeline.timer.summary().items()):
                 print(f"{stage:<20} {p50:6.2f}  {p95:7.2f}")

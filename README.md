@@ -54,7 +54,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | experimental | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
 | Hand pointer and pinch-to-select with MediaPipe | experimental | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
-| Teammate's finger tracking and cursor demo (`finger_processing/`, `cursor_demo/`) | experimental | own tests; not an agent tool |
+| Hands mode: hand tracking (`finger_processing/`) driving the cursor (`hands_mode/`): point to move, pinch thumb to index to click or drag, curl the index to click, two fingers to scroll, pinch thumb to middle and draw a loop to select for the overlay | experimental | own tests; not an agent tool |
 | Silent speech: lip reading into the 12-command router (research-only weights, not shipped) | experimental | model runs (0.4 s per 1.5 s clip); no accuracy measured, no live mouthed run |
 | Control of other apps by mouse or keyboard events | planned (not done on purpose) | Reach uses scripting interfaces, files and the Accessibility API only |
 | Gaze, Adobe and Keenable | planned | |
@@ -96,7 +96,7 @@ Permissions: Screen Recording, Microphone and Speech Recognition are required; A
 ## Safety
 
 - The local server listens on 127.0.0.1 only and needs a token file readable by you alone.
-- Reach's agent tools send no synthetic keystrokes or mouse events. Native writes use an allowlist and are verified by reading back. Do mode acts only through the Accessibility API's semantic actions (press, set value); it shows a pointer a second before acting, refuses password fields and purchase or delete buttons, stops when you touch the mouse or keyboard, and is off unless `REACH_DO_MODE=1`. The separate, opt-in `cursor_demo/` moves the pointer to follow your fingertip and is not an Intern tool. **Hands mode** (`hands_mode/`, `reach hands on`, or the menu item 'Hands mode') is the one opt-in module that does send real mouse events (move, click, drag, scroll) from your hand; it is not an Intern tool, is off by default, is a dry run unless started with `--control`, and releases the mouse button whenever tracking is lost, the camera stalls, you touch the real mouse or trackpad, or after 20 s.
+- Reach's agent tools send no synthetic keystrokes or mouse events. Native writes use an allowlist and are verified by reading back. Do mode acts only through the Accessibility API's semantic actions (press, set value); it shows a pointer a second before acting, refuses password fields and purchase or delete buttons, stops when you touch the mouse or keyboard, and is off unless `REACH_DO_MODE=1`. **Hands mode** (`hands_mode/`, `reach hands on`, or the menu item 'Hands mode') is the one opt-in module that does send real mouse events (move, click, drag, scroll) from your hand, and relays a pinch-drawn selection to the overlay; it is not an Intern tool, is off by default, is a dry run unless started with `--control`, and releases the mouse button whenever tracking is lost, the camera stalls, you touch the real mouse or trackpad, or after 20 s.
 - Intern's shell, write and edit tools are removed. A policy hook refuses calls that touch key files or dump the environment (`backend/reach/guard_policy.py`).
 - Documents, web pages and selected text are data, not instructions.
 - Drex judges risky requests ("delete my files") and Reach asks for confirmation first.
@@ -112,6 +112,6 @@ Permissions: Screen Recording, Microphone and Speech Recognition are required; A
 
 ## Repository
 
-`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/` MediaPipe pinch worker and silent-speech spike · `finger_processing/`, `cursor_demo/` teammate's hand tracking and cursor demo · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and test sets · `docs/evidence/` real logs, receipts, benchmarks · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences · `docs/AGENT_BOARD.md` how we worked in parallel.
+`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/silent/` silent-speech spike · `finger_processing/` hand tracking · `hands_mode/` Hands mode (cursor, clicks, scroll, pinch selection) · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and test sets · `docs/evidence/` real logs, receipts, benchmarks · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences · `docs/AGENT_BOARD.md` how we worked in parallel.
 
 MIT licensed. Third-party components and their terms are in `THIRD_PARTY.md`.

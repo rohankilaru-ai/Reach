@@ -1,100 +1,17 @@
-"""Hands mode actions: Frames -> cursor move, click, drag, double click, scroll, exit.
+"""Hands mode engine: Frames -> cursor move, click, drag, double click, select, scroll, exit.
 
-The engine is pure (injected clock and mouse) so it is unit tested without a camera or real
-events. Real mouse events are posted only by MacActionMouse, which run.py uses only with --control.
-
-Safety: the button is released on tracking loss, stalled frames, mode exit, takeover (you touched
-the real mouse/trackpad), errors and signals, and never held for more than max_hold_s.
+Pure (injected mouse, clock and selector), so it is unit tested without a camera or real events.
+Safety: the button is released (and a selection cancelled) on hand loss, stalled frames, the hand
+dropping out or reaching the frame edge, takeover (you touched the real mouse), mode exit, and after
+max_hold_s.
 """
 
 from __future__ import annotations
 
-import ctypes
 import math
 import time
+from collections import deque
 from dataclasses import dataclass
-
-from cursor_demo.run import MacMouse, _Point
-
-# --------------------------------------------------------------------------- mouse backends
-
-
-class MacActionMouse(MacMouse):
-    """MacMouse plus button and scroll events (CoreGraphics via ctypes)."""
-
-    LEFT_DOWN, LEFT_UP, LEFT_DRAGGED = 1, 2, 6
-    CLICK_STATE_FIELD = 1          # kCGMouseEventClickState
-    SCROLL_UNIT_LINE = 1           # kCGScrollEventUnitLine
-
-    def __init__(self):
-        super().__init__()
-        cg = self._cg
-        cg.CGEventSetIntegerValueField.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_int64]
-        # CGEventCreateScrollWheelEvent is variadic, which ctypes gets wrong on arm64; the "2" variant is not.
-        cg.CGEventCreateScrollWheelEvent2.restype = ctypes.c_void_p
-        cg.CGEventCreateScrollWheelEvent2.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
-                                                      ctypes.c_int32, ctypes.c_int32, ctypes.c_int32]
-        self.can_click = self.trusted  # without Accessibility, CGEventPost of button events is dropped
-
-    def _post_button(self, kind: int, x: float, y: float, clicks: int = 1) -> None:
-        e = self._cg.CGEventCreateMouseEvent(None, kind, _Point(x, y), 0)
-        self._cg.CGEventSetIntegerValueField(e, self.CLICK_STATE_FIELD, clicks)
-        self._cg.CGEventPost(self.HID_EVENT_TAP, e)
-        self._cf.CFRelease(e)
-
-    def down(self, x: float, y: float, clicks: int = 1) -> None:
-        self._post_button(self.LEFT_DOWN, x, y, clicks)
-
-    def up(self, x: float, y: float, clicks: int = 1) -> None:
-        self._post_button(self.LEFT_UP, x, y, clicks)
-
-    def drag(self, x: float, y: float) -> None:
-        self._post_button(self.LEFT_DRAGGED, x, y)
-
-    def scroll(self, lines: int) -> None:
-        e = self._cg.CGEventCreateScrollWheelEvent2(None, self.SCROLL_UNIT_LINE, 1, int(lines), 0, 0)
-        self._cg.CGEventPost(self.HID_EVENT_TAP, e)
-        self._cf.CFRelease(e)
-
-
-class PrintMouse:
-    """Dry run: records and prints the actions it would take; moves nothing."""
-
-    mode = "dry-run"
-    can_click = True
-
-    def __init__(self, echo: bool = True):
-        self.echo = echo
-        self.log: list[tuple] = []
-        self._pos = (0.0, 0.0)
-
-    def _rec(self, *a) -> None:
-        self.log.append(a)
-        if self.echo and a[0] != "move":
-            print("[dry-run]", " ".join(str(v) for v in a), flush=True)
-
-    def position(self) -> tuple[float, float]:
-        return self._pos
-
-    def move(self, x, y) -> None:
-        self._pos = (x, y)
-        self._rec("move", int(x), int(y))
-
-    def down(self, x, y, clicks=1) -> None:
-        self._rec("down", int(x), int(y), f"clicks={clicks}")
-
-    def up(self, x, y, clicks=1) -> None:
-        self._rec("up", int(x), int(y), f"clicks={clicks}")
-
-    def drag(self, x, y) -> None:
-        self._pos = (x, y)
-        self._rec("drag", int(x), int(y))
-
-    def scroll(self, lines) -> None:
-        self._rec("scroll", int(lines))
-
-
-# --------------------------------------------------------------------------- engine
 
 
 def is_pointing(frame) -> bool:
@@ -102,19 +19,25 @@ def is_pointing(frame) -> bool:
     return f["index"].extended and not (f["middle"].extended or f["ring"].extended or f["pinky"].extended)
 
 
+def is_index_curl(frame) -> bool:
+    """Index bent, the other three curled: the pose a tap from pointing passes through."""
+    f = frame.fingers
+    return not (f["index"].extended or f["middle"].extended or f["ring"].extended or f["pinky"].extended)
+
+
 def is_two_finger(frame) -> bool:
     f = frame.fingers
     return f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
+
+
+def is_open_palm(frame) -> bool:
+    return all(f.extended for f in frame.fingers.values())
 
 
 def near_edge(frame, margin: float) -> bool:
     """Thumb, index or middle tip within `margin` of the image border: half-visible, unsafe for clicks."""
     tips = (frame.fingers[n].tip for n in ("thumb", "index", "middle"))
     return any(not (margin <= x <= 1 - margin and margin <= y <= 1 - margin) for x, y in tips)
-
-
-def is_open_palm(frame) -> bool:
-    return all(f.extended for f in frame.fingers.values())
 
 
 @dataclass
@@ -136,14 +59,20 @@ class ActionCfg:
     drop_speed: float = 1.2             # downward pointer speed (normalized / s) ...
     drop_tip_y: float = 0.85            # ... with the index tip already this low = hand leaving the frame
     drop_lockout_s: float = 0.5         # after a drop, no new pinch for this long
+    curl_deg: float = 135.0             # curl click: index middle-joint angle below this (idle pointing sits ~145-150)
+    curl_max_s: float = 0.5             # ... reached within this long of leaving the pointing pose (a sag is not a tap)
+    pre_curl_s: float = 0.12            # ... clicks where the pointer was this long before the curl began
+    curl_pinch_guard: float = 0.30      # thumb this close to the index tip may be a pinch closing: wait one frame
 
 
 class HandsEngine:
-    def __init__(self, mouse, cfg: ActionCfg | None = None, clock=time.monotonic):
-        self.mouse, self.cfg, self.clock = mouse, cfg or ActionCfg(), clock
+    def __init__(self, mouse, cfg: ActionCfg | None = None, clock=time.monotonic, selector=None):
+        self.mouse, self.cfg, self.clock, self.selector = mouse, cfg or ActionCfg(), clock, selector
         self.active = True
         self.state = "waiting for hand"
         self.button_down = False
+        self.selecting = False
+        self.target: tuple[int, int] | None = None
         self._down_at: tuple[float, float] | None = None
         self._down_t = 0.0
         self._dragging = False
@@ -155,14 +84,19 @@ class HandsEngine:
         self._palm_since: float | None = None
         self._last_scroll_t = -1e9
         self._no_pinch_until = -1e9
-        self._pending: tuple[float, float] | None = None   # pinch seen for one frame; pressed on the second
-        self._ptr_at_down: tuple[float, float] = (0.0, 0.0)  # pointer when the button went down (drag = delta)
-        self.target: tuple[int, int] | None = None
+        self._pending: tuple[float, float, str] | None = None     # pinch seen for one frame: x, y, finger
+        self._trail: deque[tuple[float, float, float]] = deque(maxlen=30)   # t, x, y while pointing
+        self._curl_from: float | None = None                      # when the index left the pointing pose
+        self._curl_waited = False                                  # deferred one frame for a possible pinch
+        self._ptr_at_down: tuple[float, float] = (0.0, 0.0)          # pointer when the button went down (drag = delta)
 
     # -- safety ---------------------------------------------------------------
     def release(self, reason: str = "") -> None:
-        """Release a held button at once. Safe to call any time, any number of times."""
-        self._pending = None
+        """Release a held button and cancel a selection at once. Safe to call any time."""
+        self._pending, self._curl_from = None, None
+        if self.selecting:
+            self.selecting = False
+            self.selector.cancel()
         if self.button_down:
             x, y = self._dragging and self.target or self._down_at or self.mouse.position()
             try:
@@ -199,6 +133,35 @@ class HandsEngine:
         self._last_set = (float(x), float(y))
         self.target = (int(x), int(y))
 
+    def _may_press(self, now: float) -> bool:
+        """Lockouts shared by pinch and curl clicks; sets the state when a press is refused."""
+        if now < self._no_pinch_until:
+            self.state = "hand leaving · pinch ignored"
+        elif not self.mouse.can_click:
+            self.state = "click needs Accessibility permission"
+        else:
+            return now - self._last_down_t >= self.cfg.min_down_interval_s
+        return False
+
+    def _press(self, x: float, y: float, now: float) -> None:
+        lu, c = self._last_up, self.cfg
+        double = (lu is not None and now - lu[0] <= c.double_click_s
+                  and math.hypot(x - lu[1], y - lu[2]) <= c.double_click_px)
+        if double:
+            x, y = lu[1], lu[2]   # second click lands exactly on the first
+        self._clicks = 2 if double else 1
+        self.mouse.down(x, y, self._clicks)
+        self.button_down, self._dragging = True, False
+        self._down_at, self._down_t, self._last_down_t = (float(x), float(y)), now, now
+        self._last_set = (float(x), float(y))
+        self.state = "double click" if double else "pinch · click"
+
+    def _pre_curl_point(self) -> tuple[float, float]:
+        cutoff = self._curl_from - self.cfg.pre_curl_s
+        before = [p for p in self._trail if p[0] <= cutoff]
+        t, x, y = before[-1] if before else self._trail[0]
+        return x, y
+
     # -- per frame --------------------------------------------------------------
     def update(self, frame) -> str:
         if not self.active:
@@ -210,7 +173,7 @@ class HandsEngine:
         if now < self._paused_until:
             self.state = "paused · you moved the mouse"
             return self.state
-        if self.button_down and now - self._down_t > c.max_hold_s:
+        if (self.button_down or self.selecting) and now - self._down_t > c.max_hold_s:
             self.release("released · held too long")
             return self.state
         if not frame.hand_present or frame.pointer_screen is None:
@@ -242,32 +205,37 @@ class HandsEngine:
 
         sx, sy = frame.pointer_screen
         edge = frame.pinch_edge
+
+        # middle pinch held: draw the selection; the pointer moves freely
+        if self.selecting:
+            if edge == "up" or not frame.pinch_active:
+                self.selecting = False
+                self.selector.finish()
+                self.state = "selected"
+            else:
+                self._move(sx, sy)
+                self.selector.add(sx, sy)
+                self.state = "selecting"
+            return self.state
+
         if edge == "down" and not self.button_down and not at_edge:   # debounce: a pinch must last 2 frames
-            self._pending = (float(sx), float(sy))
+            self._pending = (float(sx), float(sy), frame.pinch_finger)
+            self._curl_from = None
             self.state = "pinch"
             return self.state
         pending, self._pending = self._pending, None
         if pending is not None and frame.pinch_active and not self.button_down and not at_edge:
-            ptr = pending
-            # press where the cursor is (where you aimed), not where the curling index dragged the pointer
-            sx, sy = self._last_set or pending
-            if now < self._no_pinch_until:
-                self.state = "hand leaving · pinch ignored"
-            elif not self.mouse.can_click:
-                self.state = "click needs Accessibility permission"
-            elif now - self._last_down_t >= c.min_down_interval_s:
-                lu = self._last_up
-                double = (lu is not None and now - lu[0] <= c.double_click_s
-                          and math.hypot(sx - lu[1], sy - lu[2]) <= c.double_click_px)
-                if double:
-                    sx, sy = lu[1], lu[2]   # second click lands exactly on the first
-                self._clicks = 2 if double else 1
-                self.mouse.down(sx, sy, self._clicks)
-                self.button_down, self._dragging = True, False
-                self._down_at, self._down_t, self._last_down_t = (float(sx), float(sy)), now, now
-                self._ptr_at_down = ptr
-                self._last_set = (float(sx), float(sy))
-                self.state = "double click" if double else "pinch · click"
+            px, py, finger = pending                  # act where the pinch began (pointer was frozen there)
+            if finger == "middle":
+                if self.selector is not None and now >= self._no_pinch_until:
+                    self.selecting, self._down_t = True, now
+                    self.selector.begin(px, py)
+                    self.state = "selecting"
+                return self.state
+            if self._may_press(now):
+                # press where the cursor is (where you aimed), not where the curling index dragged the pointer
+                self._press(*(self._last_set or (px, py)), now)
+                self._ptr_at_down = (px, py)
                 return self.state
         if self.button_down and (edge == "up" or not frame.pinch_active):
             self.release("click" if not self._dragging else "drag · released")
@@ -278,6 +246,8 @@ class HandsEngine:
                 self._dragging = True
                 self._move(self._down_at[0] + dx, self._down_at[1] + dy)
                 self.state = "dragging"
+            return self.state
+        if frame.pinch_active:   # a pinch that did not press (lockout, middle without selector): do nothing
             return self.state
 
         if is_two_finger(frame):
@@ -295,8 +265,31 @@ class HandsEngine:
             return self.state
 
         if is_pointing(frame):
+            self._curl_from, self._curl_waited = None, False
+            self._trail.append((now, float(sx), float(sy)))
             self._move(sx, sy)
             self.state = "point to move · pinch to click"
             return self.state
+
+        # curl click: from pointing, the index bends sharply and quickly (a tap), not a flicker or a slow sag
+        if is_index_curl(frame) and self._trail and now - self._trail[-1][0] <= c.curl_max_s:
+            self._curl_from = self._curl_from or self._trail[-1][0]
+            if now - self._curl_from > c.curl_max_s:
+                self._trail.clear()                   # a slow sag: point again to re-arm
+            elif frame.finger_angles.get("index", 180.0) < c.curl_deg:
+                if frame.pinch_dist < c.curl_pinch_guard and not self._curl_waited:
+                    self._curl_waited = True          # maybe a pinch about to register; the pinch path wins if so
+                    self.state = "curl"
+                    return self.state
+                self._curl_waited = False
+                x, y = self._pre_curl_point()
+                self._trail.clear()                   # one click per curl
+                if self._may_press(now):
+                    self._press(x, y, now)
+                    self.release("curl · click")
+                return self.state
+            self.state = "curl"
+            return self.state
+        self._trail.clear()
         self.state = "clutch · point to move"
         return self.state

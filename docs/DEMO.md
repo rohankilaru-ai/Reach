@@ -20,14 +20,14 @@ Do these once, then run every step below one time as a warm-up.
 5. Permissions granted (Reach's menu bar item > Set up Reach… lists them): Screen Recording, Microphone, Speech
    Recognition, Automation for TextEdit, Notes and Chrome. For the terminal app: Accessibility (Do mode gate) and
    Camera (hands).
-6. Hand model downloaded (see `perception/README.md`, Setup).
+6. Hand model present at `finger_processing/hand_landmarker.task`.
 7. Google Chrome open with one ordinary window.
 8. A window with something worth circling, for example a chart or a paragraph of a web page, left open behind Chrome.
 9. Terminal with three tabs, each with its command typed but not run:
    - Tab A, in `backend/`:
      `uv run reach ask "Go to books.toscrape.com, click the Travel category link in the sidebar, then report the title of the first book listed"`
    - Tab B, in `backend/`: `uv run --extra do python ../smoke/do_mode_gate.py`
-   - Tab C, in `perception/`: `uv run python -m reach_perception.worker`
+   - Tab C, at the repo root: `uv run python -m hands_mode.run --control` (middle pinch + loop to select)
 10. A text file open with every prompt below, one per line, to paste instead of typing (the limits leave no time
     for typing long prompts).
 11. Open in an editor, ready to show as fallbacks: `docs/evidence/receipt.json`, `docs/evidence/browser-run.json`,
@@ -162,10 +162,10 @@ step 9.
 - **Do:** Terminal tab C, press Return. A preview window opens. Raise one hand, move the index finger, then pinch.
 - **Say:** "Also experimental. A MediaPipe hand tracker moves a pointer with my fingertip, and a pinch starts a
   selection. In our evidence this has only passed synthetic tests, so this may not work on stage." Press `q` to quit.
-- **Fallback (camera or tracking fails):** quit, run `uv run python -m reach_perception.worker --selftest` in the same
+- **Fallback (camera or tracking fails):** quit, run `uv run pytest -q hands_mode/tests/test_select.py` in the same
   tab and say "These are the synthetic checks it passes; no real-hand run is in our evidence."
 - **If short on time:** skip this step entirely and say "pinch selection is experimental; it is on the last slide."
-- **Evidence:** README status table (passes synthetic landmark tests; no real-hand run yet); `perception/README.md`.
+- **Evidence:** README status table (passes synthetic landmark tests; no real-hand run yet); `hands_mode/select.py`.
 
 ### 11. The Drex log (3:35)
 

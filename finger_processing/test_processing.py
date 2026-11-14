@@ -14,6 +14,7 @@ from finger_processing.processing import (
     FingerPipeline,
     FingerProcessor,
     Frame,
+    Hand,
     GatingCfg,
     HandLock,
     HandLockCfg,
@@ -24,6 +25,7 @@ from finger_processing.processing import (
     PatternWatcher,
     PinchDetector,
     RawFrame,
+    assign_hands,
     finger_stream,
     fingers_extended,
     hand_roi,
@@ -72,7 +74,7 @@ def to_normalized(metric, aspect, wrist=(0.5, 0.8)) -> np.ndarray:
     return n
 
 
-def obs(extended=("index",), aspect=4 / 3, wrist=(0.5, 0.8), hand="right", **kw) -> Observation:
+def obs(extended=("index",), aspect=4 / 3, wrist=(0.5, 0.8), hand="left", **kw) -> Observation:
     return Observation(to_normalized(hand_metric(set(extended), **kw), aspect, wrist), hand, 0.95)
 
 
@@ -199,6 +201,7 @@ def test_pointer_anchor_modes():
 # ------------------------------------------------------------------ hand lock
 
 def lock(**kw):
+    kw.setdefault("control_hand", "left")
     return HandLock(HandLockCfg(**kw))
 
 
@@ -206,14 +209,14 @@ def test_lock_acquire_and_wrong_hand():
     h = lock(handedness_vote_min=3)
     assert [h.update(obs(), 0.2).obs is None for _ in range(3)] == [True, True, False]
     h2 = lock()
-    assert all(h2.update(obs(hand="left"), 0.2).obs is None for _ in range(20))
+    assert all(h2.update(obs(hand="right"), 0.2).obs is None for _ in range(20))
 
 
 def test_lock_noisy_label_and_flip_after_lock():
     h = lock(handedness_vote_min=3)
-    results = [h.update(obs(hand=s), 0.2) for s in ["right", "left", "right", "left", "right"]]
+    results = [h.update(obs(hand=s), 0.2) for s in ["left", "right", "left", "right", "left"]]
     assert results[-1].event == "acquired"
-    assert h.update(obs(hand="left"), 0.2).obs is not None
+    assert h.update(obs(hand="right"), 0.2).obs is not None
 
 
 def test_lock_hold_then_lose_and_recover():
@@ -298,16 +301,21 @@ def test_calibration_default_and_persistence(tmp_path):
     assert Calibration.load(tmp_path / "bad.json") is None and Calibration.load(tmp_path / "x") is None
 
 
+def frame_with_pointer(t, pointer, velocity=(0.0, 0.0)) -> Frame:
+    hand = Hand(side="left", fingers={}, landmarks=(), pointer=pointer, velocity=velocity)
+    return Frame(t=t, frame_id=0, hands={"left": hand})
+
+
 def test_calibration_routine():
     r = CalibrationRoutine(dwell_s=0.5, still_speed=0.05)
     t = 0.0
     for corner in CAM_PTS:
         for _ in range(5):
-            r.update(Frame(t=t, frame_id=0, hand_present=True, pointer=tuple(corner), velocity=(1.0, 0)))
+            r.update(frame_with_pointer(t, tuple(corner), velocity=(1.0, 0.0)))
             t += 1 / 30
         for _ in range(60):
             t += 1 / 30
-            if r.update(Frame(t=t, frame_id=0, hand_present=True, pointer=tuple(corner))):
+            if r.update(frame_with_pointer(t, tuple(corner))):
                 break
         t += 0.6
     assert r.done and np.allclose(r.points, CAM_PTS)
@@ -383,8 +391,11 @@ def test_dropout_hold_then_loss():
     assert frames[8].trigger is None
 
 
-def test_wrong_hand_ignored():
-    assert not any(f.hand_present for f in run(make([obs(hand="left")] * 10), 10))
+def test_right_hand_alone_is_streamed_but_not_primary():
+    frames = run(make([obs(hand="right")] * 10, hands__primary="left"), 10)
+    assert not any(f.hand_present for f in frames)  # primary (left) is absent
+    assert frames[-1].right is not None and frames[-1].left is None
+    assert frames[-1].hands["right"].fingers["index"].extended
 
 
 # ------------------------------------------------------------ public API loop
@@ -444,3 +455,110 @@ def test_processor_survives_and_reports_errors(tmp_path):
     with FingerProcessor(cfg, source=FakeSource(30), tracker=Boom([])) as fp:
         fp.finished.wait(5)
     assert fp.error is not None and "boom" in fp.error
+
+
+# ------------------------------------------------------------------ two hands
+
+L_WRIST, R_WRIST = (0.3, 0.8), (0.7, 0.8)
+
+
+def both(left_kw=None, right_kw=None, left_label="left", right_label="right"):
+    """One frame with both hands; the user's left hand sits on the left of the mirrored view."""
+    left_kw, right_kw = left_kw or {}, right_kw or {}
+    return [obs(wrist=L_WRIST, hand=left_label, **left_kw), obs(wrist=R_WRIST, hand=right_label, **right_kw)]
+
+
+def test_both_hands_streamed_and_left_is_primary():
+    script = [both(left_kw={"extended": ("index",)}, right_kw={"extended": ("index", "middle")})] * 6
+    f = run(make(script), 6)[-1]
+    assert set(f.hands) == {"left", "right"}
+    assert f.hands["left"].fingers_extended == {"thumb": False, "index": True, "middle": False,
+                                               "ring": False, "pinky": False}
+    assert f.hands["right"].fingers["middle"].extended
+    # Flat fields come from the primary (left) hand.
+    assert f.primary_side == "left" and f.hand_present and f.handedness == "left"
+    assert f.fingers is f.hands["left"].fingers
+    assert f.pointer_screen == f.hands["left"].pointer_screen
+    # Each hand's fingertips are where that hand is.
+    assert f.left.fingers["index"].tip[0] < 0.5 < f.right.fingers["index"].tip[0]
+
+
+def test_same_label_on_both_hands_resolved_by_position():
+    script = [both(left_label="right", right_label="right")] * 6
+    f = run(make(script), 6)[-1]
+    assert f.left.landmarks[0][0] == pytest.approx(L_WRIST[0])
+    assert f.right.landmarks[0][0] == pytest.approx(R_WRIST[0])
+
+
+def test_label_flip_does_not_swap_tracked_hands():
+    script = [both()] * 5 + [both(left_label="right", right_label="left")] * 3
+    frames = run(make(script), len(script))
+    for f in frames[5:]:
+        assert f.left.landmarks[0][0] == pytest.approx(L_WRIST[0])
+        assert f.right.landmarks[0][0] == pytest.approx(R_WRIST[0])
+        assert "hand_lost" not in f.triggers.values()
+
+
+def test_single_hand_mislabel_keeps_its_slot():
+    script = [[obs(hand="left")]] * 5 + [[obs(hand="right")]] * 2 + [[obs(hand="left")]] * 2
+    frames = run(make(script), len(script))
+    assert all(f.left is not None and f.right is None for f in frames[2:])
+
+
+def test_per_hand_triggers_and_primary_trigger():
+    script = [both()] * 4 + [both(right_kw={"pinch": True})] * 2
+    frames = run(make(script), len(script))
+    assert frames[2].triggers == {"left": "hand_appear", "right": "hand_appear"}
+    pinch = frames[4]
+    assert pinch.triggers == {"right": "pinch_down"} and pinch.right.pinch_active
+    assert pinch.trigger is None and not pinch.pinch_active  # primary (left) did nothing
+    assert pinch.should_classify
+
+
+def test_left_lost_while_right_stays():
+    script = [both()] * 4 + [[obs(wrist=R_WRIST, hand="right")]] * 6
+    frames = run(make(script, hands__primary="left"), len(script))
+    lost = next(f for f in frames if f.triggers.get("left") == "hand_lost")
+    assert lost.trigger == "hand_lost" and not lost.hand_present
+    assert lost.right is not None and frames[-1].right is not None
+
+
+def test_primary_fallback():
+    script = [[obs(hand="right")]] * 6
+    assert not run(make(script, hands__primary="left"), 6)[-1].hand_present
+    f = run(make(script, hands__primary="left", hands__primary_fallback=True), 6)[-1]
+    assert f.hand_present and f.primary_side == "right" and f.fingers["index"].extended
+
+
+def test_primary_can_be_right():
+    f = run(make([both()] * 6, hands__primary="right"), 6)[-1]
+    assert f.primary_side == "right" and f.pointer_screen == f.right.pointer_screen
+
+
+def test_max_hands_one():
+    frames = run(make([both()] * 6, hands__max_hands=1), 6)
+    assert all(len(f.hands) <= 1 for f in frames)
+
+
+def test_assign_hands_unit():
+    locks = {"left": lock(control_hand="left"), "right": lock(control_hand="right")}
+    a = assign_hands([obs(wrist=R_WRIST, hand="right"), obs(wrist=L_WRIST, hand="left")], locks)
+    assert a["left"].landmarks[0, 0] == pytest.approx(L_WRIST[0])
+    assert a["right"].landmarks[0, 0] == pytest.approx(R_WRIST[0])
+    assert assign_hands([], locks) == {"left": None, "right": None}
+
+
+def test_two_hand_record_and_replay(tmp_path):
+    cfg = Config()
+    cfg.calibration.path = str(tmp_path / "none.json")
+    script = [[obs(wrist=(0.3 + 0.005 * i, 0.8)), obs(wrist=R_WRIST, hand="right")] for i in range(10)] + [[]] * 5
+    seen: list[Frame] = []
+    fp = FingerProcessor(cfg, source=FakeSource(15), tracker=FakeTracker(script), record=tmp_path / "two.jsonl")
+    fp.subscribe(seen.append)
+    with fp:
+        fp.finished.wait(5)
+    replayed = replay(tmp_path / "two.jsonl", cfg, CAP, fp.screen)
+    assert [sorted(f.hands) for f in replayed] == [sorted(f.hands) for f in seen]
+    assert [f.right.pointer_screen if f.right else None for f in replayed] == \
+           [f.right.pointer_screen if f.right else None for f in seen]
+    assert any(set(f.hands) == {"left", "right"} for f in seen)

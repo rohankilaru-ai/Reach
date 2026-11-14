@@ -93,6 +93,38 @@ import Testing
     }
 }
 
+@Suite struct HandsFeedTests {
+    @Test func parsesStatusLines() {
+        #expect(HandStatus(jsonLine: Data(#"{"t":1.5,"state":"dragging"}"#.utf8))?.line == "hands: dragging")
+        #expect(HandStatus(jsonLine: Data(#"{"t":1.5}"#.utf8)) == nil)
+        #expect(HandStatus(jsonLine: Data("not json".utf8)) == nil)
+    }
+
+    @Test func tailReadsOnlyNewCompleteLines() throws {
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("hands-\(UUID().uuidString).jsonl")
+        defer { try? FileManager.default.removeItem(at: url) }
+        let line = { (s: String) in #"{"t":1,"state":"\#(s)"}"# + "\n" }
+        try Data(line("no hand").utf8).write(to: url)
+        let tail = HandsLogTail(url: url)                 // starts at the end: the old line is skipped
+        #expect(tail.poll().isEmpty)
+        let h = try FileHandle(forWritingTo: url)
+        try h.seekToEnd()
+        try h.write(contentsOf: Data(line("pinch").utf8))
+        let half = line("selecting")
+        try h.write(contentsOf: Data(half.prefix(12).utf8))   // a partial line is held back
+        #expect(tail.poll().map(\.state) == ["pinch"])
+        try h.write(contentsOf: Data(half.dropFirst(12).utf8))
+        try h.close()
+        #expect(tail.poll().map(\.state) == ["selecting"])
+    }
+
+    @Test func panelStateKeepsLatestStatus() {
+        var s = PanelState()
+        s.gestureDecided(HandStatus(state: "point to move · pinch to click"))
+        #expect(s.gesture?.state == "point to move · pinch to click" && s.phase == .idle)
+    }
+}
+
 @Suite struct HandSelectionTests {
     @Test func decodesRelayedSelectionAndHandPointer() throws {
         let m = try ServerMessage.decode(#"{"type":"selection","selection":{"text":"\n  First line\nsecond","region":[10,20,300,40],"image_path":"/r/.reach/captures/a.png","source":"pinch"}}"#)

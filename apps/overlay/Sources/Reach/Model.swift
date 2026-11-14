@@ -80,6 +80,8 @@ final class OverlayModel: ObservableObject {
     private lazy var launcher = BackendLauncher(files: files)
     private var reconnectFailures = 0
     private var pendingAsk: (String, Bool)?
+    private let gestureTail: HandsLogTail
+    private var gestureTimer: Timer?
     var onPhase: ((Phase) -> Void)?
     /// (x, y, label, byHand). Hand pointers arrive at ~15 Hz and fade after 1 s without one.
     var onPointer: ((Double, Double, String?, Bool) -> Void)?
@@ -99,6 +101,7 @@ final class OverlayModel: ObservableObject {
 
     init(files: RunFiles) {
         self.files = files
+        gestureTail = HandsLogTail(url: files.reachDir.appendingPathComponent("logs/hands.jsonl"))
         client.log = { log($0) }
         client.onMessage = { [weak self] msg in self?.handle(msg) }
         client.onClose = { [weak self] why in
@@ -107,6 +110,15 @@ final class OverlayModel: ObservableObject {
             self.mutate { $0.disconnected(why) }
             self.scheduleReconnect()
         }
+        // Stream what Hands mode is doing (hands_mode/run.py writes one line per change).
+        gestureTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.pollGestures() }
+        }
+    }
+
+    private func pollGestures() {
+        guard let g = gestureTail.poll().last else { return }
+        mutate { $0.gestureDecided(g) }
     }
 
     /// Connects once the server's run files exist; keeps trying every second up to `waitSeconds`.

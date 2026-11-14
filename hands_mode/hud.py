@@ -11,7 +11,7 @@ COLOURS = {"idle": (225, 225, 225), "move": (255, 190, 120), "pinch": (80, 190, 
 
 
 def dot_colour(state: str, pinch: bool) -> tuple[int, int, int]:
-    if pinch or state.startswith(("pinch", "drag", "double", "click")):
+    if pinch or state.startswith(("pinch", "drag", "double", "click", "curl", "select")):
         return COLOURS["pinch"]
     if state.startswith(("paused", "click needs")):
         return COLOURS["paused"]

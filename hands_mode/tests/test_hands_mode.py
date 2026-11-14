@@ -11,8 +11,6 @@ from finger_processing.processing import (
     Calibration,
     Config,
     FingerPipeline,
-    HandLock,
-    HandLockCfg,
     MediaPipeTracker,
     Observation,
     RawFrame,
@@ -22,7 +20,8 @@ from finger_processing.processing import (
 )
 from finger_processing.test_processing import hand_metric, obs, to_normalized
 from hands_mode import hud
-from hands_mode.actions import ActionCfg, HandsEngine, PrintMouse
+from hands_mode.actions import ActionCfg, HandsEngine
+from hands_mode.mouse import PrintMouse
 
 CAP, SCR, ASPECT = (640, 480), (1440, 900), 4 / 3
 BLANK = np.zeros((480, 640, 3), np.uint8)
@@ -30,7 +29,7 @@ BLANK = np.zeros((480, 640, 3), np.uint8)
 
 def pipeline(tracker=None, **overrides) -> FingerPipeline:
     cfg = Config()
-    cfg.hand_lock.control_hand = "closest"
+    cfg.hands.primary = "closest"
     cfg.features.pinch_fingers = "index_or_middle"
     for k, v in overrides.items():
         section, name = k.split("__")
@@ -54,7 +53,7 @@ class _FakeLandmarker:
 
 
 def _real_tracker_with_fake_model():
-    """Kevin's MediaPipeTracker with its real detect/detect_all (incl. the mirror flip); only the model is faked."""
+    """The real MediaPipeTracker.detect (incl. the mirror flip); only the model is faked."""
     t = object.__new__(MediaPipeTracker)
     t._landmarker = _FakeLandmarker()
     t._mp = types.SimpleNamespace(Image=lambda image_format, data: None,
@@ -71,13 +70,13 @@ def _raw_camera_hand(wrist_raw_x: float, wrist_y: float) -> np.ndarray:
     return raw
 
 
-@pytest.mark.parametrize("mode", ["single", "closest"])
-def test_direction_hand_right_moves_cursor_right_and_up_is_up(mode):
+@pytest.mark.parametrize("primary", ["right", "closest"])
+def test_direction_hand_right_moves_cursor_right_and_up_is_up(primary):
     """The user moves their hand to THEIR right: facing the camera, the raw sensor image shows it moving
-    LEFT (raw x falls). After Kevin's flip the cursor must move RIGHT. Raising the hand (raw y falls)
+    LEFT (raw x falls). After the mirror flip the cursor must move RIGHT. Raising the hand (raw y falls)
     must move the cursor UP (screen y falls)."""
     tracker = _real_tracker_with_fake_model()
-    p = pipeline(tracker, hand_lock__control_hand="closest" if mode == "closest" else "any")
+    p = pipeline(tracker, hands__primary=primary)
     xs, ys = [], []
     steps = [(0.65 - 0.02 * i, 0.85) for i in range(12)] + [(0.41, 0.85 - 0.02 * i) for i in range(12)]
     for i, (rx, ry) in enumerate(steps):
@@ -95,7 +94,7 @@ def test_hud_preview_is_mirrored_and_dot_matches():
     img = np.zeros((480, 640, 3), np.uint8)
     img[:, 500:520] = 255                      # a bright stripe on the raw image's right
     tracker = _real_tracker_with_fake_model()
-    p = pipeline(tracker, hand_lock__control_hand="any")
+    p = pipeline(tracker)
     tracker._landmarker.raw = _raw_camera_hand(0.8, 0.85)
     frames = [p.process(RawFrame(BLANK, i / 30, i)) for i in range(4)]
     out = hud.render(img, frames[-1], "point to move · pinch to click")
@@ -111,44 +110,31 @@ def test_hud_preview_is_mirrored_and_dot_matches():
 # ------------------------------------------------------------------ (2) closest hand
 
 
-def _scale(o):
-    return hand_scale(to_metric(o.landmarks, ASPECT))
-
-
 def test_closest_picks_largest_then_sticks_even_if_other_grows():
-    lock = HandLock(HandLockCfg(control_hand="closest", hold_frames=3))
-    small_l = obs(wrist=(0.25, 0.8), scale=0.8, hand="left")
-    big_r = obs(wrist=(0.75, 0.8), scale=1.0)
-    chosen, _ = lock.choose([small_l, big_r], [_scale(small_l), _scale(big_r)])
-    assert chosen is big_r
-    for _ in range(3):
-        lock.update(big_r, _scale(big_r))
-    assert lock.locked
-    grown_l = obs(wrist=(0.25, 0.8), scale=1.15, hand="left")   # the other hand is now bigger
-    chosen, _ = lock.choose([grown_l, big_r], [_scale(grown_l), _scale(big_r)])
-    assert chosen is big_r
-    chosen, _ = lock.choose([grown_l], [_scale(grown_l)])         # locked hand missing: a dropout, not a swap
-    assert chosen is None
+    p = pipeline(None, hands__hold_frames=3)
+    small_l, big_r = obs(wrist=(0.25, 0.8), scale=0.8), obs(wrist=(0.75, 0.8), scale=1.0, hand="right")
+    frames = [p.process_observation([small_l, big_r], i / 30) for i in range(4)]
+    assert frames[-1].primary_side == "right"
+    grown_l = obs(wrist=(0.25, 0.8), scale=1.15)                  # the other hand is now a bit bigger
+    frames = [p.process_observation([grown_l, big_r], (4 + i) / 30) for i in range(4)]
+    assert all(f.primary_side == "right" for f in frames)
 
 
-def test_closest_pipeline_never_flips_then_reacquires_after_loss():
-    p = pipeline(None, hand_lock__hold_frames=3)
-    a, b = obs(wrist=(0.7, 0.8), scale=1.0), obs(wrist=(0.3, 0.8), scale=0.9, hand="left")
-    frames = [p.process_observations([b, a], i / 30) for i in range(5)]
+def test_closest_reacquires_other_hand_after_loss():
+    p = pipeline(None, hands__hold_frames=3)
+    a, b = obs(wrist=(0.7, 0.8), scale=1.0, hand="right"), obs(wrist=(0.3, 0.8), scale=0.9)
+    frames = [p.process_observation([b, a], i / 30) for i in range(5)]
     assert frames[-1].hand_present and frames[-1].landmarks[0][0] == pytest.approx(0.7)
-    b_big = obs(wrist=(0.3, 0.8), scale=1.2, hand="left")
-    frames = [p.process_observations([b_big, a], (5 + i) / 30) for i in range(5)]
-    assert all(f.landmarks[0][0] == pytest.approx(0.7) for f in frames)
     # a leaves: held for hold_frames, then lost; only then does b take over
-    frames = [p.process_observations([b_big], (10 + i) / 30) for i in range(10)]
-    assert [f.hand_present for f in frames[:3]] == [True] * 3
-    assert any(f.trigger == "hand_lost" for f in frames)
-    assert frames[-1].hand_present and frames[-1].landmarks[0][0] == pytest.approx(0.3)
+    frames = [p.process_observation([b], (5 + i) / 30) for i in range(10)]
+    assert frames[0].primary_side == "right" and frames[0].hand_present
+    assert any(f.triggers.get("right") == "hand_lost" for f in frames)
+    assert frames[-1].primary_side == "left" and frames[-1].landmarks[0][0] == pytest.approx(0.3)
 
 
-def test_default_config_unchanged():
+def test_default_config():
     c = Config()
-    assert c.hand_lock.control_hand == "right" and c.tracker.num_hands == 1 and c.features.pinch_fingers == "index"
+    assert c.hands.primary == "closest" and c.features.pinch_fingers == "index"
 
 
 # ------------------------------------------------------------------ (3) pinch fingers
@@ -182,7 +168,7 @@ def test_middle_pinch_fires_edges_in_pipeline():
     open_hand = Observation(to_normalized(hand_metric({"index", "middle"}), ASPECT), "right", 0.9)
     pinched = Observation(to_normalized(_with_thumb_at(("index", "middle"), 12), ASPECT), "right", 0.9)
     seq = [open_hand] * 4 + [pinched] * 3 + [open_hand] * 3
-    frames = [p.process_observations([o], i / 30) for i, o in enumerate(seq)]
+    frames = [p.process_observation([o], i / 30) for i, o in enumerate(seq)]
     edges = [(f.pinch_edge, f.pinch_finger) for f in frames if f.pinch_edge]
     assert edges == [("down", "middle"), ("up", "index")]
 
@@ -199,24 +185,26 @@ class Clock:
 
 
 def F(present=True, pose=("index",), pinch=False, edge=None, at=(500, 400), vy=0.0, v=(0.0, 0.0),
-      landmarks=((0.5, 0.6, 0.0), (0.5, 0.4, 0.0)), tip=(0.5, 0.5)):
+      landmarks=((0.5, 0.6, 0.0), (0.5, 0.4, 0.0)), finger="index", index_deg=170.0, pinch_dist=1.0,
+      tip=(0.5, 0.5)):
     fingers = {n: types.SimpleNamespace(extended=n in pose, tip=tip)
                for n in ("thumb", "index", "middle", "ring", "pinky")}
     return types.SimpleNamespace(hand_present=present, fingers=fingers if present else {},
                                  pointer_screen=at if present else None, pinch_active=pinch,
-                                 pinch_edge=edge, scroll_velocity=(0.0, vy), velocity=v, landmarks=landmarks)
+                                 pinch_edge=edge, pinch_finger=finger, finger_angles={"index": index_deg}, pinch_dist=pinch_dist,
+                                 scroll_velocity=(0.0, vy), velocity=v, landmarks=landmarks)
 
 
 def pinch_down(e, c, **kw):
-    """A pinch must last two frames (debounce) before the button goes down."""
+    """A pinch must last two frames (debounce) before it acts."""
     e.update(F(pinch=True, edge="down", **kw))
     c.t += 0.016
     e.update(F(pinch=True, **kw))
 
 
-def engine(**kw):
+def engine(selector=None, **kw):
     clock, mouse = Clock(), PrintMouse(echo=False)
-    return HandsEngine(mouse, ActionCfg(**kw), clock), mouse, clock
+    return HandsEngine(mouse, ActionCfg(**kw), clock, selector=selector), mouse, clock
 
 
 def kinds(mouse):
@@ -346,15 +334,15 @@ def test_flicker_of_one_frame_does_not_release_drag_but_longer_loss_does():
     cfg = hands_config()
     p = FingerPipeline(cfg, None, Calibration.default(cfg.calibration.default_region, SCR, CAP), CAP)
     e, m, c = engine()
-    pinched = Observation(to_normalized(_with_thumb_at(("index", "middle"), 12), ASPECT), "right", 0.9)
+    pinched = Observation(to_normalized(_with_thumb_at(("index",), 8), ASPECT), "right", 0.9)
     seq = [[pinched]] * 4 + [[]] + [[pinched]] * 2        # 1-frame flicker mid-pinch
     for i, cands in enumerate(seq):
         c.t = 100 + i / 30
-        e.update(p.process_observations(cands, c.t))
+        e.update(p.process_observation(cands, c.t))
     assert e.button_down, "a one-frame flicker must not release"
     for i in range(3):                                     # hand gone for 3 frames
         c.t += 1 / 30
-        e.update(p.process_observations([], c.t))
+        e.update(p.process_observation([], c.t))
     assert not e.button_down and kinds(m)[-1] == "up"
 
 
@@ -436,3 +424,142 @@ def test_still_hand_dead_zone():
     for x in (500, 501, 500, 501, 520):
         e.update(F(at=(x, 400)))
     assert [a[1] for a in m.log if a[0] == "move"] == [500, 520]
+
+
+# ------------------------------------------------------------------ curl click
+
+
+def point_then(e, c, curl_degs, xs=range(400, 500, 10)):
+    """Point for a while (cursor moving right), then curl the index through the given angles."""
+    for x in xs:
+        e.update(F(at=(x, 400)))
+        c.t += 1 / 30
+    for deg in curl_degs:
+        e.update(F(pose=(), index_deg=deg, at=(600, 450)))
+        c.t += 1 / 30
+
+
+def test_curl_click_fires_once_where_the_pointer_was_before_the_curl():
+    e, m, c = engine()
+    point_then(e, c, [120, 110, 100, 100])
+    clicks = [a for a in m.log if a[0] in ("down", "up")]
+    assert clicks == [("down", 450, 400, "clicks=1"), ("up", 450, 400, "clicks=1")]
+    assert not e.button_down
+
+
+def test_pinch_closing_is_not_read_as_a_curl_click():
+    """The index bends as the thumb closes on it: wait a frame so the pinch, not a curl, decides."""
+    e, m, c = engine()
+    for x in range(400, 500, 10):
+        e.update(F(at=(x, 400)))
+        c.t += 1 / 30
+    e.update(F(pose=(), index_deg=120, pinch_dist=0.2, at=(490, 400)))
+    c.t += 1 / 30
+    pinch_down(e, c, pose=(), index_deg=120, pinch_dist=0.1, at=(490, 400))
+    assert [a[0] for a in m.log if a[0] in ("down", "up")] == ["down"]   # one press: the pinch, still held
+    assert e.button_down
+
+
+def test_idle_pointing_flicker_does_not_click():
+    e, m, c = engine()
+    for _ in range(3):
+        point_then(e, c, [145, 140], xs=[500] * 5)
+    point_then(e, c, [150], xs=[500] * 5)
+    assert kinds(m) == []
+
+
+def test_slow_sag_does_not_click():
+    e, m, c = engine()
+    point_then(e, c, [148 - 0.5 * i for i in range(60)])
+    assert kinds(m) == []
+
+
+def test_curl_click_respects_cooldown_and_permission():
+    e, m, c = engine(min_down_interval_s=5.0)
+    point_then(e, c, [120])
+    point_then(e, c, [120])
+    assert kinds(m) == ["down", "up"]
+    e2, m2, c2 = engine()
+    m2.can_click = False
+    point_then(e2, c2, [120])
+    assert kinds(m2) == []
+
+
+def test_curl_after_drop_lockout_does_not_click():
+    e, m, c = engine()
+    e.update(F(v=(0.0, 2.0), tip=(0.5, 0.9)))              # hand dropping out of the bottom
+    c.t += 0.05
+    point_then(e, c, [120], xs=[500])
+    assert kinds(m) == []
+
+
+# ------------------------------------------------------------------ middle pinch = select
+
+
+class FakeSelector:
+    def __init__(self):
+        self.calls: list[tuple] = []
+
+    def begin(self, x, y):
+        self.calls.append(("begin", x, y))
+
+    def add(self, x, y):
+        self.calls.append(("add", x, y))
+
+    def finish(self):
+        self.calls.append(("finish",))
+
+    def cancel(self):
+        self.calls.append(("cancel",))
+
+
+def test_middle_pinch_selects_and_never_presses():
+    sel = FakeSelector()
+    e, m, c = engine(selector=sel)
+    pinch_down(e, c, at=(100, 100), finger="middle")
+    assert e.state == "selecting"
+    for i in range(1, 5):
+        c.t += 0.05
+        e.update(F(pinch=True, finger="middle", at=(100 + 40 * i, 100 + 20 * i)))
+    e.update(F(edge="up", at=(260, 180)))
+    assert [k[0] for k in sel.calls] == ["begin", "add", "add", "add", "add", "finish"]
+    assert sel.calls[0] == ("begin", 100.0, 100.0) and sel.calls[-2] == ("add", 260, 180)
+    assert e.state == "selected" and kinds(m) == [] and m.log[-1] == ("move", 260, 180)
+
+
+def test_middle_pinch_without_selector_does_nothing():
+    e, m, c = engine()
+    pinch_down(e, c, finger="middle")
+    c.t += 0.1
+    e.update(F(pinch=True, finger="middle", at=(700, 700)))
+    e.update(F(edge="up"))
+    assert kinds(m) == [] and not e.selecting
+
+
+@pytest.mark.parametrize("loss", ["no_hand", "no_frames", "edge", "stop"])
+def test_safety_release_cancels_selection(loss):
+    sel = FakeSelector()
+    e, m, c = engine(selector=sel)
+    pinch_down(e, c, finger="middle")
+    assert e.selecting
+    if loss == "no_hand":
+        e.update(F(present=False))
+    elif loss == "no_frames":
+        e.no_frames()
+    elif loss == "edge":
+        e.update(F(pinch=True, finger="middle", tip=(0.5, 0.99)))
+    else:
+        e.stop()
+    assert not e.selecting and sel.calls[-1] == ("cancel",) and kinds(m) == []
+
+
+def test_feed_path_follows_reach_dir(monkeypatch, tmp_path):
+    from hands_mode.run import feed_path, log_state
+
+    monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
+    p = feed_path()
+    assert p == tmp_path / ".reach" / "logs" / "hands.jsonl"
+    p.parent.mkdir(parents=True)
+    log_state(p, "selecting")
+    import json
+    assert json.loads(p.read_text())["state"] == "selecting"
