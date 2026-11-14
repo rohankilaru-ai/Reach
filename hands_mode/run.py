@@ -27,6 +27,20 @@ from hands_mode.actions import ActionCfg, HandsEngine, MacActionMouse, PrintMous
 STALL_S, MAX_REOPENS = 1.0, 3   # no new camera frame for STALL_S: release, reopen the camera (at most 3 times)
 
 
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
+
+
+def ensure_model() -> None:
+    """Download the MediaPipe hand model next to finger_processing on first run (it is not committed)."""
+    from pathlib import Path
+    from urllib.request import urlretrieve
+
+    path = Path(__file__).resolve().parents[1] / "finger_processing" / "hand_landmarker.task"
+    if not path.exists():
+        print(f"first run: downloading the hand model (8 MB) to {path.name} ...", flush=True)
+        urlretrieve(MODEL_URL, path)
+
+
 def hands_config(config_path: str | None = None, region=None):
     cfg = load_config(config_path)
     cfg.hand_lock.control_hand = "closest"
@@ -72,6 +86,7 @@ def main(argv: list[str] | None = None) -> int:
                   "Grant it in System Settings > Privacy & Security > Accessibility.")
 
     cfg = hands_config(args.config, args.region)
+    ensure_model()
     fp = FingerProcessor(cfg, video=args.video).start()
     reopens, last_frame_t = 0, time.monotonic()
     show = not args.no_preview
