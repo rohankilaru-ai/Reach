@@ -43,14 +43,23 @@ public struct Selection: Codable, Equatable, Sendable {
     /// [x, y, w, h] in screen points (top-left origin).
     public var region: [Double]?
     public var image_path: String?
+    /// "pinch" when the camera worker made it (relayed by the server); nil for the overlay's own selections.
+    public var source: String?
+    /// Circle selection: the loop as `[[x, y], ...]` in screen points, top-left origin (at most ~64 points).
+    public var path: [[Double]]?
 
-    public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil) {
-        self.text = text; self.app = app; self.region = region; self.image_path = image_path
+    public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil,
+                source: String? = nil, path: [[Double]]? = nil) {
+        self.text = text; self.app = app; self.region = region; self.image_path = image_path; self.source = source
+        self.path = path
     }
+
+    public var isEmpty: Bool { (text ?? "").isEmpty && region == nil && image_path == nil }
 }
 
 public enum ClientMessage: Equatable, Sendable {
-    case hello(token: String)
+    /// `role` tells the server what kind of client this is; "overlay" receives relayed hand selections and pointers.
+    case hello(token: String, role: String? = "overlay")
     case ask(text: String, selection: Selection?)
     case abort(taskID: String?)
     case select(Selection)
@@ -59,8 +68,9 @@ public enum ClientMessage: Equatable, Sendable {
         var obj: [String: JSONValue] = [:]
         let enc = JSONEncoder()
         switch self {
-        case .hello(let token):
+        case .hello(let token, let role):
             obj = ["type": .string("hello"), "token": .string(token)]
+            if let role { obj["role"] = .string(role) }
         case .ask(let text, let sel):
             obj = ["type": .string("ask"), "text": .string(text)]
             if let sel { obj["selection"] = try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel)) }
@@ -153,7 +163,10 @@ public enum ServerMessage: Equatable, Sendable {
     case event(taskID: String, kind: String, body: JSONValue)
     case receipt(Receipt)
     case evidence(EvidenceCard)
+    /// A nil task id is a hand pointer relayed from the camera worker.
     case pointer(taskID: String?, x: Double, y: Double, label: String?)
+    /// A selection made by hand (pinch), relayed by the server. It does not start an ask.
+    case selection(Selection)
     case transcript(taskID: String, role: String, text: String)
     case error(message: String, taskID: String?)
     case added(name: String, passages: Int)
@@ -177,7 +190,11 @@ public enum ServerMessage: Equatable, Sendable {
         case "evidence":
             return .evidence(try JSONDecoder().decode(EvidenceCard.self, from: data))
         case "pointer":
-            return .pointer(taskID: tid, x: v["x"]?.number ?? 0, y: v["y"]?.number ?? 0, label: v["label"]?.string)
+            guard let x = v["x"]?.number, let y = v["y"]?.number, x.isFinite, y.isFinite else { return .unknown(type: type) }
+            return .pointer(taskID: (tid?.isEmpty ?? true) ? nil : tid, x: x, y: y, label: v["label"]?.string)
+        case "selection":
+            guard let sel = v["selection"] else { return .unknown(type: type) }
+            return .selection(try JSONDecoder().decode(Selection.self, from: JSONEncoder().encode(sel)))
         case "transcript":
             return .transcript(taskID: tid ?? "", role: v["role"]?.string ?? "", text: v["text"]?.string ?? "")
         case "error":

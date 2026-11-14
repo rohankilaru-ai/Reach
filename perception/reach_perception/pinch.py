@@ -101,6 +101,7 @@ class GestureEngine:
         self.ratio: float | None = None
         self.drag_start: tuple[float, float] | None = None
         self.drag_last: tuple[float, float] | None = None
+        self.drag_trail: list[tuple[float, float]] = []
         self._last_seen: int | None = None
         self._below_since: int | None = None
         self._above_since: int | None = None
@@ -111,6 +112,7 @@ class GestureEngine:
     def _reset_pinch(self) -> None:
         self.pinching = False
         self.drag_start = self.drag_last = None
+        self.drag_trail = []
         self._below_since = self._above_since = None
 
     def update(self, t_ms: int, lm) -> list[Event]:
@@ -168,6 +170,7 @@ class GestureEngine:
                     self.pinching = True
                     self._above_since = None
                     self.drag_start = self.drag_last = self.pointer
+                    self.drag_trail = [self.pointer]
                     ev.append(Event("pinch_down", t_ms, {"at": self.pointer}))
             else:
                 self._below_since = None
@@ -177,11 +180,13 @@ class GestureEngine:
                     self._above_since = t_ms
                 if t_ms - self._above_since >= RELEASE_HOLD_MS:
                     start, end = self.drag_start, self.drag_last or self.pointer
+                    trail = list(self.drag_trail)
                     self._reset_pinch()
                     if start is not None and end is not None:
-                        ev.append(Event("select", t_ms, {"start": start, "end": end,
+                        ev.append(Event("select", t_ms, {"start": start, "end": end, "trail": trail,
                                                          "rect": rect_from_points(start, end)}))
             else:
                 self._above_since = None
                 self.drag_last = self.pointer  # end of drag = last point while still pinched
+                self.drag_trail.append(self.pointer)
         return ev

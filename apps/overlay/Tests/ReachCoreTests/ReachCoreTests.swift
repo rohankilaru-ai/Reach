@@ -92,3 +92,39 @@ import Testing
         #expect(s.phase == .idle)
     }
 }
+
+@Suite struct HandSelectionTests {
+    @Test func decodesRelayedSelectionAndHandPointer() throws {
+        let m = try ServerMessage.decode(#"{"type":"selection","selection":{"text":"\n  First line\nsecond","region":[10,20,300,40],"image_path":"/r/.reach/captures/a.png","source":"pinch"}}"#)
+        guard case .selection(let sel) = m else { Issue.record("not a selection"); return }
+        #expect(sel.source == "pinch" && sel.region == [10, 20, 300, 40])
+        let p = try ServerMessage.decode(#"{"type":"pointer","task_id":"","x":100.5,"y":200,"state":"pinch","source":"hand"}"#)
+        #expect(p == .pointer(taskID: nil, x: 100.5, y: 200, label: nil))
+        let bad = try ServerMessage.decode(#"{"type":"pointer","task_id":"","y":2}"#)
+        #expect(bad == .unknown(type: "pointer"))
+    }
+
+    @Test func chipStateFollowsSelectionAndClear() throws {
+        var s = PanelState()
+        #expect(s.handChip == nil)
+        s.apply(try ServerMessage.decode(#"{"type":"selection","selection":{"text":"\n  First line\nsecond","image_path":"/x.png","source":"pinch"}}"#))
+        #expect(s.handChip?.line == "First line" && s.handChip?.thumbnailPath == "/x.png")
+        #expect(s.handChip?.title == "Selected by hand")
+        s.submitted()  // kept for the next ask
+        #expect(s.handChip != nil)
+        var t = s
+        t.clearHandSelection()
+        #expect(t.handChip == nil && t != s)
+        s.apply(.selection(Selection(region: [0, 0, 480, 160])))
+        #expect(s.handChip?.line == "region 480×160 · no text read" && s.handChip?.thumbnailPath == nil)
+        s.apply(.selection(Selection()))  // an empty relay clears
+        #expect(s.handChip == nil)
+    }
+
+    @Test func helloSaysOverlayAndEmptySelectEncodesEmpty() throws {
+        let h = try JSONDecoder().decode(JSONValue.self, from: Data(ClientMessage.hello(token: "t").json().utf8))
+        #expect(h["role"]?.string == "overlay" && h["token"]?.string == "t")
+        let c = try JSONDecoder().decode(JSONValue.self, from: Data(ClientMessage.select(Selection()).json().utf8))
+        #expect(c["selection"] == .object([:]))
+    }
+}

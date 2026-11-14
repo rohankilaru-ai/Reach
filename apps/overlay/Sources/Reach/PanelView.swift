@@ -37,10 +37,38 @@ struct Halo: View {
 struct PanelView: View {
     @ObservedObject var model: OverlayModel
     @FocusState private var focused: Bool
+    @State private var hovering = false
+    var onSnap: () -> Void = {}
+    var onDragEnd: () -> Void = {}
 
     var body: some View {
+        Group {
+            if model.expanded { expanded } else { pill }
+        }
+        .animation(.easeInOut(duration: 0.28), value: model.expanded)
+    }
+
+    /// The idle island: status dot + "Reach", the hotkey hint on hover. Drag it anywhere; double-click snaps it back.
+    private var pill: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Palette.color(model.state.phase)).frame(width: 8, height: 8)
+            Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
+            if hovering {
+                Text("⌥Space").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.5))
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .background(Capsule().fill(.black.opacity(0.88)))
+        .overlay(Capsule().stroke(.white.opacity(0.08)))
+        .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } else { model.expandRequested?() } },
+                            onDragEnd: onDragEnd,
+                            onHover: { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }))
+    }
+
+    private var expanded: some View {
         let s = model.state
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Halo(phase: s.phase)
                 Text(s.stateLine)
@@ -52,6 +80,9 @@ struct PanelView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.35))
             }
+            // drag the header to move; double-click snaps back to the notch
+            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd))
+            .help("Drag to move · double-click to snap to the top")
 
             TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
                 .textFieldStyle(.plain)
@@ -67,6 +98,24 @@ struct PanelView: View {
                     .font(.system(size: 11, weight: model.listening ? .semibold : .regular))
                     .foregroundStyle(model.listening ? Palette.accent : .white.opacity(0.6))
                     .lineLimit(2)
+            }
+
+            HStack(spacing: 8) {
+                Text("Tap Option-Space to type, hold to talk, or circle something.")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                Spacer(minLength: 0)
+                Button { model.circleRequested?() } label: {
+                    Image(systemName: "lasso").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 26, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.accent.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help("Circle something on screen (Esc cancels)")
+            }
+
+            if let chip = s.handChip {
+                HandChipView(chip: chip) { model.clearSelection() }
             }
 
             if let note = model.selectionNote {
@@ -121,6 +170,7 @@ struct PanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.08)))
         .onAppear { focused = true }
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
     }
 }
 
@@ -185,7 +235,7 @@ final class ReachPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false  // DragHandle moves it, so clicks in the field and buttons stay clicks
         hidesOnDeactivate = false
         contentView = content
     }
@@ -193,4 +243,82 @@ final class ReachPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { onEscape?() }
+}
+
+/// "Selected by hand" (EXPERIMENTAL pinch selection): first line of the text, a thumbnail if captured, a clear button.
+struct HandChipView: View {
+    var chip: HandChip
+    var onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let path = chip.thumbnailPath, let img = NSImage(contentsOfFile: path) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 5))
+            } else {
+                Image(systemName: "hand.pinch").font(.system(size: 14)).foregroundStyle(Palette.accent)
+                    .frame(width: 30, height: 30)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(chip.title) · experimental").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                Text(chip.line).font(.system(size: 12)).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button(action: onClear) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55)).help("Drop this selection")
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+    }
+}
+
+/// Moves the panel with the user's own drag (no synthetic events). A press that barely moves is a click; its
+/// `clickCount` tells a double-click (snap to top) from a single one.
+struct DragHandle: NSViewRepresentable {
+    var onClick: (Int) -> Void = { _ in }
+    var onDragEnd: () -> Void = {}
+    var onHover: ((Bool) -> Void)?
+
+    func makeNSView(context: Context) -> HandleView { update(HandleView()) }
+    func updateNSView(_ v: HandleView, context: Context) { _ = update(v) }
+    private func update(_ v: HandleView) -> HandleView {
+        v.onClick = onClick; v.onDragEnd = onDragEnd; v.onHover = onHover
+        return v
+    }
+
+    final class HandleView: NSView {
+        var onClick: (Int) -> Void = { _ in }
+        var onDragEnd: () -> Void = {}
+        var onHover: ((Bool) -> Void)?
+        private var start: (mouse: NSPoint, origin: NSPoint)?
+        private var moved = false
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                           owner: self))
+        }
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
+        override func mouseDown(with event: NSEvent) {
+            start = (NSEvent.mouseLocation, window?.frame.origin ?? .zero)
+            moved = false
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let start, let window else { return }
+            let now = NSEvent.mouseLocation
+            let dx = now.x - start.mouse.x, dy = now.y - start.mouse.y
+            if !moved, hypot(dx, dy) < 3 { return }
+            moved = true
+            window.setFrameOrigin(NSPoint(x: start.origin.x + dx, y: start.origin.y + dy))
+        }
+        override func mouseUp(with event: NSEvent) {
+            defer { start = nil }
+            if moved { onDragEnd() } else { onClick(event.clickCount) }
+        }
+    }
 }

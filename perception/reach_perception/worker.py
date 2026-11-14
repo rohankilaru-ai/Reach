@@ -15,7 +15,7 @@ import threading
 import time
 
 from .pinch import MIN_DRAG
-from .screen_map import CORNERS, ScreenMap, box_around, build_map, reset_calibration, screen_size
+from .screen_map import CORNERS, ScreenMap, box_around, build_map, loop_path, path_bbox, reset_calibration, screen_size
 
 MAX_FRAME_FAILURES = 90  # consecutive failed camera reads before the worker exits (about 3 s at 30 fps)
 FRAME_FAIL_MSG = "[worker] camera stopped delivering frames; exiting. Check that it is connected and not in use."
@@ -137,7 +137,13 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     bridge.connect()
     print(f"[worker] screen {sw:.0f}x{sh:.0f} pt, mapping={'calibrated' if smap.calibrated else 'fixed'}, "
           f"bridge: {bridge.status}")
-    reader = None if no_ocr else ReadWorker(capture_region, ocr)
+    def captures_dir():
+        from .bridge_client import server_reach_dir  # same .reach the server checks image_path against
+
+        return server_reach_dir() / "captures"
+
+    paths: dict[tuple, list] = {}  # rect -> loop path, picked up when its read finishes
+    reader = None if no_ocr else ReadWorker(lambda r: capture_region(r, captures_dir()), ocr)
     fails = 0
     calib: list | None = None  # corners collected during calibration
     last = "ready"
@@ -177,7 +183,11 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                         calib = None
                 elif e.kind == "select":
                     s, en = e.data["start"], e.data["end"]
-                    if abs(s[0] - en[0]) < MIN_DRAG and abs(s[1] - en[1]) < MIN_DRAG:
+                    path = loop_path([smap.to_screen(p) for p in e.data.get("trail", [])])
+                    if path:  # a drawn loop: region is its bounding box
+                        rect = [round(v) for v in path_bbox(path)]
+                        paths[tuple(rect)] = path
+                    elif abs(s[0] - en[0]) < MIN_DRAG and abs(s[1] - en[1]) < MIN_DRAG:
                         rect = box_around(smap.to_screen(en), sw, sh)
                     else:
                         rect = smap.rect_to_screen(s, en)
@@ -185,20 +195,19 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                         ocr_label = "reading..."
                         last = f"select {rect}: reading..."
                     else:
-                        sent = bridge.select(rect, None, None)
+                        sent = bridge.select(rect, None, None, paths.pop(tuple(rect), None))
                         last = f"select {rect} {'sent' if sent else 'local only'}"
                         print(f"[worker] {last}; {ocr_label}")
             for rect, text, img in (reader.poll() if reader else []):
                 ocr_label = f"OCR: {len(text)} chars" if text else \
                     "no text read (Screen Recording permission?): pointer demo only"
-                sent = bridge.select(rect, text or None, str(img) if img else None)
+                sent = bridge.select(rect, text or None, str(img) if img else None, paths.pop(tuple(rect), None))
                 last = f"select {rect} {'sent' if sent else 'local only'}"
                 print(f"[worker] {last}; {ocr_label}")
             if eng.pointer:
                 sx, sy = smap.to_screen(eng.pointer)
-                bridge.pointer(round(sx), round(sy), eng.pinching, True)
-            elif not eng.tracking:
-                bridge.pointer(None, None, False, False)
+                bridge.pointer(round(sx), round(sy), eng.pinching)
+            # hand lost: send nothing; the overlay fades the ghost after 1 s
             if no_preview:
                 if frame is None:
                     time.sleep(0.03)
@@ -239,13 +248,15 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true", help="run on synthetic landmark fixtures, no camera")
     ap.add_argument("--camera-check", action="store_true", help="open the camera for 3 s and print timings")
+    ap.add_argument("--bridge", action="store_true",
+                    help="with --selftest: send the replayed pointer and select to a running `reach serve`")
     ap.add_argument("--no-preview", action="store_true")
     ap.add_argument("--no-ocr", action="store_true", help="send rect only; preview says 'pointer demo only'")
     a = ap.parse_args(argv)
     if a.selftest:
         from .selftest import main as st
 
-        return st()
+        return st(bridge=a.bridge)
     if a.camera_check:
         return camera_check()
     return run(a.no_preview, a.no_ocr)
