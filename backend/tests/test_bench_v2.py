@@ -158,3 +158,19 @@ def test_qwen_probs_uses_frozen_prompt():
     body = v2.QwenProbsV2(post=None).body("x")
     assert body["messages"][0]["content"] == v2.QWEN_PROBS_SYSTEM
     assert "probabilities" in v2.QWEN_PROBS_SYSTEM
+
+
+def test_report_and_render_list_every_miss():
+    rows = []
+    for s in ("drex", "qwen_label"):
+        rows += [_row("stop", "stop", id="a", system=s, input="stahp"),
+                 _row("pause", "stop" if s == "drex" else "pause", id="b", system=s, input="stop for a sec"),
+                 _row(c.UNCERTAIN, "next" if s == "qwen_label" else c.UNCERTAIN, id="c", system=s, input="skip / stahp")]
+    rep = v2.report_v2(rows, {"fixtures": "f", "n_items": 3, "n_uncertain": 1, "n_dev": 0, "n_held_out": 3,
+                             "prompt_commit": "abc", "prompt_hash": "h", "threshold": 0.5, "margin": 0.15})
+    assert rep["results"]["drex"]["held_out"]["est_cost_usd"] is None  # Drex: tokens only
+    assert rep["paired_held_out"][0]["a_right_b_wrong"] == 1 and rep["paired_held_out"][0]["b_right_a_wrong"] == 1
+    md = v2.render_md_v2(rep, "## Verdict\n- x")
+    assert "| drex | b | stop for a sec | pause | stop | wrong command |" in md
+    assert "| qwen_label | c | skip / stahp | uncertain | next | acted on uncertain |" in md
+    assert "tokens only" in md and md.rstrip().endswith("- x")

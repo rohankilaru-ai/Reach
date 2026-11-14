@@ -351,9 +351,16 @@ def main(argv: list[str]) -> int:
         print(out)
         return 0
     if argv and argv[0] == "report":
-        rows = [json.loads(line) for p in argv[1:] for line in Path(p).read_text().splitlines() if line.strip()]
+        commit = argv[argv.index("--commit") + 1] if "--commit" in argv else "-"
+        paths = [p for p in argv[1:] if p.endswith(".jsonl")]
+        rows = [json.loads(line) for p in paths for line in Path(p).read_text().splitlines() if line.strip()]
         items = load_v2()
-        meta = json.loads((EVIDENCE / "bench_v2.meta.json").read_text()) if (EVIDENCE / "bench_v2.meta.json").exists() else {}
+        meta: dict[str, Any] = {"prompt_commit": commit, "runs": [Path(p).name for p in paths]}
+        for p in paths:  # bench_v2-YYYYmmdd-HHMMSS-<split>.jsonl
+            m = re.search(r"(\d{8})-(\d{6})-(dev|held_out)", Path(p).name)
+            if m:
+                d, t = m.group(1), m.group(2)
+                meta[f"{m.group(3)}_date"] = f"{d[:4]}-{d[4:6]}-{d[6:]} {t[:2]}:{t[2:4]}"
         meta.update({"fixtures": str(FIXTURES_V2.relative_to(REPO_ROOT)), "n_items": len(items),
                      "n_uncertain": sum(it["gold"] == c.UNCERTAIN for it in items),
                      "n_dev": sum(it["split"] == "dev" for it in items),
@@ -361,10 +368,12 @@ def main(argv: list[str]) -> int:
                      "threshold": c.THRESHOLD, "margin": c.MARGIN, "prompt_hash": prompt_hash(),
                      "drex_model": c.DREX_MODEL, "qwen_model": b.QWEN_MODEL})
         rep = report_v2(rows, meta)
-        verdict_path = EVIDENCE / "bench_v2_verdict.md"
-        verdict = verdict_path.read_text() if verdict_path.exists() else ""
+        # the hand-written verdict lives in bench_v2.md after the marker; keep it when re-rendering
+        marker = "## Verdict (written by hand after the held-out run)"
+        md = EVIDENCE / "bench_v2.md"
+        verdict = md.read_text().split(marker, 1)[1] if md.exists() and marker in md.read_text() else "\n- (pending)\n"
         (EVIDENCE / "bench_v2.json").write_text(json.dumps(rep, indent=1) + "\n")
-        (EVIDENCE / "bench_v2.md").write_text(render_md_v2(rep, verdict))
+        md.write_text(render_md_v2(rep, marker + verdict))
         return 0
     print(__doc__)
     return 2
