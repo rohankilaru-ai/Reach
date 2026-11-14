@@ -89,11 +89,14 @@ class ReachTools(Extension):
     def tools(self) -> list[Tool]:
         from intern.tools.files import ReadTool
 
+        from .tools import chrome
         from .tools.native import NoteAppend, OpenSource, ShelfToNote
+        from .tools.tables import TableToNote
         from .tools.vision import SeeRegion
 
+        mac_tools: list[Tool] = [*chrome.tools(), TableToNote()]
         # The bridge drops Intern's base pack (shell, write, edit); read comes back here, fenced by guard_policy.
-        return [
+        return mac_tools + [
             ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(),
             ReadTool(),
         ]
