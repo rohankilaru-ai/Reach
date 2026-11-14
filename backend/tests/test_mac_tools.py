@@ -301,3 +301,11 @@ def test_tools_registered(monkeypatch):
     names = {t.name for t in ReachTools().tools()}
     assert {"chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"} <= names
     assert json.dumps(sorted(names))
+
+
+def test_same_site_redirect_counts_as_loaded():
+    from reach.tools import chrome
+
+    assert chrome.same_site("https://mail.google.com/mail/u/0/#inbox", "https://mail.google.com")
+    assert chrome.same_site("https://accounts.google.com/x", "https://www.google.com/")
+    assert not chrome.same_site("https://evil.example.com/google.com", "https://google.com")
