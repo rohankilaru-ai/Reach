@@ -55,8 +55,13 @@ private final class SelftestKeys: DictationKeys {
     check("paste fallback + clipboard restored", o2 == .inserted(.paste, "Pasted text") && k.sent == ["cmd-v"]
           && p.contents == "saved clipboard", "\(k.sent) \(p.contents)")
     check("delete that after paste = one cmd-z", ins.deleteThat() == .undo && k.sent == ["cmd-v", "cmd-z"])
+    _ = ins.insert("other", startedIn: 1)
+    f.info = FocusInfo(role: "AXTextArea", bundleID: "com.example.mail", pid: 5)
+    check("delete that refused after focus moved", ins.deleteThat() == .nothing && k.sent == ["cmd-v", "cmd-z", "cmd-v"], "\(k.sent)")
+    f.info = FocusInfo(role: "AXTextArea", bundleID: "com.example.notes", pid: 1)
 
     let before = k.sent
+    f.axWorks = true
     f.info = FocusInfo(role: "AXSecureTextField", bundleID: "com.example.browser", pid: 1)
     check("secure field refused", ins.insert("secret", startedIn: 1) == .refused(.secure))
     f.info = FocusInfo(role: "AXTextArea", bundleID: "com.apple.Terminal", pid: 1)

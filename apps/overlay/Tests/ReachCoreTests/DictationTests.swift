@@ -145,6 +145,23 @@ func makeInserter(_ f: FakeFocus, _ p: FakePasteboard, _ k: FakeKeys) -> Dictati
         #expect(k.log == ["delete x200"])
     }
 
+    @Test func deleteThatRefusesAfterFocusMoves() {
+        let f = FakeFocus(), p = FakePasteboard(), k = FakeKeys()
+        let ins = makeInserter(f, p, k)
+        _ = ins.insert("hello", startedIn: 42)
+        f.info?.pid = 77   // another app now
+        #expect(ins.deleteThat() == .nothing)
+        f.info?.pid = 42
+        #expect(ins.deleteThat() == .nothing)   // ledger cleared: nothing stale is deleted later
+        _ = ins.insert("again", startedIn: 42)
+        f.text += " typed by hand"
+        #expect(ins.deleteThat() == .nothing)   // caret no longer right after our text
+        #expect(k.log.isEmpty)
+        #expect(DictationTarget.decide(FocusInfo(role: "AXTextField", bundleID: "com.example.ok",
+                                                 frontBundleID: "com.apple.keychainaccess"), trusted: true)
+                == .deniedApp("com.apple.keychainaccess"))
+    }
+
     @Test func refusesAndStopsOnFocusChange() {
         let f = FakeFocus(), p = FakePasteboard(), k = FakeKeys()
         let ins = makeInserter(f, p, k)

@@ -330,7 +330,7 @@ public enum ProgressLine {
 
 /// What an end state says: one plain sentence and at most one action.
 public struct PlainState: Equatable, Sendable {
-    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer, relaunch }
+    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer, relaunch, openAccessibilitySettings }
     public var sentence: String
     public var action: Action
     /// An optional second line under the sentence (how to fix it when the obvious fix did not work).
@@ -349,6 +349,7 @@ public struct PlainState: Equatable, Sendable {
         case .openMicSettings: return "Open Settings"
         case .startServer: return "Retry"
         case .relaunch: return "Relaunch Reach"
+        case .openAccessibilitySettings: return "Fix"
         }
     }
 
@@ -371,6 +372,9 @@ public struct PlainState: Equatable, Sendable {
         if n.contains("screen recording") {
             return PlainState(sentence: ScreenRecordingCheck.missingSentence, action: .openScreenSettings,
                               detail: ScreenRecordingCheck.missingHint)
+        }
+        if n.contains("accessibility") {
+            return PlainState(sentence: "Dictation needs Accessibility to type for you.", action: .openAccessibilitySettings)
         }
         if n.contains("microphone") || n.contains("speech") { return PlainState(sentence: "Reach needs the microphone to hear you.", action: .openMicSettings) }
         if n.contains("reach serve") || n.contains("connection") || n.contains("server") || n.contains("token") {

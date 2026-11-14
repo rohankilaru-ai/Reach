@@ -186,10 +186,12 @@ public struct FocusInfo: Equatable, Sendable {
     public var hasSelectedRange: Bool
     public var editable: Bool
     public var isReach: Bool
+    /// The frontmost app's bundle id (can differ from the focused element's app); both are deny-checked.
+    public var frontBundleID: String?
 
     public init(role: String?, subrole: String? = nil, bundleID: String?, pid: Int32 = 0, hasValue: Bool = false,
-                hasSelectedRange: Bool = false, editable: Bool = true, isReach: Bool = false) {
-        self.role = role; self.subrole = subrole; self.bundleID = bundleID; self.pid = pid
+                hasSelectedRange: Bool = false, editable: Bool = true, isReach: Bool = false, frontBundleID: String? = nil) {
+        self.role = role; self.subrole = subrole; self.bundleID = bundleID; self.pid = pid; self.frontBundleID = frontBundleID
         self.hasValue = hasValue; self.hasSelectedRange = hasSelectedRange; self.editable = editable; self.isReach = isReach
     }
 }
@@ -223,6 +225,7 @@ public enum DictationTarget {
         if f.isReach { return .reachPanel }
         if f.role == "AXSecureTextField" || f.subrole == "AXSecureTextField" { return .secure }
         if Dictation.isDenied(bundleID: f.bundleID) { return .deniedApp(f.bundleID ?? "") }
+        if Dictation.isDenied(bundleID: f.frontBundleID) { return .deniedApp(f.frontBundleID ?? "") }
         guard f.editable else { return .noTextBox }
         if let r = f.role, textRoles.contains(r) { return .type }
         if f.hasValue && f.hasSelectedRange { return .type }   // web text inputs and other custom fields
@@ -261,14 +264,18 @@ public protocol DictationKeys: AnyObject {
 public enum InsertPath: Equatable, Sendable { case ax, paste }
 
 public struct InsertLedger: Equatable, Sendable {
-    public struct Entry: Equatable, Sendable { public var count: Int; public var path: InsertPath; public var text: String }
+    public struct Entry: Equatable, Sendable {
+        public var count: Int; public var path: InsertPath; public var text: String; public var pid: Int32
+    }
     public private(set) var last: Entry?
     public private(set) var lastChar: Character?
 
     public init() {}
 
-    public mutating func record(_ text: String, path: InsertPath) {
-        last = Entry(count: text.count, path: path, text: text)
+    public mutating func clear() { last = nil; lastChar = nil }
+
+    public mutating func record(_ text: String, path: InsertPath, pid: Int32 = 0) {
+        last = Entry(count: text.count, path: path, text: text, pid: pid)
         lastChar = text.last
     }
 
@@ -319,7 +326,7 @@ public final class DictationInserter<P: DictationPasteboard> {
         let text = DictationFormat.format(raw, previous: prev)
         guard !text.isEmpty else { return .empty }
         if focus.insertAX(text) {
-            ledger.record(text, path: .ax)
+            ledger.record(text, path: .ax, pid: f.pid)
             return .inserted(.ax, text)
         }
         // last check right before the synthetic paste: never paste into an app the user just switched to
@@ -329,18 +336,21 @@ public final class DictationInserter<P: DictationPasteboard> {
         keys.commandV()
         let pb = pasteboard
         later(Dictation.pasteRestoreDelay) { pb.restore(saved, ifChangeCount: change) }
-        ledger.record(text, path: .paste)
+        ledger.record(text, path: .paste, pid: f.pid)
         return .inserted(.paste, text)
     }
 
     /// A bare newline ("new line" said on its own).
     public func newLine(startedIn pid: Int32?) -> InsertOutcome { insert("new line", startedIn: pid) }
 
-    /// "delete that": removes the last inserted segment. Returns what was done.
+    /// "delete that": removes the last inserted segment, only in the same app and (when Accessibility shows the
+    /// text before the caret) only when that text still ends with what was typed. Returns what was done.
     @discardableResult
     public func deleteThat() -> InsertLedger.DeletePlan {
-        let d = DictationTarget.decide(focus.focused(), trusted: focus.trusted)
-        guard d == .type else { return .nothing }
+        let f = focus.focused()
+        guard DictationTarget.decide(f, trusted: focus.trusted) == .type, let f, let e = ledger.last else { return .nothing }
+        guard f.pid == e.pid else { ledger.clear(); return .nothing }
+        if e.path == .ax, let before = focus.textBeforeCaret(), !before.hasSuffix(e.text) { ledger.clear(); return .nothing }
         let plan = ledger.planDelete()
         switch plan {
         case .nothing, .keys: return plan

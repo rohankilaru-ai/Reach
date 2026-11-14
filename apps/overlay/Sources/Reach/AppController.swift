@@ -548,6 +548,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             PermissionProbe.relaunch()
         case .openMicSettings:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        case .openAccessibilitySettings:
+            NSWorkspace.shared.open(URL(string: PermissionKind.accessibility.settingsURL)!)
         case .circle, .none: break
         }
     }

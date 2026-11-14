@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ApplicationServices
 import Carbon.HIToolbox
 import ReachCore
@@ -84,14 +85,15 @@ final class SystemFocus: DictationFocus {
                          bundleID: app?.bundleIdentifier, pid: pid,
                          hasValue: has(e, kAXValueAttribute), hasSelectedRange: range(e) != nil,
                          editable: settable.boolValue || selSettable.boolValue,
-                         isReach: pid == ProcessInfo.processInfo.processIdentifier)
+                         isReach: pid == ProcessInfo.processInfo.processIdentifier,
+                         frontBundleID: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
     }
 
     func textBeforeCaret() -> String? {
         guard let e = element(), let value = string(e, kAXValueAttribute), let r = range(e) else { return nil }
         let ns = value as NSString
         guard r.location >= 0, r.location <= ns.length else { return nil }
-        let start = max(0, r.location - 4)
+        let start = max(0, r.location - 1000)
         return ns.substring(with: NSRange(location: start, length: r.location - start))
     }
 
@@ -178,7 +180,13 @@ final class DictationController {
 
     private var now: Double { ProcessInfo.processInfo.systemUptime }
 
-    init(model: OverlayModel) { self.model = model }
+    private var statusSink: AnyCancellable?
+
+    init(model: OverlayModel) {
+        self.model = model
+        // the pill is refit on the model's changes; forward the badge's so "Dictating" is never clipped
+        statusSink = status.objectWillChange.sink { [weak model] _ in model?.objectWillChange.send() }
+    }
 
     var isOn: Bool { toggle.on }
 
@@ -241,6 +249,8 @@ final class DictationController {
 
     private func tick() {
         if toggle.tick(now: now) == .timedOut { setOn(false, why: "60 s of silence"); return }
+        // never type Reach's own voice or a push-to-talk ask
+        if model.speaking || model.listening { stopRecognizer(); return }
         if !running { startRecognizer() }
         if running, Date().timeIntervalSince(startedAt) > Dictation.restartEvery { stopRecognizer() }
         if let seg = cutter.tick(now: now) { segment(seg) }
