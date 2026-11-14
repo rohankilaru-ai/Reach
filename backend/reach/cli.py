@@ -138,8 +138,56 @@ async def _ask(text: str, selection: str | None) -> int:
     return 1
 
 
+def _print_route(r) -> None:
+    from .commands import ACTIONS
+
+    p = r.probabilities.get(r.command)
+    kind, what = ACTIONS[r.command]
+    prob = f"p={p:.2f}" if p is not None else "p=-"
+    extra = f" ({r.reason})" if r.reason != "ok" else ""
+    print(f"[route] {r.command} {prob}{extra} -> {kind}: {what}  {r.latency_ms} ms, {r.input_tokens} tokens", flush=True)
+
+
+def cmd_route(args) -> int:
+    from .commands import route
+
+    r = route(text=" ".join(args.text) if args.text else None, hypotheses=args.hyp, selection=args.selection)
+    if args.json:
+        print(json.dumps(r.to_dict(), indent=2))
+    else:
+        _print_route(r)
+    return 0 if r.error is None else 1
+
+
 def cmd_ask(args) -> int:
-    return asyncio.run(_ask(" ".join(args.text), args.selection))
+    text = " ".join(args.text)
+    if args.route:
+        from .commands import ACTIONS, route
+
+        r = route(text=text, selection=args.selection)
+        _print_route(r)
+        kind, what = ACTIONS[r.command]
+        if kind not in ("ask", "none"):
+            # scroll/open/shelf/abort/playback/navigate are overlay actions; the CLI shows the command and stops
+            return 0
+        # explain_this / compare_these and uncertain fall through to a normal ask with the user's own words
+    return asyncio.run(_ask(text, args.selection))
+
+
+def cmd_bench(args) -> int:
+    from .bench import main_bench
+
+    systems = tuple(args.only) if args.only else ("drex", "qwen")
+    rep = main_bench(split=args.split, systems=systems, write_docs=not args.no_docs,
+                     out_dir=Path(args.out) if args.out else None)
+    for s, by in rep["results"].items():
+        for sp in ("dev", "held_out"):
+            m = by.get(sp)
+            if m and m.get("n"):
+                print(f"{s:<5} {sp:<9} N={m['n']} acc={m['accuracy']:.3f} abstain={m['abstention_rate']:.3f} "
+                      f"wrong={m['wrong_command']} p50={m['latency_p50_ms']}ms p95={m['latency_p95_ms']}ms "
+                      f"est=${m['est_cost_usd']:.5f}")
+    return 0
 
 
 def cmd_log(args) -> int:
@@ -233,7 +281,20 @@ def main(argv: list[str] | None = None) -> int:
     a = sub.add_parser("ask", help="ask through the local server (started on demand)")
     a.add_argument("text", nargs="+")
     a.add_argument("--selection", help="selected text to ask about")
+    a.add_argument("--route", action="store_true", help="route the text through the 12-command router first")
     a.set_defaults(fn=cmd_ask)
+    ro = sub.add_parser("route", help="map an utterance to one of the 12 commands with Drex Max (experimental)")
+    ro.add_argument("text", nargs="*")
+    ro.add_argument("--hyp", action="append", help="a lip-reading hypothesis, best first (repeatable)")
+    ro.add_argument("--selection", help="what is selected on screen")
+    ro.add_argument("--json", action="store_true")
+    ro.set_defaults(fn=cmd_route)
+    be = sub.add_parser("bench", help="router benchmark: Drex Max vs Qwen3.8-27B on fixtures/commands")
+    be.add_argument("--split", choices=("dev", "held_out", "all"), default="all")
+    be.add_argument("--only", action="append", choices=("drex", "qwen"))
+    be.add_argument("--no-docs", action="store_true", help="do not write docs/evidence/bench.{json,md}")
+    be.add_argument("--out", help="directory for the per-item JSONL")
+    be.set_defaults(fn=cmd_bench)
     lg = sub.add_parser("log", help="print the Drex log, one line per decision/nudge/guard")
     lg.add_argument("-n", type=int, default=0, help="only the last N entries")
     lg.set_defaults(fn=cmd_log)
