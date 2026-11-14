@@ -87,9 +87,13 @@ class ReachTools(Extension):
     name: ClassVar[str] = "reach"
 
     def tools(self) -> list[Tool]:
+        from intern.tools.files import ReadTool
+
         from .tools.native import NoteAppend, OpenSource, ShelfToNote
         from .tools.vision import SeeRegion
 
+        # The bridge drops Intern's base pack (shell, write, edit); read comes back here, fenced by guard_policy.
         return [
             ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(),
+            ReadTool(),
         ]

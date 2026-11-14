@@ -17,6 +17,7 @@ from .paths import REPO_ROOT, drex_log
 SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3.8-27B")
 SYSTEM1 = os.environ.get("REACH_SYSTEM1", "drex-max-v1.1")
 EXTENSION = "reach.intern_ext:ReachTools"
+POLICY = "reach.guard_policy:SecretPolicy"  # first, so it refuses before any other hook or the guard
 
 Sink = Callable[[str, dict[str, Any]], None]
 """(task_id, event dict) -> None; must not block."""
@@ -117,12 +118,18 @@ class Task:
 
 
 class InternBridge:
-    def __init__(self, cwd: Path = REPO_ROOT) -> None:
+    def __init__(self, cwd: Path | None = None) -> None:
         os.environ.setdefault("INTERN_HOME", str(REPO_ROOT / ".intern-home"))
+        from intern.capability_settings import CapabilitySettings
         from intern.config import Bootstrap, Options
 
+        from .guard_policy import ensure_workspace
+
+        # The agent works in an empty sandbox, never the repo (where the keys live), and gets no shell or
+        # write tools: only Reach's tools plus a read tool the policy keeps inside the workspace.
         self.bootstrap = Bootstrap(
-            Options(cwd=cwd, system2=SYSTEM2, system1=SYSTEM1, max_turns=12, extra_extensions=[EXTENSION])
+            Options(cwd=cwd or ensure_workspace(), system2=SYSTEM2, system1=SYSTEM1, max_turns=12,
+                    extra_extensions=[POLICY, EXTENSION], capabilities=CapabilitySettings(tool_packs=[]))
         )
 
     async def run(self, task: Task, sink: Sink) -> Receipt:
