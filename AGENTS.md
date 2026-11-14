@@ -21,3 +21,6 @@ uv run reach replay ../fixtures/events/ask.jsonl   # no keys needed
 ```
 
 Slice board: see the table in `docs/STATUS.md`. Pinch selection (S6) and silent speech (S8a) are the open experimental slices.
+
+## Permissions
+`swift scripts/request-permissions.swift` raises every macOS permission prompt Reach can use (Screen Recording, Accessibility, Microphone, Camera, Speech Recognition, and Automation for Chrome, Finder, Notes and TextEdit) for the app you run it from, and reports what is still missing. Re-run it to check.
