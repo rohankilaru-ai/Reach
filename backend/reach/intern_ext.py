@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+
 from datetime import datetime
 from typing import Any, ClassVar
 
@@ -96,7 +98,11 @@ class ReachTools(Extension):
         from .tools.guide import PointAt
         from .tools.vision import SeeRegion
 
+        from .tools.email import EmailDraft
+
         mac_tools: list[Tool] = [*chrome.tools(), TableToNote()]
+        if os.environ.get("REACH_CHROME_ACTIONS") == "1":
+            mac_tools.append(EmailDraft())  # opens a Gmail draft in Chrome; never sends
         from .tools import ax, finder
 
         mac_tools += ax.tools() + finder.tools()  # finder_list always; Do mode tools only with REACH_DO_MODE=1

@@ -66,7 +66,10 @@ THRESHOLDS: dict[str, float] = {
 
 TOOL_FAMILY: dict[str, str] = {
     "document_question": "use evidence_search on the user's documents and cite passage ids",
-    "browser_task": "use browser_task",
+    "browser_task": (
+        "use browser_task; for a web search start at https://duckduckgo.com/?q=<url-encoded query> (google.com "
+        "serves automated browsers a bot check); for email use email_draft, which opens a Gmail draft and never sends"
+    ),
     "write_to_notes": "use note_append (or shelf_to_note for evidence ids)",
     "screen_question": (
         "use see_region for 'what is this' about a circled region image (otherwise the selected text); with nothing "

@@ -15,15 +15,18 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
 
 ## What was tested for real (no camera, no real mouse events)
 
-`uv run pytest -q` at the repo root: 71 passed (Kevin's 42 unchanged + 29 hands mode).
-`cd backend && uv run pytest -q`: 329 passed (includes 4 new for `reach hands` / the `hands` message, using
+`uv run pytest -q` at the repo root: 74 passed (Kevin's 42 unchanged + 32 hands mode).
+`cd backend && uv run pytest -q`: 332 passed (includes 4 new for `reach hands` / the `hands` message, using
 `sleep 30` as a harmless stand-in child). `cd apps/overlay && swift test`: 83 passed (includes `handsModeWire`).
 
 - **Direction.** `test_direction_hand_right_moves_cursor_right_and_up_is_up` feeds RAW (unmirrored) camera
   landmarks through Kevin's real `MediaPipeTracker.detect` / `detect_all` (only the model is faked): the hand moving
   to the user's right (raw x falling) moves the cursor right on every step; raising it moves the cursor up.
-  Removing Kevin's `1 - x` flip makes both cases fail (mutation checked). Mirroring happens once: landmarks are
-  flipped in the tracker, the preview flips the pixels once, mapping and calibration use the mirrored landmarks.
+  Removing Kevin's `1 - x` flip makes both cases fail (mutation checked). Mirroring: Kevin's design flips the
+  landmark x once in the tracker (MediaPipe sees the unmirrored image, no pixel copy); mapping and calibration use
+  those mirrored landmarks and the preview flips its pixels once for display. This deliberately does NOT mirror the
+  image once at capture as was asked: that would restructure Kevin's tracker (and his handedness swap). The two
+  flips describe the same view and the tests above check that they agree.
   `test_hud_preview_is_mirrored_and_dot_matches` checks the preview is mirrored and the dot sits on the fingertip.
 - **Closest hand, locked.** `control_hand: closest` (additive; default stays `right`) with `tracker.num_hands: 2`:
   unlocked, the largest hand wins; locked, it follows the hand nearest the last wrist and never flips to the other
@@ -31,17 +34,24 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
   held for `hold_frames` (2 in hands mode), then lost, and only then can the other hand take over.
 - **Pinch fingers.** `features.pinch_fingers: index_or_middle` (additive): thumb to the closer of index and
   middle. A point pose with the thumb resting on the curled middle finger is not a pinch (tested). Hands mode
-  widens the exit threshold to 0.40 (the old worker's reliable value) to keep drags from dropping.
-- **Actions** (pure engine, fake clock, recording mouse): short pinch = click at the down point (index drift below
-  12 px does not turn it into a micro-drag); pinch-hold-move = down, dragged events, up; double click; a pinch must
+  widens the exit threshold from 0.35 to 0.40 to keep drags from dropping. Only the wider hysteresis was carried over
+  from the old worker: its ratio divides by a larger hand size (wrist to knuckle plus knuckle span, about 1.8x
+  Kevin's scale), so its 0.25 / 0.40 numbers are not directly comparable.
+- **Actions** (pure engine, fake clock, recording mouse): a pinch presses where the cursor is (where you aimed),
+  not where the curling index has dragged the pointer, and a drag follows the hand's motion since the press
+  (synthetic test; real index-curl landing still needs the live check); index drift below 12 px stays a click; pinch-hold-move = down, dragged events, up; double click; a pinch must
   last 2 frames (1-frame jitter does not click); 0.25 s click cooldown; 2 px dead zone for a still hand; scroll
   direction (fingers up = content up, `--scroll-invert` flips it); no Accessibility = never holds a button.
 - **Safety** (the button is released in every case, tested): hand gone, frames stalled, mode stop, takeover (you
   moved the real mouse: 2 s pause), held over 20 s, open palm; fast hand loss: 1-frame flicker keeps the drag,
-  3 frames gone release it; hand leaving downward mid-pinch releases and ignores pinches for 0.5 s; a half-visible
-  hand (any joint within 3% of the border) never clicks. SIGINT and SIGTERM stop the engine (release) before exit;
-  `reach hands off` sends SIGINT first. Camera stall: no frame for 1 s releases, shows "camera stalled", reopens
-  the camera up to 3 times, then exits.
+  3 frames gone release it; a fast downward move with the index tip already low (hand leaving the frame) mid-pinch
+  releases and ignores pinches for 0.5 s, while fast downward moves mid-frame still move and drag normally; a
+  half-visible hand (thumb/index/middle tip within 3% of the border) never clicks but the cursor still moves, so
+  the bottom of the screen stays reachable.
+- **Implemented, not exercised by a test:** the SIGINT/SIGTERM handlers (stop the engine, release, exit;
+  `reach hands off` sends SIGINT first, then SIGTERM, then SIGKILL), the exception path in `run.py`, the camera
+  stall loop (no frame for 1 s: release, "camera stalled", reopen up to 3 times, then exit) and the ipc `hands`
+  handler itself (only its message parser is tested).
 
 ### Dry-run transcript (synthetic hands through the real pipeline with the hands-mode config)
 
@@ -95,4 +105,7 @@ not included. The run may have had no hand in view, so `num_hands: 2` cost with 
   `mouseDragged` like any drag). Not verified live.
 - The menu item 'Hands mode' (sends `{"type":"hands","on":...}`; the backend replies `hands_state`). The checkmark
   shows the last request; it does not yet read `hands_state` back. Spoken "Reach, hands mode on/off" was not added.
+- The model: hands mode uses `finger_processing/hand_landmarker.task` and falls back to
+  `perception/models/hand_landmarker.task` (already downloaded in the main checkout).
+- Scroll speed (gain lowered tenfold, untuned; up to 15 lines per event) and the HUD label width at 240 px are unverified.
 - `perception/` (the old pinch worker) is untouched for comparison.

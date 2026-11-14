@@ -35,8 +35,9 @@ def is_open_palm(frame) -> bool:
 
 
 def near_edge(frame, margin: float) -> bool:
-    """Any joint within `margin` of the image border: a half-visible hand, unsafe for clicks."""
-    return any(not (margin <= x <= 1 - margin and margin <= y <= 1 - margin) for x, y, *_ in frame.landmarks)
+    """Thumb, index or middle tip within `margin` of the image border: half-visible, unsafe for clicks."""
+    tips = (frame.fingers[n].tip for n in ("thumb", "index", "middle"))
+    return any(not (margin <= x <= 1 - margin and margin <= y <= 1 - margin) for x, y in tips)
 
 
 @dataclass
@@ -50,12 +51,13 @@ class ActionCfg:
     drag_threshold_px: float = 12.0     # below this, a pinch is a click at the down point
     dead_zone_px: float = 2.0           # still hand: ignore cursor moves this small (no shiver)
     palm_exit_s: float = 1.0
-    scroll_gain: float = 30.0           # lines per (normalized unit / s) per frame step
+    scroll_gain: float = 3.0           # lines per (normalized unit / s) per frame step
     scroll_deadzone: float = 0.15       # normalized units / s
     scroll_min_interval_s: float = 0.05
     scroll_invert: bool = False         # default: fingers up = content up, like a touch screen
     edge_margin: float = 0.03           # joints this close to the frame border: no click decisions
-    drop_speed: float = 1.2             # downward pointer speed (normalized / s) = hand leaving the frame
+    drop_speed: float = 1.2             # downward pointer speed (normalized / s) ...
+    drop_tip_y: float = 0.85            # ... with the index tip already this low = hand leaving the frame
     drop_lockout_s: float = 0.5         # after a drop, no new pinch for this long
     curl_deg: float = 135.0             # curl click: index middle-joint angle below this (idle pointing sits ~145-150)
     curl_max_s: float = 0.5             # ... reached within this long of leaving the pointing pose (a sag is not a tap)
@@ -86,6 +88,7 @@ class HandsEngine:
         self._trail: deque[tuple[float, float, float]] = deque(maxlen=30)   # t, x, y while pointing
         self._curl_from: float | None = None                      # when the index left the pointing pose
         self._curl_waited = False                                  # deferred one frame for a possible pinch
+        self._ptr_at_down: tuple[float, float] = (0.0, 0.0)          # pointer when the button went down (drag = delta)
 
     # -- safety ---------------------------------------------------------------
     def release(self, reason: str = "") -> None:
@@ -178,14 +181,16 @@ class HandsEngine:
             self._palm_since = None
             return self.state
 
-        # hand dropping fast toward the bottom edge, or half out of frame: release, no clicks
-        if frame.velocity[1] > c.drop_speed:
+        # hand dropping fast out of the bottom of the frame: release and ignore pinches for a moment
+        if frame.velocity[1] > c.drop_speed and frame.fingers["index"].tip[1] > c.drop_tip_y:
             self._no_pinch_until = now + c.drop_lockout_s
-            self.release("hand leaving · released")
-            return self.state
-        if near_edge(frame, c.edge_margin):
-            self.release("hand at the edge")
-            return self.state
+            if self.button_down or self._pending:
+                self.release("hand leaving · released")
+                return self.state
+        # half-visible hand (fingertips at the frame border): no click decisions, the cursor still moves
+        at_edge = near_edge(frame, c.edge_margin)
+        if at_edge:
+            self.release()
 
         # open palm held = leave hands mode
         if is_open_palm(frame) and not frame.pinch_active:
@@ -213,13 +218,13 @@ class HandsEngine:
                 self.state = "selecting"
             return self.state
 
-        if edge == "down" and not self.button_down:   # debounce: a pinch must last 2 frames to count
+        if edge == "down" and not self.button_down and not at_edge:   # debounce: a pinch must last 2 frames
             self._pending = (float(sx), float(sy), frame.pinch_finger)
             self._curl_from = None
             self.state = "pinch"
             return self.state
         pending, self._pending = self._pending, None
-        if pending is not None and frame.pinch_active and not self.button_down:
+        if pending is not None and frame.pinch_active and not self.button_down and not at_edge:
             px, py, finger = pending                  # act where the pinch began (pointer was frozen there)
             if finger == "middle":
                 if self.selector is not None and now >= self._no_pinch_until:
@@ -228,16 +233,18 @@ class HandsEngine:
                     self.state = "selecting"
                 return self.state
             if self._may_press(now):
-                self._press(px, py, now)
+                # press where the cursor is (where you aimed), not where the curling index dragged the pointer
+                self._press(*(self._last_set or (px, py)), now)
+                self._ptr_at_down = (px, py)
                 return self.state
         if self.button_down and (edge == "up" or not frame.pinch_active):
             self.release("click" if not self._dragging else "drag · released")
             return self.state
         if self.button_down:
-            dx, dy = sx - self._down_at[0], sy - self._down_at[1]
+            dx, dy = sx - self._ptr_at_down[0], sy - self._ptr_at_down[1]   # drag by the hand's motion since down
             if self._dragging or math.hypot(dx, dy) > c.drag_threshold_px:
                 self._dragging = True
-                self._move(sx, sy)
+                self._move(self._down_at[0] + dx, self._down_at[1] + dy)
                 self.state = "dragging"
             return self.state
         if frame.pinch_active:   # a pinch that did not press (lockout, middle without selector): do nothing

@@ -8,7 +8,7 @@ Reach's own code is MIT (see `LICENSE`). Nothing below is vendored into this rep
 | Drex Max (`drex-max-v1.1`) | Nace console API | Nace terms | System 1: supervises and judges Intern's steps and tool calls; routes the 12 voice/typed commands. |
 | NDI via `nace-sdk` | Nace console API | Nace terms | Document parsing and quote grounding for evidence cards. |
 | Nace browser harness | github.com/nace-ai/drex-browser-harness-pub at commit `9f09a8c` | MIT | Browser execution. Reach applies two patches, kept in `patches/` and applied by `scripts/setup-browser.sh`: (1) `browser-harness-deepinfra.patch` adds DeepInfra as a helper-model provider (22 lines); (2) `browser-harness-drex-alias.patch` accepts the dated model id `drex-max-v1.1` where the harness expected `drex-max` (one condition each in `src/drex.ts` and `src/keycheck.ts`). |
-| Qwen3.8-27B on DeepInfra | deepinfra.com | DeepInfra terms | System 2: planning and answers. |
+| Qwen3-30B-A3B on DeepInfra (default System 2; Qwen3.8-27B also supported) | deepinfra.com | DeepInfra terms | System 2: planning and answers. |
 | Qwen3-VL-235B-A22B-Instruct on DeepInfra | deepinfra.com | DeepInfra terms | Reads screen regions (`see_region`) and is the browser harness's helper model. |
 | MediaPipe (`mediapipe` 1.2.3 in `finger_processing/`; hand landmarker model) | github.com/google-ai-edge/mediapipe | Apache-2.0 | Hand tracking for the experimental Hands mode (`finger_processing/`, `hands_mode/`). The model file is downloaded at setup, not committed. |
 | Whisper large-v3-turbo (`openai/whisper-large-v3-turbo`) via DeepInfra | deepinfra.com | MIT (model); DeepInfra terms | Cloud speech-to-text for held-key voice (Apple on-device recognition is the fallback). |

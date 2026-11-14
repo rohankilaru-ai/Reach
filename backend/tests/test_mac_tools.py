@@ -309,3 +309,23 @@ def test_same_site_redirect_counts_as_loaded():
     assert chrome.same_site("https://mail.google.com/mail/u/0/#inbox", "https://mail.google.com")
     assert chrome.same_site("https://accounts.google.com/x", "https://www.google.com/")
     assert not chrome.same_site("https://evil.example.com/google.com", "https://google.com")
+
+
+def test_spa_still_loading_on_the_right_site_counts_as_opened():
+    from reach.tools import chrome
+
+    clock = [0.0]
+    states = iter([{"loading": True, "url": "https://mail.google.com/mail/u/0/#inbox", "window_id": 1}] * 50)
+
+    def fake_state(tab_id, run):
+        return next(states)
+
+    real_state, real_mono = chrome.tab_state, chrome.time.monotonic
+    chrome.tab_state = fake_state
+    chrome.time.monotonic = lambda: clock[0]
+    try:
+        out, detail = chrome.wait_loaded(7, "https://mail.google.com", None, wait_s=6.0,
+                                         sleep=lambda s: clock.__setitem__(0, clock[0] + s))
+    finally:
+        chrome.tab_state, chrome.time.monotonic = real_state, real_mono
+    assert out == "verified" and "still finishing" in detail

@@ -2,7 +2,7 @@
 
 A client that says `role: "perception"` in its hello may send `select` and `pointer`. The server checks them and relays
 each to every connected `role: "overlay"` client (never back to the sender) as `selection` / `pointer`. It never starts
-an ask by itself. It keeps the latest hand selection for 60 s; an `ask` without its own selection uses it.
+an ask by itself. It keeps the latest hand selection for 12 s, for one ask; an `ask` without its own selection uses it.
 An all-empty `select` (no text, region or image) from any roled client clears it (the overlay's clear button).
 """
 
@@ -17,7 +17,7 @@ from pathlib import Path
 from .contracts import Ask, PointerIn, Pointer, Select, Selection, SelectionMsg
 from .paths import reach_dir
 
-LATEST_TTL_S = 60.0
+LATEST_TTL_S = 12.0  # a hand selection is for the very next ask: older ones are stale
 MAX_TEXT = 20_000
 MAX_PATH = 256
 
@@ -105,7 +105,8 @@ class Relay:
         if ask.selection is not None:
             return ask, ("pinch" if ask.selection.source == "pinch" else "client")
         if self.latest is not None and time.monotonic() - self.latest_at < LATEST_TTL_S:
-            return ask.model_copy(update={"selection": self.latest}), "pinch-latest"
+            sel, self.latest = self.latest, None  # one-shot: it is consumed by this ask
+            return ask.model_copy(update={"selection": sel}), "pinch-latest"
         return ask, None
 
 

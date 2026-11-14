@@ -25,7 +25,10 @@ import sys
 import time
 from pathlib import Path
 
+from pathlib import Path
+
 from finger_processing import FingerProcessor, load_config
+from finger_processing.processing import resolve_path
 
 from hands_mode.actions import ActionCfg, HandsEngine
 from hands_mode.mouse import MacActionMouse, PrintMouse
@@ -44,6 +47,20 @@ def log_state(feed: Path, state: str) -> None:
         fh.write(json.dumps({"t": time.time(), "state": state}) + "\n")
 
 
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task"
+
+
+def ensure_model() -> None:
+    """Download the MediaPipe hand model next to finger_processing on first run (it is not committed)."""
+    from pathlib import Path
+    from urllib.request import urlretrieve
+
+    path = Path(__file__).resolve().parents[1] / "finger_processing" / "hand_landmarker.task"
+    if not path.exists():
+        print(f"first run: downloading the hand model (8 MB) to {path.name} ...", flush=True)
+        urlretrieve(MODEL_URL, path)
+
+
 def hands_config(config_path: str | None = None, region=None):
     cfg = load_config(config_path)
     cfg.hands.primary = "closest"
@@ -54,6 +71,9 @@ def hands_config(config_path: str | None = None, region=None):
     cfg.pointer.pinch_freeze_ms = max(cfg.pointer.pinch_freeze_ms, 150.0)
     if region:
         cfg.calibration.default_region = tuple(region)
+    shared = Path(__file__).resolve().parents[1] / "perception" / "models" / "hand_landmarker.task"
+    if not resolve_path(cfg.tracker.model_path).exists() and shared.exists():
+        cfg.tracker.model_path = str(shared)   # same MediaPipe model the pinch worker already downloaded
     return cfg
 
 
@@ -106,6 +126,7 @@ def main(argv: list[str] | None = None) -> int:
     feed.write_text("")
 
     cfg = hands_config(args.config, args.region)
+    ensure_model()
     fp = FingerProcessor(cfg, video=args.video).start()
     reopens, last_frame_t = 0, time.monotonic()
     show = not args.no_preview

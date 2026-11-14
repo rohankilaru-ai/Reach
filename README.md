@@ -12,7 +12,7 @@ Built for the Drexathon, Wildcard track. All code here was written on 2026-11-14
 | --- | --- | --- |
 | **Intern** (Nace harness, v0.30.1) | The agent loop. Every ask opens a real Intern Session. | Runs tools, keeps the journal, holds the tool guard; Reach adds tools and a secret-path policy through Intern's extension interface |
 | **Drex Max** (`drex-max-v1.1`) | Nace's decision model | **System 1.** Understands each task before it runs (~260 ms), supervises each turn, judges each tool call, decides whether a message continues the last conversation, checks whether overheard speech is meant for Reach, routes 12 voice commands. Inside the browser harness it makes the page actions |
-| **Qwen3.8-27B on DeepInfra** | Language model | **System 2.** Plans, picks tools and writes the answers you read |
+| **Qwen3-30B-A3B on DeepInfra** | Language model | **System 2.** Plans, picks tools and writes the answers you read. Chosen for speed (about 0.5 s per tool-calling turn versus 1.45 s for Qwen3.8-27B in our timing); `REACH_SYSTEM2` switches models, and Qwen3.8-27B was used for the router benchmark and early runs |
 | **NDI** (`nace-sdk`) | Document pipeline | Parses PDFs; grounds each cited quote to a page and region |
 | **Nace browser harness** (patched) | Browser agent | Runs web tasks in its own browser |
 | **Qwen3-VL-235B on DeepInfra** | Vision model | Reads your screen or a circled region, tables, and points at form fields; also the browser harness's helper |
@@ -39,7 +39,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 
 | Feature | Label | Evidence and caveats |
 | --- | --- | --- |
-| Intern as harness; Drex Max as System 1; Qwen3.8-27B (DeepInfra) as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `receipt.json` |
+| Intern as harness; Drex Max as System 1; Qwen3-30B-A3B (DeepInfra) as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `receipt.json` |
 | Drex task understanding before every ask (kind, needs-screen, risky, continues-previous) | implemented | `docs/evidence/intent.md`: held-out kind accuracy 22/25; 0 wrong risky calls; p50 257 ms |
 | Conversation memory: Drex decides whether a message continues the last exchange | implemented | live check: follow-up scored 0.98, unrelated topic 0.009 |
 | NDI evidence: add a PDF, cited quotes grounded to page and region | implemented | two real PDFs; `docs/GROUND_SHAPE.md` |
