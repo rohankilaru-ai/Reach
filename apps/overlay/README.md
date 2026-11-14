@@ -145,3 +145,6 @@ AVAudioPlayer (deleted after playback); on error or after 3 s, AVSpeechSynthesiz
 stops playback and drops late audio. The overlay never holds a key; the backend calls DeepInfra.
 Headless check (needs `reach serve` running): `.build/debug/Reach --reach-dir <repo>/.reach --cloud-voice-selftest "Add 17 apples"`.
 Evidence: `docs/evidence/cloud-voice.md`.
+
+## Backend auto-start
+When no backend is reachable the app starts `uv run reach serve` from the repo's `backend/` folder itself (at most once every 25 s) and logs to `.reach/serve.log`. Server options live in `.reach/server.env` as plain `REACH_*=value` lines (for example `REACH_DO_MODE=1`); keys are never read from it.
