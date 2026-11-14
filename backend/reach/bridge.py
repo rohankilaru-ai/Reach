@@ -191,6 +191,14 @@ class InternBridge:
                 r.status, r.reason, r.final_text = "ok", "needs_selection", intent_mod.NEEDS_SELECTION_REPLY
                 r.intent = intent_mod.receipt_dict(it)
                 return r
+            if it is not None and it.action == "confirm":
+                reply = (f"That looks risky or hard to undo, so I haven't done anything: \"{task.ask.text[:100]}\". "
+                         "Say \"yes, do it\" and I will.")
+                sink(task.id, {"type": "text_delta", "text": reply})
+                r = task.builder.receipt()
+                r.status, r.reason, r.final_text = "ok", "needs_confirmation", reply
+                r.intent = intent_mod.receipt_dict(it)
+                return r
             await task.session.start(prompt_for(task.ask, it))
         except asyncio.CancelledError:
             task.abort()
