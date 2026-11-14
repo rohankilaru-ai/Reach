@@ -135,9 +135,35 @@ final class ReadyView: NSView {
 // MARK: - spoken replies (on-device AVSpeechSynthesizer)
 
 @MainActor
-final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
+final class Speaker: NSObject, AVSpeechSynthesizerDelegate, AVAudioPlayerDelegate {
     private let synth = AVSpeechSynthesizer()
+    private var player: AVAudioPlayer?
+    private var playing: URL?
     var onSpeaking: ((Bool) -> Void)?
+
+    /// Plays a cloud WAV (under .reach/audio/) and deletes it when done or stopped.
+    func play(file: URL) {
+        stop()
+        guard let p = try? AVAudioPlayer(contentsOf: file) else {
+            try? FileManager.default.removeItem(at: file)
+            log("cloud voice: unplayable audio")
+            return
+        }
+        p.delegate = self
+        player = p; playing = file
+        p.play()
+        onSpeaking?(true)
+        log("speaking (cloud) \(String(format: "%.1f", p.duration)) s")
+    }
+
+    private func dropPlayer() {
+        player?.stop(); player = nil
+        if let f = playing { try? FileManager.default.removeItem(at: f); playing = nil }
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ p: AVAudioPlayer, successfully flag: Bool) {
+        DispatchQueue.main.async { MainActor.assumeIsolated { self.dropPlayer(); self.onSpeaking?(false) } }
+    }
 
     override init() {
         super.init()
@@ -156,6 +182,7 @@ final class Speaker: NSObject, AVSpeechSynthesizerDelegate {
     }
 
     func stop() {
+        dropPlayer()
         if synth.isSpeaking { synth.stopSpeaking(at: .immediate) }
         onSpeaking?(false)
     }

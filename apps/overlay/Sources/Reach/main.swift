@@ -302,7 +302,63 @@ if args.contains("--replay") {
     return allOK ? 0 : 1
 }
 
-if args.contains("--hub-selftest") {
+/// TTS -> STT loop through the backend, no microphone and no playback: synthesize `sentence` (saved under
+/// .reach/audio/), send it back through `stt`, print the transcript and timings, compare Apple on-device on the same
+/// audio when Speech Recognition is already allowed (never asks), then delete the file.
+@MainActor func runCloudVoiceSelftest(_ sentence: String) {
+    let client = ReachClient()
+    var t0 = Date(), ttsMs = 0
+    var file: URL?
+    func done(_ code: Int32) {
+        if let f = file { try? FileManager.default.removeItem(at: f) }
+        exit(code)
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { log("cloud voice selftest FAIL: timeout"); done(2) }
+    client.onMessage = { msg in
+        MainActor.assumeIsolated {
+            switch msg {
+            case .ready:
+                t0 = Date()
+                client.send(.tts(text: sentence, id: "selftest-tts"))
+            case .ttsAudio(let path, let ms, let err, _):
+                if let err { log("cloud voice selftest FAIL: tts \(err)"); done(1); return }
+                guard CloudVoice.isAudioPath(path, reachDir: files.reachDir) else { log("cloud voice selftest FAIL: path"); done(1); return }
+                file = URL(fileURLWithPath: path)
+                ttsMs = Int(Date().timeIntervalSince(t0) * 1000)
+                log("cloud voice selftest tts: \(ms) ms server, \(ttsMs) ms round trip, saved \(path)")
+                t0 = Date()
+                client.send(.stt(audioPath: path, id: "selftest-stt"))
+            case .sttResult(let text, let ms, let err, _):
+                let rt = Int(Date().timeIntervalSince(t0) * 1000)
+                if let err { log("cloud voice selftest FAIL: stt \(err)"); done(1); return }
+                log("cloud voice selftest stt (whisper): \"\(text)\" \(ms) ms server, \(rt) ms round trip")
+                guard SFSpeechRecognizer.authorizationStatus() == .authorized, let f = file else {
+                    log("cloud voice selftest: on-device comparison skipped (Speech Recognition not allowed for this binary)")
+                    log("cloud voice selftest PASS"); done(text.isEmpty ? 1 : 0); return
+                }
+                let speech = SpeechInput()
+                let a0 = Date()
+                speech.transcribe(file: f) { r in
+                    let ams = Int(Date().timeIntervalSince(a0) * 1000)
+                    switch r {
+                    case .success(let h): log("cloud voice selftest stt (on-device): \"\(h.text)\" \(ams) ms")
+                    case .failure(let e): log("cloud voice selftest on-device failed: \(e.localizedDescription)")
+                    }
+                    log("cloud voice selftest PASS"); done(text.isEmpty ? 1 : 0)
+                }
+            case .error(let m, _): log("cloud voice selftest server error: \(m)")
+            default: break
+            }
+        }
+    }
+    guard let info = files.read() else { log("cloud voice selftest FAIL: no backend run files under \(files.reachDir.path)"); exit(3) }
+    client.connect(port: info.port, token: info.token)
+}
+
+if let sentence = argValue("--cloud-voice-selftest") {
+    MainActor.assumeIsolated { runCloudVoiceSelftest(sentence) }
+    app.run()
+} else if args.contains("--hub-selftest") {
     exit(MainActor.assumeIsolated { runHubSelftest() })
 } else if args.contains("--lasso-selftest") {
     exit(MainActor.assumeIsolated { runLassoSelftest() })

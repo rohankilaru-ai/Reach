@@ -16,6 +16,7 @@ from pydantic import ValidationError
 from .contracts import (
     Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, Hypotheses, PointerIn, Ready, Select, Transcript,
     Utterance,
+    SttIn, SttResult, TtsAudio, TtsIn,
     inbound_adapter,
 )
 from .bridge import evidence_cards
@@ -142,6 +143,10 @@ class Server:
                     t = asyncio.create_task(self._add(msg, out))
                     running.add(t)
                     t.add_done_callback(running.discard)
+                elif isinstance(msg, (SttIn, TtsIn)):
+                    t = asyncio.create_task(self._speech(msg, out))
+                    running.add(t)
+                    t.add_done_callback(running.discard)
                 elif isinstance(msg, Hypotheses):
                     t = asyncio.create_task(self._route_hypotheses(key, msg, out))
                     running.add(t)
@@ -260,6 +265,24 @@ class Server:
         except Exception:
             pass
         out.put_nowait(Addressed(**addressed.reply(r)).model_dump_json())
+
+    async def _speech(self, msg, out: asyncio.Queue) -> None:
+        """Cloud voice (speech_cloud): `stt` -> `stt_result`, `tts` -> `tts_audio`. Failures come back as `error`."""
+        from . import speech_cloud
+
+        if isinstance(msg, SttIn):
+            try:
+                r = await asyncio.to_thread(speech_cloud.transcribe, msg.audio_path)
+                res = SttResult(text=r["text"], ms=r["ms"], language=r.get("language"), id=msg.id)
+            except Exception as e:
+                res = SttResult(error=speech_cloud._err(e), id=msg.id)
+        else:
+            try:
+                r = await asyncio.to_thread(speech_cloud.synthesize, msg.text, msg.voice)
+                res = TtsAudio(path=r["path"], format=r["format"], ms=r["ms"], id=msg.id)
+            except Exception as e:
+                res = TtsAudio(error=speech_cloud._err(e), id=msg.id)
+        out.put_nowait(res.model_dump_json())
 
     async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
         from . import evidence
