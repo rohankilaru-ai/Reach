@@ -107,10 +107,7 @@ class ReceiptBuilder:
         kind = event.get("type")
         if kind == "tool_call_end":
             (self.refused if event.get("status") == "refused" else self.tools).append(event.get("name", "?"))
-        elif kind == "tool_guard":
-            name = event.get("name", "?")
-            if name not in self.refused:
-                self.refused.append(name)
+        # tool_guard is not counted: the refused call also ends with tool_call_end(status=refused)
         elif kind == "decision":
             self.decisions += 1
             self.system1_cost += float(event.get("cost_usd") or 0)
