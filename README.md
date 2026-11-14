@@ -25,7 +25,7 @@ Drex Max never writes the answers: it answers typed questions with calibrated pr
  pill, hotkeys, voice,    token-protected       │
  circle, hands*                                 ▼
                                          Intern Session
-                                  System 2 Qwen3.8-27B  ◄─ judged by ─►  System 1 Drex Max
+                                 System 2 Qwen3-30B-A3B ◄─ judged by ─►  System 1 Drex Max
                                                 │
    ┌─────────────┬──────────────┬───────────────┼──────────────┬──────────────┬─────────────┐
  evidence_    browser_      note_append /   see_screen /    point_at      chrome_*     ax_* / finder_*
@@ -51,6 +51,9 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Overlay: top pill, hover to expand, one-gesture circle plus voice, zoom lens, permission checklist | experimental | unit and headless tests pass; gestures not yet verified by hand on every path |
 | Voice: hold Option-Space to talk; cloud Whisper transcription and Kokoro replies, Apple on-device as fallback | experimental | `docs/evidence/cloud-voice.md`: on clean test audio Apple's recogniser was more accurate and 4 to 8 times faster; microphone audio goes to DeepInfra when the cloud setting is on |
 | Hands-free listening: wake word "Reach", Drex decides whether speech is meant for Reach (Option-Shift-Space toggles) | experimental | `docs/evidence/addressed.md`: held-out precision 0.94, recall 0.79 on 40 hand-written utterances; always-on listening is off at launch, recognition runs on the Mac |
+| Hands mode: your hand is the mouse (point to move, pinch to click or drag, two fingers to scroll, open palm to stop); Option-Shift-H toggles it from the pill | experimental | `hands_mode/` on the teammate's finger tracking: 74 unit tests including a mirror-direction proof; closest-hand lock; releases a held click when the hand drops out of frame; not yet verified live by a person. It is the one module that sends mouse events |
+| Dictation: speak into any focused text box (Option-Shift-D) | experimental | types only into editable fields through Accessibility, never secure fields; on-device recognition, no model calls; 108 Swift tests and a headless self-test pass; not yet tried by hand |
+| Gmail drafts (`email_draft`) and clipboard copy (`clipboard_copy`) | implemented / experimental | the draft opens in your signed-in Chrome and is never sent; the clipboard write is read back (verified live) |
 | Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | experimental | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
 | Hand pointer and pinch-to-select with MediaPipe | experimental | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
@@ -88,6 +91,7 @@ Permissions: Screen Recording, Microphone and Speech Recognition are required; A
 - Microphone audio goes to DeepInfra (Whisper) only while you hold the key with cloud voice on. Hands-free listening uses on-device recognition and keeps no audio; only the text of speech Drex judges is for Reach is acted on.
 - Chrome tab titles and URLs go to the model when you ask Reach to list tabs.
 - Documents are parsed by NDI (Nace).
+- When dictation uses its paste fallback it briefly puts your text on the clipboard and restores the old contents.
 
 ## How NDI grounds answers
 
@@ -104,7 +108,7 @@ Permissions: Screen Recording, Microphone and Speech Recognition are required; A
 ## Limits (read before judging)
 
 - Drex Max supervises and routes; it does not generate text.
-- The browser tool runs the harness's own hidden browser, not your Chrome. In one risky-form test the page was not submitted, but Drex judged the call routine, so we do not claim it blocks risky actions. Loop mode is used because default mode did not complete the click test.
+- The browser tool runs the harness's own hidden browser, not your Chrome; Google and DuckDuckGo show that browser a CAPTCHA, so web searches go through your own Chrome instead. In one risky-form test the page was not submitted, but Drex judged the call routine, so we do not claim it blocks risky actions. Loop mode is used because default mode did not complete the click test.
 - The Nace console's firewall blocked our network address for about 25 minutes after heavy parallel testing; the app cannot answer while Drex is unreachable.
 - Cost figures are list-price estimates from token counts; Drex responses carry no price. Provider balances are the truth.
 - Vision models misread chess boards and similar dense images; treat answers as a second opinion.
