@@ -30,7 +30,9 @@ from pathlib import Path
 from finger_processing import FingerProcessor, load_config
 from finger_processing.processing import resolve_path
 
-from hands_mode.actions import ActionCfg, HandsEngine
+from hands_mode.actions import ActionCfg, HandsEngine, is_pointing
+from hands_mode.signals import SignalWatcher
+from hands_mode.signals import enabled as signals_enabled
 from hands_mode.mouse import MacActionMouse, PrintMouse
 
 STALL_S, MAX_REOPENS = 1.0, 3   # no new camera frame for STALL_S: release, reopen the camera (at most 3 times)
@@ -104,6 +106,8 @@ def main(argv: list[str] | None = None) -> int:
         print("--control is macOS only; running as a dry run.")
     selector = make_selector(not args.no_select)
     engine = HandsEngine(mouse, ActionCfg(scroll_invert=args.scroll_invert), selector=selector)
+    watcher = SignalWatcher() if signals_enabled() else None   # REACH_HAND_SIGNALS=0 turns hand signals off
+    engine.signals = watcher is not None
 
     def on_signal(signum, _frame):
         engine.stop("stopped")
@@ -162,6 +166,11 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 last_id, last_frame_t = frame.frame_id, time.monotonic()
                 engine.update(frame)
+                if watcher is not None and engine.active and (
+                        sig := watcher.update(frame, time.monotonic(),
+                                              busy=engine.button_down or engine.selecting or is_pointing(frame)
+                                              or engine.state.startswith("paused"))):
+                    print(f"GESTURE {sig}", flush=True)   # the overlay acts on it; the engine never clicks
             if selector is not None and (status := selector.poll()):
                 print(f"[select] {status}", flush=True)
             if engine.state != last_state:

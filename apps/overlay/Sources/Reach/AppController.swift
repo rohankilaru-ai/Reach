@@ -111,6 +111,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if on, !self.panel.isVisible { self.panel.orderFrontRegardless() }
         }
+        model.onHandsGesture = { [weak self] g in self?.handSignal(g) }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
         model.onCompact = { [weak self] c in self?.showCompact(c) }
         model.onBadge = { [weak self] on in self?.menuBar?.setBadge(on) }
@@ -363,6 +364,25 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// While a task runs, Esc aborts from anywhere; the hotkey is released as soon as it ends.
     private var key = TapOrHold()
+
+    /// Hand signals in hands mode: thumbs-up toggles dictation; peace starts a voice ask like holding Option-Space,
+    /// and a second peace ends it and sends (like releasing the key).
+    private func handSignal(_ g: String) {
+        guard model.handsOn else { return }
+        let listening = gesture.phase == .holding
+        guard let s = HandsMode.signal(g, dictationOn: dictation.isOn, listening: listening) else { return }
+        let hint = HandsMode.signalHint(s, dictationOn: dictation.isOn)
+        switch s {
+        case .toggleDictation: dictation.flip()
+        case .startListening:
+            guard ptt.phase == .idle else { return }
+            lastActivity = Date()
+            if !panel.isVisible { panel.orderFrontRegardless() }
+            holdBegan()
+        case .stopListening: holdEnded()
+        }
+        model.flashHands(hint, seconds: HandsMode.signalHintSeconds)
+    }
 
     private func optionSpaceDown() {
         lastActivity = Date()

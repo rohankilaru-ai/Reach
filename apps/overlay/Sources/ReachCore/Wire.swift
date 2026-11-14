@@ -199,6 +199,8 @@ public enum ServerMessage: Equatable, Sendable {
     /// Hands mode: the backend's TRUE state (start, stop, or the process exiting on its own).
     /// `phase` (no_hand | pointing | pinching | dragging | paused | leaving) streams while it runs.
     case handsState(on: Bool, pid: Int?, reason: String?, phase: String? = nil)
+    /// A hand signal held in hands mode: "thumbs_up" or "peace".
+    case handsGesture(String)
     case unknown(type: String)
 
     public static func decode(_ text: String) throws -> ServerMessage {
@@ -247,6 +249,8 @@ public enum ServerMessage: Equatable, Sendable {
             if case .bool(let b)? = v["on"] { on = b }
             return .handsState(on: on, pid: v["pid"]?.number.map { Int($0) }, reason: v["reason"]?.string,
                                phase: v["phase"]?.string)
+        case "hands_gesture":
+            return .handsGesture(v["gesture"]?.string ?? "")
         default:
             return .unknown(type: type)
         }

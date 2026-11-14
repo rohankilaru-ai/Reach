@@ -91,7 +91,7 @@ class Server:
 
     def _hands_emit(self, st: dict) -> None:
         """hands.py's emitter: the TRUE hands state to every overlay client (thread-safe; the watcher is a thread)."""
-        msg = json.dumps({"type": "hands_state", **st})
+        msg = json.dumps({"type": "hands_gesture", **st} if "gesture" in st else {"type": "hands_state", **st})
         loop = self.loop
         if loop is None or loop.is_closed():
             return

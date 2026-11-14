@@ -72,6 +72,17 @@ def phase_of(state: str) -> str | None:
     return None
 
 
+GESTURES = ("thumbs_up", "peace")
+
+
+def parse_gesture_line(line: str) -> str | None:
+    """hands_mode prints `GESTURE <name>` when a hand signal fires; returns <name> (a known one), else None."""
+    parts = line.strip().split()
+    if len(parts) == 2 and parts[0] == "GESTURE" and parts[1] in GESTURES:
+        return parts[1]
+    return None
+
+
 MIN_PHASE_GAP = 0.1   # at most ~10 phase updates a second
 
 
@@ -87,7 +98,11 @@ def _watch(proc: subprocess.Popen, log=None) -> None:
                     log.flush()
                 except (OSError, ValueError):
                     pass
-            st = parse_state_line(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+            text = raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+            if (g := parse_gesture_line(text)) and proc.pid not in _stopping:
+                _announce({"gesture": g})   # ipc sends it as `hands_gesture`
+                continue
+            st = parse_state_line(text)
             new = phase_of(st) if st else None
             now = time.monotonic()
             if new and new != phase and proc.pid not in _stopping:

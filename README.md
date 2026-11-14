@@ -81,7 +81,7 @@ REACH_SIGN_IDENTITY="<your code-signing identity>" ../scripts/build-overlay.sh  
 open ../apps/overlay/build/Reach.app                  # the app starts the backend itself
 ```
 
-**Controls.** **Option-Space**: tap to type, hold to talk; while holding, circle what you mean with the mouse. **Option-Shift-Space**: hands-free listening on or off. **Option-Shift-H**: hands mode on or off (your hand moves the mouse; open palm also turns it off; needs Accessibility). **Esc** cancels. Move the mouse to the top-centre of the screen to show the pill. The "Set up Reach" window checks permissions and turns green when everything required is granted.
+**Controls.** **Option-Space**: tap to type, hold to talk; while holding, circle what you mean with the mouse. **Option-Shift-Space**: hands-free listening on or off. **Option-Shift-H**: hands mode on or off (your hand moves the mouse; open palm also turns it off; needs Accessibility). Hands mode signals: thumbs-up toggles dictation; peace sign toggles listen-to-me; open palm stops hands mode (each held about 0.6 s; `REACH_HAND_SIGNALS=0` in `.reach/server.env` turns the first two off). **Esc** cancels. Move the mouse to the top-centre of the screen to show the pill. The "Set up Reach" window checks permissions and turns green when everything required is granted.
 Permissions: Screen Recording, Microphone and Speech Recognition are required; Accessibility (Do mode), Camera (hands) and Automation (Chrome, Finder, Notes, TextEdit) are optional. `swift scripts/request-permissions.swift` raises the prompts for the terminal.
 
 ## Privacy: what leaves your Mac
