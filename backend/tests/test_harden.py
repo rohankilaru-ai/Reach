@@ -90,3 +90,73 @@ def test_plain_notes_file_still_verified(tmp_path):
     assert r.outcome == "verified" and notes.read_text() == "hello world\n"
     r2 = native.write_file("second", allowed=notes)
     assert r2.outcome == "verified" and notes.read_text() == "hello world\nsecond\n"
+
+
+# ---- reach stop ends browser children ----
+
+def _gone(pid: int, timeout: float = 5.0) -> bool:
+    end = time.monotonic() + timeout
+    while time.monotonic() < end:
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.05)
+    return False
+
+
+def test_stop_kills_registered_browser_children(tmp_path, monkeypatch):
+    from reach import cli
+    from reach.tools import browser
+
+    monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
+    run = tmp_path / ".reach" / "run"
+    run.mkdir(parents=True)
+    pidfile = tmp_path / "grandchild.pid"
+    # A fake harness: ignores SIGTERM (forces the SIGKILL step) and has a grandchild like Chromium.
+    fake = subprocess.Popen(
+        [sys.executable, "-c",
+         "import os,signal,subprocess,sys,time\n"
+         "signal.signal(signal.SIGTERM, signal.SIG_IGN)\n"
+         "g=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'])\n"
+         f"open({str(pidfile)!r},'w').write(str(g.pid))\n"
+         "time.sleep(60)\n"],
+        start_new_session=True,
+    )
+    server = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"], start_new_session=True)
+    try:
+        end = time.monotonic() + 5
+        while not pidfile.exists() and time.monotonic() < end:
+            time.sleep(0.05)
+        grand = int(pidfile.read_text())
+        browser.register_child(fake.pid)
+        (run / "server.json").write_text(json.dumps({"pid": server.pid}))
+        cli.cmd_stop(SimpleNamespace())
+        fake.wait(timeout=5)
+        server.wait(timeout=5)
+        assert _gone(grand)
+        assert browser._read_children() == []
+    finally:
+        for p in (fake, server):
+            if p.poll() is None:
+                p.kill()
+
+
+def test_kill_children_skips_own_group_and_non_leaders(tmp_path, monkeypatch):
+    from reach.tools import browser
+
+    monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
+    child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])  # same group as pytest
+    try:
+        assert browser.kill_children([os.getpid(), child.pid], grace_s=0.1) == []
+        assert child.poll() is None
+    finally:
+        child.kill()
+
+
+def test_child_env_drops_secrets_but_keeps_harness_keys():
+    from reach.tools import browser
+
+    env = browser.child_env({"PATH": "/bin", "HOME": "/h", "NACE_API_KEY": "sk-FAKE-1", "OPENAI_API_KEY": "sk-FAKE-2",
+                             "GITHUB_TOKEN": "x", "REACH_DIR": "/r", "AWS_SECRET_ACCESS_KEY": "y"})
+    assert env == {"PATH": "/bin", "HOME": "/h", "NACE_API_KEY": "sk-FAKE-1", "REACH_DIR": "/r"}

@@ -53,10 +53,21 @@ def cmd_serve(args) -> int:
         from .bridge import InternBridge
 
         bridge = InternBridge()
+    from .tools import browser
+
+    browser.clear_children()  # stale pids from a crashed server are never signalled
+
+    def _on_term(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _on_term)  # `reach stop`: unwind so the browser children are ended below
     try:
         asyncio.run(Server(bridge).serve())
     except KeyboardInterrupt:
         pass
+    finally:
+        browser.kill_children()
+        browser.clear_children()
     return 0
 
 
@@ -269,6 +280,13 @@ def cmd_stop(args) -> int:
         print(f"stopped server pid {pid}")
     except (OSError, ValueError, KeyError):
         print("no server running")
+    from .tools import browser
+
+    # The server ends its browser children on SIGTERM; this also covers a server that died without doing so.
+    time.sleep(0.2)
+    killed = browser.kill_children()
+    if killed:
+        print(f"stopped {len(killed)} browser task(s)")
     return 0
 
 
