@@ -218,7 +218,29 @@ def paired(rows: list[dict[str, Any]], a: str, bsys: str, split: str = "held_out
 SYSTEMS = ("drex", "qwen_probs", "qwen_label")
 
 
+def dedupe_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One row per (system, split, id): a re-run or resumed file must not count an item twice. The last row wins."""
+    last: dict[tuple[str, str, str], dict[str, Any]] = {}
+    for r in rows:
+        last[(r["system"], r["split"], r["id"])] = r
+    return list(last.values())
+
+
+def saved_model(rows: list[dict[str, Any]], systems: tuple[str, ...], default: str) -> str:
+    """The model id recorded in the saved rows for these systems (comma-joined if several), else `default`."""
+    seen = sorted({str(r["model"]) for r in rows if r.get("system") in systems and r.get("model")})
+    return ", ".join(seen) if seen else default
+
+
+def is_complete(rows: list[dict[str, Any]], items: list[dict[str, Any]]) -> bool:
+    """True when every system present answered every fixture item of both splits."""
+    systems = {r["system"] for r in rows}
+    have = {(r["system"], r["split"], r["id"]) for r in rows}
+    return bool(systems) and all((s, it["split"], it["id"]) in have for s in systems for it in items)
+
+
 def report_v2(rows: list[dict[str, Any]], meta: dict[str, Any]) -> dict[str, Any]:
+    rows = dedupe_rows(rows)
     out: dict[str, Any] = {"meta": meta, "results": {}, "paired_held_out": []}
     systems = [s for s in SYSTEMS if any(r["system"] == s for r in rows)]
     for s in systems:
@@ -353,7 +375,7 @@ def main(argv: list[str]) -> int:
     if argv and argv[0] == "report":
         commit = argv[argv.index("--commit") + 1] if "--commit" in argv else "-"
         paths = [p for p in argv[1:] if p.endswith(".jsonl")]
-        rows = [json.loads(line) for p in paths for line in Path(p).read_text().splitlines() if line.strip()]
+        rows = dedupe_rows([json.loads(line) for p in paths for line in Path(p).read_text().splitlines() if line.strip()])
         items = load_v2()
         meta: dict[str, Any] = {"prompt_commit": commit, "runs": [Path(p).name for p in paths]}
         for p in paths:  # bench_v2-YYYYmmdd-HHMMSS-<split>.jsonl
@@ -366,12 +388,18 @@ def main(argv: list[str]) -> int:
                      "n_dev": sum(it["split"] == "dev" for it in items),
                      "n_held_out": sum(it["split"] == "held_out" for it in items),
                      "threshold": c.THRESHOLD, "margin": c.MARGIN, "prompt_hash": prompt_hash(),
-                     "drex_model": c.DREX_MODEL, "qwen_model": b.QWEN_MODEL})
+                     "drex_model": saved_model(rows, ("drex",), c.DREX_MODEL),
+                     "qwen_model": saved_model(rows, tuple(s for s in SYSTEMS if s != "drex"), b.QWEN_MODEL)})
         rep = report_v2(rows, meta)
         # the hand-written verdict lives in bench_v2.md after the marker; keep it when re-rendering
         marker = "## Verdict (written by hand after the held-out run)"
         md = EVIDENCE / "bench_v2.md"
-        verdict = md.read_text().split(marker, 1)[1] if md.exists() and marker in md.read_text() else "\n- (pending)\n"
+        if not is_complete(rows, items):  # a partial run never inherits the conclusions written for a full one
+            verdict = f"\n- (pending: partial run, {len(rows)} rows)\n"
+        elif md.exists() and marker in md.read_text():
+            verdict = md.read_text().split(marker, 1)[1]
+        else:
+            verdict = "\n- (pending)\n"
         (EVIDENCE / "bench_v2.json").write_text(json.dumps(rep, indent=1) + "\n")
         md.write_text(render_md_v2(rep, marker + verdict))
         return 0

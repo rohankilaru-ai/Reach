@@ -237,8 +237,11 @@ class ShelfToNote(Tool):
         import asyncio
 
         items = shelf_items(args.item_ids)
-        if not items:
-            r = WriteResult(destination=args.destination, outcome="failed", detail="no such evidence ids")
+        found = {i.get("id") for i in items}
+        missing = [pid for pid in args.item_ids if pid.strip() not in found]
+        if not items or missing:  # never write a partial set and call it done
+            detail = f"no such evidence ids: {', '.join(missing)}" if missing else "no such evidence ids"
+            r = WriteResult(destination=args.destination, outcome="failed", detail=detail[:200])
             return tool_output(r, self.name)
         text = "\n\n".join(citation_block(i) for i in items)
         r = await asyncio.to_thread(note_write, args.destination, text)
@@ -258,13 +261,17 @@ class OpenSource(Tool):
     effects: ClassVar[frozenset[str]] = frozenset({"read"})
 
     async def run(self, args: Any, ctx: ToolContext) -> ToolOutput:
+        import asyncio
+
         from .. import evidence
 
         p = evidence.get_passage(args.item_id)
         if p is None or not p.get("path") or not Path(p["path"]).is_file():
             return ToolOutput(status="error", content=f"No source file for {args.item_id}.")
         try:
-            subprocess.run(["open", p["path"]], timeout=OSASCRIPT_TIMEOUT_S, check=True, capture_output=True)
+            await asyncio.to_thread(  # never block the server's event loop
+                subprocess.run, ["open", p["path"]], timeout=OSASCRIPT_TIMEOUT_S, check=True, capture_output=True
+            )
         except (subprocess.SubprocessError, OSError) as e:
             return ToolOutput(status="error", content=f"Could not open the file ({type(e).__name__}).")
         page = f"; the passage is on page {p['page']} (the viewer opens at its first page)" if p.get("page") else ""

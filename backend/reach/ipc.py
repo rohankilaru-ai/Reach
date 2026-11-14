@@ -6,6 +6,8 @@ import asyncio
 import json
 import os
 import secrets
+import threading
+import time
 from pathlib import Path
 
 import websockets
@@ -19,6 +21,9 @@ from .bridge import evidence_cards
 from .ledger import count_ndi
 from .relay import Relay, log_line
 from .paths import drex_log, reach_dir, run_dir
+
+
+GROUND_DEADLINE_S = 150
 
 
 def log_evidence(card) -> None:
@@ -140,19 +145,30 @@ class Server:
 
         try:
             receipt = await self.bridge.run(task, sink)
-            if receipt.final_text and getattr(self.bridge, "grounds", True):
+            stopped = False  # aborted while grounding (an abort during bridge.run is already in the receipt)
+            if receipt.final_text and getattr(self.bridge, "grounds", True) and not task.aborted:
                 try:
-                    cards = await asyncio.wait_for(
-                        asyncio.to_thread(evidence_cards, task.id, receipt.final_text), timeout=150
-                    )
-                except Exception:  # ground slow or down: level-1/2 cards still ship
-                    cards = evidence_cards(task.id, receipt.final_text, do_ground=False)
+                    cards = await self._ground(task, receipt.final_text)
+                except Exception:  # the evidence store is optional; the receipt always ships
+                    cards = []
+                if task.aborted:  # stopped while grounding: no cards, and never the earlier success
+                    stopped, cards = True, []
+                    update = {"status": "aborted", "reason": "aborted"}
+                    if receipt.outcome is not None:
+                        update["outcome"] = "aborted"
+                    receipt = receipt.model_copy(update=update)
                 for card in cards:
-                    log_evidence(card)
+                    try:
+                        log_evidence(card)
+                    except Exception:  # an unwritable log must not lose the card or the receipt
+                        pass
                     out.put_nowait(card.model_dump_json())
-                receipt.ndi_calls = count_ndi(drex_log(), task.id)
+                try:
+                    receipt.ndi_calls = count_ndi(drex_log(), task.id)
+                except Exception:
+                    pass
             receipt.selection_source = getattr(task, "selection_source", None)
-            if receipt.final_text:
+            if receipt.final_text and not stopped:
                 out.put_nowait(
                     Transcript(task_id=task.id, role="assistant", text=receipt.final_text).model_dump_json()
                 )
@@ -161,6 +177,31 @@ class Server:
             self.tasks.pop(task.id, None)
             if mine is not None:
                 mine.pop(task.id, None)
+
+    async def _ground(self, task, answer: str) -> list:
+        """Evidence cards with NDI grounding. Stops starting ground jobs once the ask is aborted or the deadline
+        passes, and returns at once on abort (an in-flight ground call finishes in its thread and starts no other)."""
+        stop = threading.Event()
+        deadline = time.monotonic() + GROUND_DEADLINE_S
+
+        def should_stop() -> bool:
+            return stop.is_set() or task.aborted or time.monotonic() > deadline
+
+        fut = asyncio.ensure_future(asyncio.to_thread(evidence_cards, task.id, answer, True, should_stop))
+        fut.add_done_callback(lambda f: f.cancelled() or f.exception())  # never "exception was never retrieved"
+        cards = None
+        try:
+            while not fut.done() and not task.aborted and time.monotonic() <= deadline:
+                await asyncio.wait({fut}, timeout=0.2)
+            if fut.done() and not fut.cancelled() and fut.exception() is None:
+                cards = fut.result()
+        finally:
+            stop.set()
+        if task.aborted:
+            return []
+        if cards is None:  # ground slow or down: level-1/2 cards still ship
+            cards = evidence_cards(task.id, answer, do_ground=False)
+        return cards
 
     async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
         from . import evidence

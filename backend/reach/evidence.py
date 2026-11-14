@@ -101,12 +101,29 @@ def _split_long(text: str, page: int | None) -> list[tuple[int | None, str]]:
         return [(page, text)] if text else []
     out, cur = [], ""
     for para in re.split(r"\n\s*\n", text):
-        if cur and len(cur) + len(para) > MAX_PASSAGE_CHARS:
-            out.append((page, cur.strip()))
-            cur = ""
-        cur += para + "\n\n"
+        for piece in _hard_split(para.strip()):
+            if cur and len(cur) + len(piece) > MAX_PASSAGE_CHARS:
+                out.append((page, cur.strip()))
+                cur = ""
+            cur += piece + "\n\n"
     if cur.strip():
         out.append((page, cur.strip()))
+    return out
+
+
+def _hard_split(para: str) -> list[str]:
+    """A paragraph longer than MAX_PASSAGE_CHARS, cut at sentence ends, then spaces, then hard."""
+    out = []
+    while len(para) > MAX_PASSAGE_CHARS:
+        window = para[:MAX_PASSAGE_CHARS]
+        cut = max(window.rfind(". "), window.rfind("? "), window.rfind("! "))
+        cut = cut + 1 if cut > MAX_PASSAGE_CHARS // 2 else window.rfind(" ")
+        if cut <= MAX_PASSAGE_CHARS // 2:
+            cut = MAX_PASSAGE_CHARS
+        out.append(para[:cut].strip())
+        para = para[cut:].strip()
+    if para:
+        out.append(para)
     return out
 
 
@@ -136,6 +153,9 @@ def passages_from_parse(result: dict[str, Any]) -> list[tuple[int | None, str]]:
                 out.append((cur_page, cur.strip()))
                 cur = ""
             cur_page = p
+            if len(t) > MAX_PASSAGE_CHARS:  # one oversized block: split it on its own
+                out += _split_long(t, p)
+                continue
             cur += t + "\n\n"
         if cur.strip():
             out.append((cur_page, cur.strip()))
@@ -169,23 +189,38 @@ def add_document(path: Path, parse_fn: ParseFn) -> dict[str, Any]:
     """Parse `path` with NDI unless its sha256 is cached. Returns {sha256, name, cached, passages:[ids]}."""
     path = Path(path).expanduser().resolve()
     sha = sha256_file(path)
-    with connect() as con:
-        row = con.execute("SELECT * FROM docs WHERE sha256=?", (sha,)).fetchone()
-        if row is not None:
-            ids = [f"E{r['n']}" for r in con.execute("SELECT n FROM passages WHERE sha256=? ORDER BY n", (sha,))]
-            return {"sha256": sha, "name": row["name"], "cached": True, "passages": ids, "parse_job_id": row["parse_job_id"]}
+    cached = _cached_doc(sha, path)
+    if cached is not None:
+        return cached
     parsed = parse_fn(path)
     passages = passages_from_parse(parsed["result"])
     with connect() as con:
-        con.execute(
-            "INSERT INTO docs VALUES (?,?,?,?,?,?,?)",
+        cur = con.execute(
+            "INSERT OR IGNORE INTO docs VALUES (?,?,?,?,?,?,?)",
             (sha, str(path), path.name, parsed.get("job_id"), parsed.get("file_id"), parsed.get("workspace_id"), time.time()),
         )
+        if cur.rowcount == 0:  # a concurrent add (thread or process) stored this file first: use its passages
+            con.commit()
+            cached = _cached_doc(sha, path)
+            if cached is not None:
+                return cached
         ids = []
         for page, text in passages:
             cur = con.execute("INSERT INTO passages (sha256, page, text) VALUES (?,?,?)", (sha, page, text))
             ids.append(f"E{cur.lastrowid}")
     return {"sha256": sha, "name": path.name, "cached": False, "passages": ids, "parse_job_id": parsed.get("job_id")}
+
+
+def _cached_doc(sha: str, path: Path) -> dict[str, Any] | None:
+    """The stored doc for `sha`, or None. Refreshes the stored path so a moved or renamed PDF still opens."""
+    with connect() as con:
+        row = con.execute("SELECT * FROM docs WHERE sha256=?", (sha,)).fetchone()
+        if row is None:
+            return None
+        if row["path"] != str(path) or row["name"] != path.name:
+            con.execute("UPDATE docs SET path=?, name=? WHERE sha256=?", (str(path), path.name, sha))
+        ids = [f"E{r['n']}" for r in con.execute("SELECT n FROM passages WHERE sha256=? ORDER BY n", (sha,))]
+        return {"sha256": sha, "name": path.name, "cached": True, "passages": ids, "parse_job_id": row["parse_job_id"]}
 
 
 def has_documents() -> bool:
@@ -273,6 +308,9 @@ def _strip_math(s: str) -> str:
     return s.replace("\\%", "%")
 
 
+_SUB = "\ue000"  # placeholder for "_" inside inline math while filtering
+
+
 def sentences(text: str) -> list[str]:
     """Prose sentences of a passage. Inline math is tolerated; display math, table rows and code are skipped."""
     out = []
@@ -281,13 +319,15 @@ def sentences(text: str) -> list[str]:
             ln for ln in para.splitlines()
             if not ln.lstrip().startswith(("|", "```", "!", "<table", "<tr", "<td", "$$"))
         ]
-        para = _strip_math(" ".join(lines))
+        para = " ".join(lines)
         if "$$" in para or "\\begin" in para:
             continue
+        # subscripts inside inline math ($x_i$) are fine; mask them so the markup filter below keeps the sentence
+        para = _strip_math(re.sub(r"\$([^$\n]+)\$", lambda m: "$" + m.group(1).replace("_", _SUB) + "$", para))
         for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(])", _clean(para)):
             s = s.strip()
             if 30 <= len(s) <= 400 and not re.search(r"[\[\]*_`\\|]", s):
-                out.append(s)
+                out.append(s.replace(_SUB, "_"))
     return out
 
 
