@@ -392,7 +392,7 @@ def test_dropout_hold_then_loss():
 
 
 def test_right_hand_alone_is_streamed_but_not_primary():
-    frames = run(make([obs(hand="right")] * 10), 10)
+    frames = run(make([obs(hand="right")] * 10, hands__primary="left"), 10)
     assert not any(f.hand_present for f in frames)  # primary (left) is absent
     assert frames[-1].right is not None and frames[-1].left is None
     assert frames[-1].hands["right"].fingers["index"].extended
@@ -517,7 +517,7 @@ def test_per_hand_triggers_and_primary_trigger():
 
 def test_left_lost_while_right_stays():
     script = [both()] * 4 + [[obs(wrist=R_WRIST, hand="right")]] * 6
-    frames = run(make(script), len(script))
+    frames = run(make(script, hands__primary="left"), len(script))
     lost = next(f for f in frames if f.triggers.get("left") == "hand_lost")
     assert lost.trigger == "hand_lost" and not lost.hand_present
     assert lost.right is not None and frames[-1].right is not None
@@ -525,8 +525,8 @@ def test_left_lost_while_right_stays():
 
 def test_primary_fallback():
     script = [[obs(hand="right")]] * 6
-    assert not run(make(script), 6)[-1].hand_present
-    f = run(make(script, hands__primary_fallback=True), 6)[-1]
+    assert not run(make(script, hands__primary="left"), 6)[-1].hand_present
+    f = run(make(script, hands__primary="left", hands__primary_fallback=True), 6)[-1]
     assert f.hand_present and f.primary_side == "right" and f.fingers["index"].extended
 
 

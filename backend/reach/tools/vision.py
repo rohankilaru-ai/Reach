@@ -54,7 +54,7 @@ def load_key() -> None:
 
 def newest_captures(root: Path) -> list[Path]:
     """Capture PNGs under `root`, oldest first: overlay captures (captures/*.png) and pinch selections
-    (selection-*.png, written by perception/reach_perception/capture.py)."""
+    (selection-*.png, written by hands_mode/select.py)."""
     found = [p for p in (root / "captures").glob("*.png") if p.is_file()] if (root / "captures").is_dir() else []
     found += [p for p in root.glob("selection-*.png") if p.is_file()]
     return sorted(found, key=lambda x: x.stat().st_mtime)

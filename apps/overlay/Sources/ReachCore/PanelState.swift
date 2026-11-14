@@ -18,7 +18,7 @@ public struct PanelState: Equatable, Sendable {
     public var tool: String?
     public var evidence: [EvidenceCard] = []
     public var decisions: [DrexDecision] = []   // newest last, at most 3
-    public var gesture: GestureDecision?          // latest hand-gesture decision from the Drex log (EXPERIMENTAL)
+    public var gesture: HandStatus?               // what Hands mode is doing, from .reach/logs/hands.jsonl (EXPERIMENTAL)
     public var pointer: (x: Double, y: Double, label: String?)? {
         get { pointerStore.map { ($0.x, $0.y, $0.label) } }
         set { pointerStore = newValue.map { PointerSpot(x: $0.x, y: $0.y, label: $0.label) } }
@@ -54,8 +54,8 @@ public struct PanelState: Equatable, Sendable {
         pointer = nil
     }
 
-    /// Newest hand-gesture decision tailed from `.reach/logs/drex.jsonl`; independent of the current task.
-    public mutating func gestureDecided(_ g: GestureDecision) {
+    /// Newest Hands mode status tailed from `.reach/logs/hands.jsonl`; independent of the current task.
+    public mutating func gestureDecided(_ g: HandStatus) {
         gesture = g
     }
 

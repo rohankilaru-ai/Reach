@@ -71,7 +71,7 @@ def draw_hud(raw_img: np.ndarray, frame: Frame | None, fp: FingerProcessor) -> n
     img = cv2.flip(raw_img, 1)  # display only; the pipeline never flips pixels
     h, w = img.shape[:2]
     scr = fp.screen
-    lines = [f"cam {getattr(fp.source, 'measured_fps', 0):.0f} fps   * = primary (cursor/commands)"]
+    lines = [f"cam {getattr(fp.source, 'measured_fps', 0):.0f} fps   * = primary (cursor/gestures)"]
     if frame is not None:
         for side in ("left", "right"):
             hand = frame.hands.get(side)

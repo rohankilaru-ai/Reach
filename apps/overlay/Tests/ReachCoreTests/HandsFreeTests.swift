@@ -90,6 +90,11 @@ import Testing
         #expect(!off)
     }
 
+    @Test func handsModeWire() throws {
+        #expect(try ClientMessage.hands(on: true).json() == #"{"on":true,"type":"hands"}"#)
+        #expect(try ClientMessage.hands(on: false).json() == #"{"on":false,"type":"hands"}"#)
+    }
+
     @Test func wire() throws {
         let j = try ClientMessage.utterance(text: "Reach, next", wakeMatched: true).json()
         #expect(j.contains("\"source\":\"always_listening\"") && j.contains("\"wake_matched\":true"))

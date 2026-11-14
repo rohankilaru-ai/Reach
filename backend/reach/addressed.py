@@ -53,10 +53,6 @@ def wake_matched(text: str) -> bool:
     return bool(WAKE_RE.match(text or ""))
 
 
-def strip_wake(text: str) -> str:
-    return WAKE_RE.sub("", text or "", count=1).strip()
-
-
 @dataclass
 class Result:
     text: str

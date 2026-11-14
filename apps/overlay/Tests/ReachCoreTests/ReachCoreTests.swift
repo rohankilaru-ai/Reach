@@ -93,40 +93,35 @@ import Testing
     }
 }
 
-@Suite struct GestureFeedTests {
-    @Test func parsesGestureDecisionLines() {
-        let ok = GestureDecision(jsonLine: Data(#"{"task_id":"gesture","type":"decision","purpose":"gesture_route","ok":true,"error":null,"answers":{"gesture":{"choice":"click","probabilities":{"idle":0.05,"point":0.04,"click":0.91}}},"accepted":true,"latency_ms":241}"#.utf8))
-        #expect(ok?.line == "hand: click 0.91 · 241 ms")
-        let low = GestureDecision(jsonLine: Data(#"{"purpose":"gesture_route","ok":true,"answers":{"gesture":{"choice":"idle","probabilities":{"idle":0.5}}},"accepted":false,"latency_ms":250}"#.utf8))
-        #expect(low?.line == "hand: idle 0.50 · 250 ms · not confident, mode kept")
-        let failed = GestureDecision(jsonLine: Data(#"{"purpose":"gesture_route","ok":false,"error":"HTTP 503","answers":{"gesture":{"choice":"idle","probabilities":{}}},"accepted":false}"#.utf8))
-        #expect(failed?.line == "hand: drex failed, local rules decided (HTTP 503)")
-        #expect(GestureDecision(jsonLine: Data(#"{"purpose":"supervise","answers":{}}"#.utf8)) == nil)
+@Suite struct HandsFeedTests {
+    @Test func parsesStatusLines() {
+        #expect(HandStatus(jsonLine: Data(#"{"t":1.5,"state":"dragging"}"#.utf8))?.line == "hands: dragging")
+        #expect(HandStatus(jsonLine: Data(#"{"t":1.5}"#.utf8)) == nil)
+        #expect(HandStatus(jsonLine: Data("not json".utf8)) == nil)
     }
 
     @Test func tailReadsOnlyNewCompleteLines() throws {
-        let url = FileManager.default.temporaryDirectory.appendingPathComponent("drex-\(UUID().uuidString).jsonl")
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("hands-\(UUID().uuidString).jsonl")
         defer { try? FileManager.default.removeItem(at: url) }
-        let line = { (c: String) in #"{"purpose":"gesture_route","answers":{"gesture":{"choice":"\#(c)","probabilities":{"\#(c)":0.9}}},"latency_ms":200}"# + "\n" }
-        try Data(line("idle").utf8).write(to: url)
-        let tail = DrexLogTail(url: url)                  // starts at the end: the old line is skipped
+        let line = { (s: String) in #"{"t":1,"state":"\#(s)"}"# + "\n" }
+        try Data(line("no hand").utf8).write(to: url)
+        let tail = HandsLogTail(url: url)                 // starts at the end: the old line is skipped
         #expect(tail.poll().isEmpty)
         let h = try FileHandle(forWritingTo: url)
         try h.seekToEnd()
-        try h.write(contentsOf: Data((line("point") + #"{"purpose":"supervise"}"# + "\n").utf8))
-        let half = line("click")
-        try h.write(contentsOf: Data(half.prefix(30).utf8))    // a partial line is held back
-        #expect(tail.poll().map(\.choice) == ["point"])
-        try h.write(contentsOf: Data(half.dropFirst(30).utf8))
+        try h.write(contentsOf: Data(line("pinch").utf8))
+        let half = line("selecting")
+        try h.write(contentsOf: Data(half.prefix(12).utf8))   // a partial line is held back
+        #expect(tail.poll().map(\.state) == ["pinch"])
+        try h.write(contentsOf: Data(half.dropFirst(12).utf8))
         try h.close()
-        #expect(tail.poll().map(\.choice) == ["click"])
+        #expect(tail.poll().map(\.state) == ["selecting"])
     }
 
-    @Test func panelStateKeepsLatestGesture() {
+    @Test func panelStateKeepsLatestStatus() {
         var s = PanelState()
-        let g = GestureDecision(jsonLine: Data(#"{"purpose":"gesture_route","answers":{"gesture":{"choice":"point","probabilities":{"point":0.8}}}}"#.utf8))!
-        s.gestureDecided(g)
-        #expect(s.gesture?.choice == "point" && s.phase == .idle)
+        s.gestureDecided(HandStatus(state: "point to move · pinch to click"))
+        #expect(s.gesture?.state == "point to move · pinch to click" && s.phase == .idle)
     }
 }
 

@@ -108,7 +108,7 @@ The camera worker's pinch-drag reaches the overlay through the server (`backend/
 `selection` opens the panel without taking focus and shows a "Selected by hand · experimental" chip with its first
 line, a thumbnail when there is an image, and a clear button. It is used by the next typed or voice ask. Hand
 `pointer` messages move the ghost pointer, which fades 1 s after the last one. Real-hand use is untested; the gate is
-`uv run --project backend python smoke/pinch_relay_gate.py --overlay apps/overlay/build/Reach.app/Contents/MacOS/Reach`.
+`uv run python smoke/pinch_relay_gate.py --overlay apps/overlay/build/Reach.app/Contents/MacOS/Reach`.
 `--panel-selftest` shows pill -> panel -> pill and logs each frame (real windows, no input events).
 `--permissions-selftest` prints each permission's status and exits (reads only: no prompts, no ScreenCaptureKit, so
 Screen Recording is preflight only there).

@@ -11,7 +11,7 @@ consumers run after the Frame is published):
        per finger, pinch hysteresis, One Euro smoothing, screen homography
     -> Frame: `hands` = {"left": Hand, "right": Hand} (whichever are present);
        the top-level fields (fingers, pointer_screen, ...) read from the
-       primary hand (left by default), which drives the cursor and commands
+       primary hand (the closest one by default), which drives the cursor and gestures
 
 Coordinates: normalized image coords (0..1), mirrored so moving your hand to
 your right moves the point right. MediaPipe gets the unmirrored image and only
@@ -79,7 +79,8 @@ class HandLockCfg(BaseModel):
 
 class HandsCfg(BaseModel):
     max_hands: Literal[1, 2] = 2
-    primary: Literal["left", "right"] = "left"   # hand that drives the cursor and commands
+    primary: Literal["closest", "left", "right"] = "closest"  # hand that drives the cursor and gestures;
+                                                 # closest = the larger hand on screen, sticky until clearly smaller
     primary_fallback: bool = False               # use the other hand when the primary is absent
     handedness_vote_frames: int = 5
     handedness_vote_min: int = 3
@@ -99,6 +100,8 @@ class FeaturesCfg(BaseModel):
     pinch_enter: float = 0.25
     pinch_exit: float = 0.35
     pattern_hold_frames: int = 2
+    pinch_fingers: Literal["index", "index_or_middle"] = "index"  # index_or_middle: thumb to the closer of the two
+    middle_pinch_min_reach: float = 0.6  # middle pair counts only when its tip is this far (x scale) from its knuckle
 
 
 class PointerCfg(BaseModel):
@@ -130,28 +133,6 @@ class CalibrationCfg(BaseModel):
     default_region: tuple[float, float, float, float] = (0.2, 0.2, 0.8, 0.8)
 
 
-class CommandsCfg(BaseModel):
-    """Hand-gesture commands (finger_processing/commands.py)."""
-
-    decider: Literal["drex", "heuristic"] = "drex"   # who decides idle/point/click; heuristic is the fallback
-    drex_url: str = "https://console.nace.ai/v1/systemone"
-    drex_model: str = "drex-max-v1.1"
-    max_rate_hz: float = 5.0          # Drex calls per second at most (plus one right away on a pattern change)
-    timeout_s: float = 0.8            # hard timeout per Drex call; on timeout the heuristic decides
-    stale_s: float = 1.5              # no fresh Drex decision this long -> heuristic drives the mode
-    window_frames: int = 10           # frames of the primary hand sent per call (~330 ms at 30 fps)
-    p_min: float = 0.70               # accept a Drex decision only if top p >= p_min ...
-    margin_min: float = 0.20          # ... and top - runner-up >= margin_min
-    point_hold_ms: float = 120.0      # pointing must hold this long before an index curl counts as a click
-    click_curl_deg: float = 135.0     # a click needs the index middle-joint angle below this (well under extend_angle_deg)
-    click_curl_frames: int = 1        # ... for this many consecutive frames
-    click_curl_max_ms: float = 500.0  # ... reached within this long of leaving the pointing pose (a sag is not a tap)
-    drex_click_confirm_s: float = 1.0 # a Drex click counts only if the local tracker saw such a curl this recently
-    click_cooldown_ms: float = 400.0
-    pre_curl_ms: float = 120.0        # the click lands where the cursor was this long before the curl began
-    log_decisions: bool = True        # append Drex decisions to .reach/logs/drex.jsonl (`reach log`)
-
-
 class ScreenCfg(BaseModel):
     width: int | None = None
     height: int | None = None
@@ -167,7 +148,6 @@ class Config(BaseModel):
     gating: GatingCfg = GatingCfg()
     calibration: CalibrationCfg = CalibrationCfg()
     screen: ScreenCfg = ScreenCfg()
-    commands: CommandsCfg = CommandsCfg()
     window_size: int = 10
     preview_hz: float = 20.0
 
@@ -220,6 +200,7 @@ class Hand:
     pinch_dist: float = float("inf")                   # thumb tip to index tip / hand scale
     pinch_active: bool = False
     pinch_edge: Literal["down", "up"] | None = None
+    pinch_finger: Literal["index", "middle"] = "index"   # which finger the thumb pinched (index_or_middle mode)
     hand_scale: float = 0.0
     tracking_score: float = 0.0
     pointer_raw: tuple[float, float] | None = None     # cursor anchor before smoothing
@@ -242,7 +223,7 @@ class Frame:
 
     `hands` streams every present hand. The flat fields below (`hand_present`,
     `fingers`, `pointer_screen`, ...) are read from the primary hand, the one
-    that drives the cursor and commands (config `hands.primary`, default left).
+    that drives the cursor and gestures (config `hands.primary`, default closest).
     """
 
     t: float                                   # capture time, monotonic seconds
@@ -268,7 +249,7 @@ class Frame:
     def primary(self) -> Hand | None:
         return self.hands.get(self.primary_side)
 
-    # --- primary hand (drives cursor/commands) ------------------------------------
+    # --- primary hand (drives cursor/gestures) ------------------------------------
     @property
     def hand_present(self) -> bool:
         return self.primary is not None
@@ -306,6 +287,16 @@ class Frame:
     def pinch_edge(self) -> str | None:
         h = self.primary
         return h.pinch_edge if h else None
+
+    @property
+    def pinch_finger(self) -> str:
+        h = self.primary
+        return h.pinch_finger if h else "index"
+
+    @property
+    def finger_angles(self) -> dict[str, float]:
+        h = self.primary
+        return h.finger_angles if h else {}
 
     @property
     def hand_scale(self) -> float:
@@ -472,6 +463,19 @@ def fingers_extended(pts: np.ndarray, scale: float, extend_angle_deg: float,
 
 def pinch_distance(pts: np.ndarray, scale: float) -> float:
     return float(np.linalg.norm(pts[THUMB_TIP] - pts[INDEX_TIP]) / scale)
+
+
+def pinch_distance_pair(pts: np.ndarray, scale: float,
+                        middle_min_reach: float = 0.6) -> tuple[float, str]:
+    """Thumb to the closer of index and middle tip: (distance / scale, finger). The middle pair is
+    ignored when the middle tip is curled onto its knuckle, so a point pose with the thumb resting
+    on the curled middle finger is not read as a pinch."""
+    d_index = pinch_distance(pts, scale)
+    d_middle = float(np.linalg.norm(pts[THUMB_TIP] - pts[MIDDLE_TIP]) / scale)
+    middle_reach = float(np.linalg.norm(pts[MIDDLE_TIP, :2] - pts[MIDDLE_MCP, :2]) / scale)
+    if middle_reach >= middle_min_reach and d_middle < d_index:
+        return d_middle, "middle"
+    return d_index, "index"
 
 
 def pointer_anchor(landmarks: np.ndarray, anchor: str, tip_weight: float) -> tuple[float, float]:
@@ -1095,7 +1099,10 @@ class HandChannel:
         pts = to_metric(lm, aspect)
         scale = hand_scale(pts)
         flags = fingers_extended(pts, scale, fc.extend_angle_deg, fc.thumb_extend_ratio)
-        pdist = pinch_distance(pts, scale)
+        if fc.pinch_fingers == "index_or_middle":
+            pdist, pfinger = pinch_distance_pair(pts, scale, fc.middle_pinch_min_reach)
+        else:
+            pdist, pfinger = pinch_distance(pts, scale), "index"
         edge = self.pinch.update(pdist)
 
         fingers = {}
@@ -1125,6 +1132,7 @@ class HandChannel:
             side=self.side,  # type: ignore[arg-type]
             fingers=fingers, landmarks=tuple(map(tuple, lm.tolist())),
             pinch_dist=pdist, pinch_active=self.pinch.active, pinch_edge=edge,  # type: ignore[arg-type]
+            pinch_finger=pfinger,  # type: ignore[arg-type]
             hand_scale=scale, tracking_score=obs.score,
             pointer_raw=raw_ptr, pointer=ptr, pointer_screen=screen,
             velocity=self.pointer_filter.velocity, scroll_velocity=self.scroll_filter.velocity,
@@ -1148,6 +1156,7 @@ class FingerPipeline:
         self.gate = MotionGate(cfg.gating)
         self.channels = {side: HandChannel(side, cfg) for side in SIDES}
         self._frame_id = 0
+        self._closest: str | None = None
 
     def process(self, raw: RawFrame) -> Frame:
         t_start = time.perf_counter()
@@ -1175,6 +1184,22 @@ class FingerPipeline:
         """Replay path: skip camera and MediaPipe. Takes one hand, a list, or None."""
         return self._finish(as_observations(obs), t, t, motion, time.perf_counter())
 
+    def _pick_primary(self, hands: dict[str, Hand]) -> str:
+        """The side that drives the cursor and gestures this frame."""
+        want = self.cfg.hands.primary
+        if want != "closest":
+            if want not in hands and self.cfg.hands.primary_fallback and hands:
+                return next(iter(hands))
+            return want
+        if not hands:
+            return self._closest or "left"
+        biggest = max(hands, key=lambda s: hands[s].hand_scale)
+        cur = self._closest
+        # sticky: switch only when the current hand is gone or clearly smaller (stops flicker between similar hands)
+        if cur not in hands or hands[cur].hand_scale < 0.85 * hands[biggest].hand_scale:
+            self._closest = biggest
+        return self._closest
+
     def _finish(self, observations: list[Observation], t: float, t_capture: float, motion: float,
                 t_start: float, skipped: bool = False) -> Frame:
         t_feat = time.perf_counter()
@@ -1192,9 +1217,7 @@ class FingerPipeline:
             if trigger is not None:
                 triggers[side] = trigger
 
-        primary = self.cfg.hands.primary
-        if primary not in hands and self.cfg.hands.primary_fallback and hands:
-            primary = next(iter(hands))
+        primary = self._pick_primary(hands)
         frame = Frame(
             t=t, frame_id=frame_id, hands=hands, primary_side=primary,  # type: ignore[arg-type]
             triggers=triggers, motion=motion,

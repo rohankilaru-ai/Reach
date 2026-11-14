@@ -264,10 +264,10 @@ struct PanelView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if let g = s.gesture {  // latest hand-gesture decision (EXPERIMENTAL)
+                if model.handsOn, let g = s.gesture {  // what Hands mode is doing (EXPERIMENTAL)
                     Text("✋ \(g.line)")
                         .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(g.ok && g.accepted ? Palette.accent.opacity(0.9) : .white.opacity(0.5))
+                        .foregroundStyle(Palette.accent.opacity(0.9))
                         .lineLimit(1)
                 }
 

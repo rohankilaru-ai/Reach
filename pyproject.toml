@@ -9,6 +9,9 @@ dependencies = [
     "numpy==2.4.6",
     "pydantic==2.14.3",
     "pyyaml==6.0.3",
+    "websockets==17.4",                                              # hands_mode/bridge.py
+    "pyobjc-framework-Quartz==13.0; sys_platform == 'darwin'",      # hands_mode/select.py screen size
+    "pyobjc-framework-Vision==13.0; sys_platform == 'darwin'",      # hands_mode/select.py OCR
 ]
 
 [project.optional-dependencies]
@@ -25,4 +28,5 @@ packages = ["finger_processing"]
 finger_processing = ["config.yaml"]
 
 [tool.pytest.ini_options]
-testpaths = ["finger_processing"]
+testpaths = ["finger_processing", "hands_mode"]
+pythonpath = ["."]

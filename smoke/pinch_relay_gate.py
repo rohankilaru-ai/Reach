@@ -1,11 +1,11 @@
 """Key-free gate for the pinch relay (EXPERIMENTAL; no camera, no screen capture, no synthetic input events).
 
-  uv run --project backend python smoke/pinch_relay_gate.py [--overlay apps/overlay/.build/debug/Reach]
+  uv run python smoke/pinch_relay_gate.py [--overlay apps/overlay/.build/debug/Reach]
 
 Starts `reach serve --replay` on a scratch REACH_DIR, connects a tiny fake overlay client (role overlay), optionally
-starts the real overlay's `--relay-selftest`, replays the perception worker's synthetic `clean_pinch` fixture to the
-server (`--selftest --bridge`), and checks that `selection` and `pointer` reached the overlay clients and that the
-overlay's next ask carried the hand selection (relay.jsonl). Kills everything on exit.
+starts the real overlay's `--relay-selftest`, drives hands_mode.select.Selector with a scripted loop (capture and OCR
+faked), and checks that the `selection` reached the overlay client and that the overlay's next ask carried the hand
+selection (relay.jsonl). Kills everything on exit.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ import time
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 
 def wait_for(cond, timeout: float, what: str) -> None:
@@ -48,13 +49,41 @@ async def fake_overlay(port: int, token: str, got: dict, ready: asyncio.Event, s
             got.setdefault(m["type"], []).append(m)
 
 
+def scripted_loop(rd: Path) -> None:
+    """A circle drawn with a held middle pinch, relayed by the real BridgeClient; capture and OCR are faked."""
+    import math
+
+    from hands_mode.select import Selector
+
+    def capture(rect):
+        img = rd / "captures" / "selection-gate.png"
+        img.parent.mkdir(parents=True, exist_ok=True)
+        img.write_bytes(b"not a real png")
+        return img
+
+    sel = Selector(capture=capture, ocr=lambda p: "Quarterly revenue\nup 12%", screen=(1440, 900))
+    pts = [(600 + 120 * math.cos(a / 60 * 2 * math.pi), 400 + 80 * math.sin(a / 60 * 2 * math.pi)) for a in range(61)]
+    sel.begin(*pts[0])
+    for p in pts[1:]:
+        sel.add(*p)
+    sel.finish()
+    status = None
+    end = time.monotonic() + 10
+    while time.monotonic() < end and not (status or "").startswith("selected"):
+        status = sel.poll() or status
+        time.sleep(0.05)
+    print(f"[selector] {status}")
+    sel.close()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--overlay", help="path to the built Reach binary; runs its --relay-selftest too")
     a = ap.parse_args()
     rd = Path(tempfile.mkdtemp(prefix="reach-gate-")) / ".reach"
     rd.mkdir()
-    env = {**os.environ, "REACH_DIR": str(rd)}
+    os.environ["REACH_DIR"] = str(rd)  # the in-process Selector's bridge finds the server here
+    env = dict(os.environ)
     procs: list[subprocess.Popen] = []
     try:
         srv = subprocess.Popen(["uv", "run", "reach", "serve", "--replay", str(ROOT / "fixtures/events/ask.jsonl")],
@@ -82,26 +111,18 @@ def main() -> int:
             if not ready.is_set():
                 raise SystemExit(f"GATE FAIL: fake overlay did not connect ({fake.exception() if fake.done() else 'timeout'})")
             print("[gate] fake overlay client connected (role overlay)")
-            worker = await asyncio.create_subprocess_exec(
-                "uv", "run", "python", "-m", "reach_perception.worker", "--selftest", "--bridge",
-                cwd=ROOT / "perception", env=env, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.STDOUT)
-            out, _ = await asyncio.wait_for(worker.communicate(), 120)
-            for line in out.decode().splitlines():
-                if line.startswith(("bridge", "selftest", "PASS clean")):
-                    print(f"[worker] {line}")
+            await asyncio.to_thread(scripted_loop, rd)
             await fake
-            return worker.returncode
+            return 0
 
         rc = asyncio.run(run())
-        sels, ptrs = got.get("selection", []), got.get("pointer", [])
-        print(f"[gate] fake overlay received: selection x{len(sels)}, pointer x{len(ptrs)}")
+        sels = got.get("selection", [])
+        print(f"[gate] fake overlay received: selection x{len(sels)}")
         if sels:
             s = sels[0]["selection"]
             print(f"[gate]   selection source={s.get('source')} text={s.get('text', '').splitlines()[0]!r} "
                   f"region={s.get('region')} image={Path(s.get('image_path') or '').name}")
-        if ptrs:
-            print(f"[gate]   first pointer {ptrs[0]}")
-        ok = rc == 0 and len(sels) == 1 and len(ptrs) > 0 and sels[0]["selection"].get("source") == "pinch"
+        ok = rc == 0 and len(sels) == 1 and sels[0]["selection"].get("source") == "pinch"
 
         if a.overlay:
             ov = procs[-1]

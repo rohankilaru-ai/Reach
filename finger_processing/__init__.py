@@ -6,7 +6,7 @@
         for side, hand in frame.hands.items():    # "left" / "right", whichever are in view
             for finger in hand.fingers.values():
                 finger.name, finger.state, finger.tip, finger.tip_screen
-        frame.fingers, frame.pointer_screen       # the primary (left) hand: cursor and commands
+        frame.fingers, frame.pointer_screen       # the primary hand: cursor and gestures
 
 Run `python -m finger_processing` for the live preview.
 """

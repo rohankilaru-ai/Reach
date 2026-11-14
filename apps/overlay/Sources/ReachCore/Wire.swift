@@ -69,6 +69,8 @@ public enum ClientMessage: Equatable, Sendable {
     case tts(text: String, id: String)
     /// Hands-free: one segment heard while always listening (answered by `addressed`). Text only, never audio.
     case utterance(text: String, wakeMatched: Bool)
+    /// Hands mode on/off: the backend starts or stops the hand-as-mouse process (answered by `hands_state`).
+    case hands(on: Bool)
 
     public func json() throws -> String {
         var obj: [String: JSONValue] = [:]
@@ -92,6 +94,8 @@ public enum ClientMessage: Equatable, Sendable {
         case .utterance(let text, let wake):
             obj = ["type": .string("utterance"), "text": .string(text), "source": .string("always_listening"),
                    "wake_matched": .bool(wake)]
+        case .hands(let on):
+            obj = ["type": .string("hands"), "on": .bool(on)]
         }
         enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
