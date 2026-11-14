@@ -15,7 +15,7 @@ from .contracts import BROWSER_TOOL, Ask, Evidence, Receipt
 from .ledger import CURRENT_TASK, ReceiptBuilder, append_browser, append_drex
 from .paths import REPO_ROOT, drex_log
 
-SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3.8-27B")
+SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3-30B-A3B")
 SYSTEM1 = os.environ.get("REACH_SYSTEM1", "drex-max-v1.1")
 EXTENSION = "reach.intern_ext:ReachTools"
 POLICY = "reach.guard_policy:SecretPolicy"  # first, so it refuses before any other hook or the guard
