@@ -53,7 +53,9 @@ def test_hint_names_the_tool_family():
     it = intent.understand("find flights", post=fake(resp("browser_task", 0.93)))
     assert "use browser_task" in intent.prompt_addendum(it)
     mac = intent.understand("open spotify", post=fake(resp("mac_control", 0.9)))
-    assert "no tool for controlling the Mac" in intent.prompt_addendum(mac)
+    hint = intent.prompt_addendum(mac)
+    assert "chrome_open_url" in hint and "finder_open" in hint and "clipboard_copy" in hint
+    assert "has no tool for controlling the Mac" not in hint  # the old, wrong refusal text
 
 
 def test_low_confidence_abstains_to_other_without_hint():
