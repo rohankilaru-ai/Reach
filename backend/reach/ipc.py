@@ -14,7 +14,7 @@ import websockets
 from pydantic import ValidationError
 
 from .contracts import (
-    Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, PointerIn, Ready, Select, Transcript,
+    Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, Hypotheses, PointerIn, Ready, Select, Transcript,
     inbound_adapter,
 )
 from .bridge import evidence_cards
@@ -68,6 +68,8 @@ class Server:
         self.token = secrets.token_urlsafe(32)
         self.tasks: dict[str, Task] = {}
         self.relay = Relay()
+        self.router = None  # S8a: commands.DrexRouter by default; tests inject a fake
+        self._routed = 0
 
     async def handle(self, ws) -> None:
         try:
@@ -127,6 +129,10 @@ class Server:
                         out.put_nowait(ErrorMsg(message=err).model_dump_json())
                 elif isinstance(msg, AddDoc):
                     t = asyncio.create_task(self._add(msg, out))
+                    running.add(t)
+                    t.add_done_callback(running.discard)
+                elif isinstance(msg, Hypotheses):
+                    t = asyncio.create_task(self._route_hypotheses(key, msg, out))
                     running.add(t)
                     t.add_done_callback(running.discard)
         finally:
@@ -202,6 +208,28 @@ class Server:
         if cards is None:  # ground slow or down: level-1/2 cards still ship
             cards = evidence_cards(task.id, answer, do_ground=False)
         return cards
+
+    async def _route_hypotheses(self, sender: int, msg: Hypotheses, out: asyncio.Queue) -> None:
+        """EXPERIMENTAL (S8a): route N-best hypotheses with the 12-command router (logged as purpose command_route),
+        answer the sender and relay the result to overlay clients. An `uncertain` result has uncertain=True and must
+        never act."""
+        from . import commands
+
+        try:
+            r = await asyncio.to_thread(commands.route, hypotheses=list(msg.hypotheses), router=self.router)
+        except Exception as e:
+            out.put_nowait(ErrorMsg(message=f"route failed: {type(e).__name__}").model_dump_json())
+            return
+        self._routed += 1
+        probs = r.probabilities or {}
+        prob = probs.get(r.command, max(probs.values(), default=0.0))
+        result = Transcript(
+            task_id=f"{msg.source}-{self._routed}", role="user", text=msg.hypotheses[0], command=r.command,
+            probability=round(float(prob), 4), uncertain=r.command == commands.UNCERTAIN, reason=r.reason,
+            source=msg.source, experimental=msg.experimental,
+        ).model_dump_json()
+        out.put_nowait(result)
+        self.relay._broadcast(sender, result)
 
     async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
         from . import evidence

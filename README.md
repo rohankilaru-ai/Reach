@@ -49,6 +49,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Voice: hold Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: on 90 held-out hard utterances Drex Max got 87 right (96.7%), Qwen3.8-27B 83 (one-label) and 82 (12-way); the intervals overlap, so this is a lead, not a proven win. Drex made 0 wrong commands, Qwen 2 to 3. Median latency 265 ms vs 544 ms (one-label Qwen). Command line only |
 | Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
+| Silent speech: lip-reading -> 12-command router (`perception/silent/`, research-only weights) | experimental | model runs on this Mac (0.4 s per 1.5 s clip after warm-up); typed hypotheses route through Drex live; no accuracy measured, no live mouthed run yet. See `perception/silent/README.md` |
 | Per-finger tracking, calibration and a cursor-follows-fingertip demo (`finger_processing/`, `cursor_demo/`) | experimental | added by a teammate with its own tests; not part of the agent tools |
 | Lip reading / silent speech | planned | not built |
 | Controlling other apps by mouse or keyboard | planned (deliberately not done) | Reach only acts through apps' scripting interfaces and files |
