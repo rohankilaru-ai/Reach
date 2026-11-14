@@ -17,7 +17,7 @@ final class LassoPicker {
         cancel()
         done = completion
         for screen in NSScreen.screens {
-            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            let w = KeyableWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             w.level = .screenSaver
             w.backgroundColor = NSColor.black.withAlphaComponent(0.10)
             w.isOpaque = false
@@ -58,6 +58,11 @@ final class LassoPicker {
     }
 }
 
+/// Borderless windows cannot become key by default, so Esc would never reach the lasso layer.
+final class KeyableWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+}
+
 final class LassoView: NSView {
     var origin: CGPoint = .zero
     var onFinish: ((LassoRecorder.Outcome) -> Void)?
@@ -71,7 +76,10 @@ final class LassoView: NSView {
         if event.keyCode == 53 { rec.cancel(); onState?(.cancelled); onFinish?(.cancelled) }
     }
     private func global(_ e: NSEvent) -> CGPoint {
-        let p = convert(e.locationInWindow, from: nil)
+        var p = convert(e.locationInWindow, from: nil)
+        // stay on this display: the capture is clipped to it, so the mask must be too
+        p.x = min(max(p.x, bounds.minX), bounds.maxX)
+        p.y = min(max(p.y, bounds.minY), bounds.maxY)
         return CGPoint(x: p.x + origin.x, y: p.y + origin.y)
     }
     override func mouseDown(with event: NSEvent) {
@@ -194,10 +202,16 @@ enum CaptureError: Error, CustomStringConvertible {
     }
 }
 
+nonisolated(unsafe) private var askedForCapture = false
+
 enum RegionCapture {
     /// Captures `rect` (global Cocoa coordinates) with ScreenCaptureKit and writes a PNG into `dir`.
     static func capture(_ rect: NSRect, into dir: URL) async throws -> (CGImage, URL) {
-        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permission }
+        guard CGPreflightScreenCaptureAccess() else {
+            // Ask macOS once per run so the first capture shows the system prompt; then the panel says "needs you".
+            if !askedForCapture { askedForCapture = true; _ = CGRequestScreenCaptureAccess() }
+            throw CaptureError.permission
+        }
         guard let screen = await MainActor.run(body: { NSScreen.screens.first { $0.frame.intersects(rect) } }),
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else { throw CaptureError.noDisplay }

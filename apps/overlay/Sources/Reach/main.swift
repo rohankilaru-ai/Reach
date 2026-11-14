@@ -61,10 +61,11 @@ if args.contains("--replay") {
     let submit = args.contains("--selftest-submit")
     let url = URL(fileURLWithPath: path)
     log("voice selftest: \(url.path)")
-    DispatchQueue.main.asyncAfter(deadline: .now() + 60) {
+    let timeout = DispatchWorkItem {
         log("voice selftest FAIL: timeout after 60 s (speech authorization: \(SpeechAuth.describe(SFSpeechRecognizer.authorizationStatus())))")
         exit(2)
     }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: timeout)
     SpeechAuth.request { status in
         log("speech authorization: \(SpeechAuth.describe(status))")
         guard status == .authorized else {
@@ -79,6 +80,7 @@ if args.contains("--replay") {
                 log("voice selftest FAIL: \(e.localizedDescription)")
                 exit(1)
             case .success(let heard):
+                timeout.cancel()   // the ask (if any) has its own timeout
                 log("transcript: \(heard.text)")
                 let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "none"
                 log("confidences: \(heard.confidences.map { String(format: "%.2f", $0) }.joined(separator: " ")) (avg \(avg))")

@@ -35,6 +35,26 @@ public enum Placement {
         return clamp(CGPoint(x: topLeft.x, y: topLeft.y - size.height), size: size, in: visible)
     }
 
+    /// The panel is placed by its top-centre anchor, so pill <-> panel cycles never drift.
+    public static func origin(anchor: CGPoint, size: CGSize, visible: CGRect?) -> CGPoint {
+        let o = CGPoint(x: (anchor.x - size.width / 2).rounded(), y: (anchor.y - size.height).rounded())
+        return visible.map { clamp(o, size: size, in: $0) } ?? o
+    }
+
+    /// Top-centre anchor under the notch / menu bar.
+    public static func notchAnchor(screen: CGRect, visible: CGRect, safeTop: CGFloat, auxLeft: CGRect?,
+                                   auxRight: CGRect?) -> CGPoint {
+        let o = notchOrigin(screen: screen, visible: visible, safeTop: safeTop, auxLeft: auxLeft, auxRight: auxRight,
+                            size: .zero)
+        return CGPoint(x: o.x, y: o.y)
+    }
+
+    /// A saved anchor for `display`, kept inside that display's visible frame; nil when the display is gone.
+    public static func restoreAnchor(saved: [String: CGPoint], display: String, displays: [String: CGRect]) -> CGPoint? {
+        guard let a = saved[display], let v = displays[display] else { return nil }
+        return CGPoint(x: min(max(a.x, v.minX), v.maxX), y: min(max(a.y, v.minY), v.maxY))
+    }
+
     /// When the content changes size, keep the top edge and the horizontal centre (the pill grows downward from
     /// where it is), then clamp into `visible` when known.
     public static func keepTop(old: CGRect, newSize: CGSize, visible: CGRect? = nil) -> CGPoint {

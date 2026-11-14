@@ -107,3 +107,17 @@ import Testing
         #expect(k.holdCheck(token: first, at: 0.25) == .none)
     }
 }
+
+@Suite struct SubmitGuardTests {
+    @Test func oneAskAtATimeAndNeverWhileListeningOrReading() {
+        var s = PanelState()
+        #expect(s.submitBlock(listening: false, capturing: false) == nil)
+        #expect(s.submitBlock(listening: true, capturing: false)?.contains("listening") == true)
+        #expect(s.submitBlock(listening: false, capturing: true)?.contains("reading") == true)
+        s.submitted()
+        #expect(s.submitBlock(listening: false, capturing: false)?.contains("already running") == true)
+        s.apply(.accepted(taskID: "t"))
+        s.apply(try! ServerMessage.decode(#"{"type":"receipt","task_id":"t","status":"ok","reason":"completed","system1_asks":0,"tokens":0,"duration_ms":1}"#))
+        #expect(s.submitBlock(listening: false, capturing: false) == nil)
+    }
+}

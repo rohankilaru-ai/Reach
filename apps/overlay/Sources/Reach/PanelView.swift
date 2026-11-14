@@ -39,6 +39,7 @@ struct PanelView: View {
     @FocusState private var focused: Bool
     @State private var hovering = false
     var onSnap: () -> Void = {}
+    var onDragEnd: () -> Void = {}
 
     var body: some View {
         Group {
@@ -60,10 +61,9 @@ struct PanelView: View {
         .padding(.horizontal, 14).padding(.vertical, 7)
         .background(Capsule().fill(.black.opacity(0.88)))
         .overlay(Capsule().stroke(.white.opacity(0.08)))
-        .contentShape(Capsule())
-        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
-        .onTapGesture(count: 2) { onSnap() }
-        .onTapGesture { model.expandRequested?() }
+        .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } else { model.expandRequested?() } },
+                            onDragEnd: onDragEnd,
+                            onHover: { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }))
     }
 
     private var expanded: some View {
@@ -80,8 +80,8 @@ struct PanelView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.35))
             }
-            .contentShape(Rectangle())
-            .onTapGesture(count: 2) { onSnap() }  // drag the header to move; double-click snaps back to the notch
+            // drag the header to move; double-click snaps back to the notch
+            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd))
             .help("Drag to move · double-click to snap to the top")
 
             TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
@@ -235,18 +235,9 @@ final class ReachPanel: NSPanel {
         backgroundColor = .clear
         isOpaque = false
         hasShadow = true
-        isMovableByWindowBackground = true
+        isMovableByWindowBackground = false  // DragHandle moves it, so clicks in the field and buttons stay clicks
         hidesOnDeactivate = false
         contentView = content
-    }
-
-    /// Content-driven resizes (pill <-> panel) keep the top edge, so the island grows downward. Moves are untouched.
-    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
-        var r = frameRect
-        if r.size != frame.size, r.origin == frame.origin, frame.size != .zero {
-            r.origin = Placement.keepTop(old: frame, newSize: r.size, visible: screen?.visibleFrame)
-        }
-        super.setFrame(r, display: flag)
     }
 
     override var canBecomeKey: Bool { true }
@@ -280,5 +271,54 @@ struct HandChipView: View {
         .padding(6)
         .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.10)))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+    }
+}
+
+/// Moves the panel with the user's own drag (no synthetic events). A press that barely moves is a click; its
+/// `clickCount` tells a double-click (snap to top) from a single one.
+struct DragHandle: NSViewRepresentable {
+    var onClick: (Int) -> Void = { _ in }
+    var onDragEnd: () -> Void = {}
+    var onHover: ((Bool) -> Void)?
+
+    func makeNSView(context: Context) -> HandleView { update(HandleView()) }
+    func updateNSView(_ v: HandleView, context: Context) { _ = update(v) }
+    private func update(_ v: HandleView) -> HandleView {
+        v.onClick = onClick; v.onDragEnd = onDragEnd; v.onHover = onHover
+        return v
+    }
+
+    final class HandleView: NSView {
+        var onClick: (Int) -> Void = { _ in }
+        var onDragEnd: () -> Void = {}
+        var onHover: ((Bool) -> Void)?
+        private var start: (mouse: NSPoint, origin: NSPoint)?
+        private var moved = false
+
+        override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach(removeTrackingArea)
+            addTrackingArea(NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                           owner: self))
+        }
+        override func mouseEntered(with event: NSEvent) { onHover?(true) }
+        override func mouseExited(with event: NSEvent) { onHover?(false) }
+        override func mouseDown(with event: NSEvent) {
+            start = (NSEvent.mouseLocation, window?.frame.origin ?? .zero)
+            moved = false
+        }
+        override func mouseDragged(with event: NSEvent) {
+            guard let start, let window else { return }
+            let now = NSEvent.mouseLocation
+            let dx = now.x - start.mouse.x, dy = now.y - start.mouse.y
+            if !moved, hypot(dx, dy) < 3 { return }
+            moved = true
+            window.setFrameOrigin(NSPoint(x: start.origin.x + dx, y: start.origin.y + dy))
+        }
+        override func mouseUp(with event: NSEvent) {
+            defer { start = nil }
+            if moved { onDragEnd() } else { onClick(event.clickCount) }
+        }
     }
 }

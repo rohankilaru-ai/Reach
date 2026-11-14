@@ -24,7 +24,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let host = NSHostingView(rootView: PanelView(model: model, onSnap: { [weak self] in self?.snapToTop() }))
+        let host = NSHostingView(rootView: PanelView(model: model, onSnap: { [weak self] in self?.snapToTop() },
+                                                     onDragEnd: { [weak self] in self?.dragEnded() }))
         host.sizingOptions = [.intrinsicContentSize]  // fit() sizes the window, keeping its top edge
         self.host = host
         panel = ReachPanel(content: host)
@@ -34,11 +35,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         panel.onEscape = { [weak self] in self?.escape() }
         model.expandRequested = { [weak self] in self?.expand(focus: true, why: "click") }
         model.expanded = false
-        fit(animated: false)
         place()
-        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) {
-            [weak self] _ in MainActor.assumeIsolated { self?.savePosition() }
-        }
         log("panel ready (tap Option-Space to type, hold it to talk, or circle something; Esc cancels)")
         model.circleRequested = { [weak self] in self?.selectRegion() }
 
@@ -73,16 +70,19 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private var host: NSView?
     private var sizeWatch: AnyCancellable?
+    /// Top-centre of the panel; every frame is computed from it, so resizes never drift. Saved only after a user drag.
+    private var anchor: CGPoint = .zero
+    private static let anchorsKey = "panelAnchorTopCenter"
 
-    /// Sizes the window to its SwiftUI content, keeping the top edge and centre (pill grows downward).
+    /// Sizes the window to its SwiftUI content around the anchor (the pill grows downward from it).
     private func fit(animated: Bool) {
         guard let host, let panel else { return }
         host.layoutSubtreeIfNeeded()
         let s = host.intrinsicContentSize
-        if ProcessInfo.processInfo.environment["REACH_DEBUG_FIT"] != nil { log("fit: content \(s) frame \(panel.frame.size)") }
-        guard s.width > 0, s.height > 0, s != panel.frame.size else { return }
-        let r = NSRect(origin: Placement.keepTop(old: panel.frame, newSize: s, visible: panel.screen?.visibleFrame), size: s)
-        placing = true
+        guard s.width > 0, s.height > 0 else { return }
+        let r = NSRect(origin: Placement.origin(anchor: anchor, size: s, visible: panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame),
+                       size: s)
+        guard r != panel.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in
                 ctx.duration = 0.28
@@ -92,12 +92,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         } else {
             panel.setFrame(r, display: true)
         }
-        placing = false
     }
 
     private var idleTimer: Timer?
     private var lastActivity = Date()
-    private var placing = false
     static let collapseAfter: TimeInterval = 8
 
     private func frameLine() -> String {
@@ -109,46 +107,44 @@ final class AppController: NSObject, NSApplicationDelegate {
         (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { "\($0)" } ?? "main"
     }
 
-    private func notchOrigin(_ s: NSScreen) -> NSPoint {
-        Placement.notchOrigin(screen: s.frame, visible: s.visibleFrame, safeTop: s.safeAreaInsets.top,
-                              auxLeft: s.auxiliaryTopLeftArea, auxRight: s.auxiliaryTopRightArea, size: panel.frame.size)
+    private func notchAnchor(_ s: NSScreen) -> CGPoint {
+        Placement.notchAnchor(screen: s.frame, visible: s.visibleFrame, safeTop: s.safeAreaInsets.top,
+                              auxLeft: s.auxiliaryTopLeftArea, auxRight: s.auxiliaryTopRightArea)
     }
 
-    /// Saved spot on the current display if there is one, else hugging the notch at the top of the main screen.
+    private static func savedAnchors() -> [String: CGPoint] {
+        (UserDefaults.standard.dictionary(forKey: anchorsKey) as? [String: [Double]] ?? [:])
+            .compactMapValues { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+    }
+
+    private static func storeAnchor(_ a: CGPoint?, display: String) {
+        var d = UserDefaults.standard.dictionary(forKey: anchorsKey) as? [String: [Double]] ?? [:]
+        d[display] = a.map { [Double($0.x), Double($0.y)] }
+        UserDefaults.standard.set(d, forKey: anchorsKey)
+    }
+
+    /// Saved anchor on the main display if there is one, else hugging the notch at the top of the main screen.
     private func place() {
         guard let screen = NSScreen.main else { return }
-        let saved = (UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:])
-            .compactMapValues { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
         let displays = Dictionary(NSScreen.screens.map { (Self.displayID($0), $0.visibleFrame) }, uniquingKeysWith: { a, _ in a })
-        placing = true
-        defer { placing = false }
-        if let o = Placement.restore(saved: saved, display: Self.displayID(screen), displays: displays, size: panel.frame.size) {
-            panel.setFrameOrigin(o)
-        } else {
-            panel.setFrameOrigin(notchOrigin(screen))
-        }
+        anchor = Placement.restoreAnchor(saved: Self.savedAnchors(), display: Self.displayID(screen), displays: displays)
+            ?? notchAnchor(screen)
+        fit(animated: false)
     }
 
-    private func savePosition() {
-        guard !placing, let screen = panel.screen else { return }
-        var saved = UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:]
-        saved[Self.displayID(screen)] = [panel.frame.minX, panel.frame.maxY]
-        UserDefaults.standard.set(saved, forKey: "panelTopLeft")
+    /// End of a user drag on the pill or header: the new top-centre becomes the anchor for that display.
+    func dragEnded() {
+        anchor = CGPoint(x: panel.frame.midX, y: panel.frame.maxY)
+        if let screen = panel.screen { Self.storeAnchor(anchor, display: Self.displayID(screen)) }
+        log("panel: moved, anchor \(Int(anchor.x)),\(Int(anchor.y)) saved")
     }
 
     /// Double-click on the header or pill: back to the notch, and forget the saved spot on this display.
     func snapToTop() {
         guard let screen = panel.screen ?? NSScreen.main else { return }
-        var saved = UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:]
-        saved[Self.displayID(screen)] = nil
-        UserDefaults.standard.set(saved, forKey: "panelTopLeft")
-        placing = true
-        let o = notchOrigin(screen)
-        NSAnimationContext.runAnimationGroup { ctx in
-            ctx.duration = 0.25
-            panel.animator().setFrameOrigin(o)
-        }
-        placing = false
+        Self.storeAnchor(nil, display: Self.displayID(screen))
+        anchor = notchAnchor(screen)
+        fit(animated: true)
         log("panel: snapped to top")
     }
 
@@ -167,6 +163,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func collapse(why: String) {
+        halo.hide()
         guard model.expanded else { return }
         model.expanded = false
         DispatchQueue.main.async { [weak self] in
@@ -351,34 +348,38 @@ final class AppController: NSObject, NSApplicationDelegate {
                 self.expand(focus: false, why: "circle too small")
             case .closed(let loop, let box):
                 self.halo.show(loop: loop)
-                self.expand(focus: true, why: "circle")
-                self.captureLoop(loop, box: box)
+                // wait for the lasso layer to fade so it is not in the picture; the panel stays hidden until done
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.captureLoop(loop, box: box) }
             }
         }
     }
 
+    /// Capture first (Reach's own panel is hidden, the lasso layer and halo are excluded), then show the panel.
+    /// Asks typed meanwhile wait for the result; a newer circle wins over an older one still being read.
     private func captureLoop(_ loop: [CGPoint], box: NSRect) {
         let top = NSScreen.screens.first?.frame.maxY ?? box.maxY
         let region = Lasso.region(box, primaryTop: top)
         let path = Lasso.contractPath(loop, primaryTop: top)
         log("circle: \(loop.count) points, box \(region.map { Int($0) })")
-        model.setSelection(Selection(region: region, path: path), note: "circled · reading…")
+        let gen = model.beginCapture()
+        model.selectionNote = "circled · reading…"
         let dir = model.files.capturesDir
         Task { @MainActor in
+            defer { self.expand(focus: true, why: "circle") }
             do {
                 let (image, url) = try await RegionCapture.captureLoop(loop, box: box, into: dir)
                 let text = await RegionCapture.recognizeText(image)
                 let words = text.split { $0 == " " || $0 == "\n" }.count
                 log("circle captured to \(url.path) (outside the loop masked), \(words) words read")
-                self.model.setSelection(Selection(text: text.isEmpty ? nil : text, region: region, image_path: url.path,
-                                                  path: path), note: "circled · \(words) words read")
+                self.model.finishCapture(gen, Selection(text: text.isEmpty ? nil : text, region: region,
+                                                        image_path: url.path, path: path), note: "circled · \(words) words read")
             } catch let e as CaptureError {
                 log("capture: \(e)")
-                self.model.setSelection(Selection(region: region, path: path), note: e.description)
+                self.model.finishCapture(gen, Selection(region: region, path: path), note: e.description)
                 if case .permission = e { self.model.needsUser("allow Screen Recording for Reach") }
             } catch {
                 log("capture error: \(error)")
-                self.model.setSelection(Selection(region: region, path: path), note: "capture failed")
+                self.model.finishCapture(gen, Selection(region: region, path: path), note: "capture failed")
             }
         }
     }

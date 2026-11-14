@@ -18,6 +18,11 @@ final class OverlayModel: ObservableObject {
     @Published var listening = false
     /// Pill (false) or full panel (true). The app controller owns when it changes.
     @Published var expanded = true
+    /// A circle capture + OCR is in flight; an ask typed meanwhile waits for it (it carries the text and image).
+    @Published var capturing = false
+    private var askAfterCapture: String?
+    /// Bumped per capture; a finished capture whose generation is stale is dropped.
+    private(set) var captureGen = 0
     var expandRequested: (() -> Void)?
     var circleRequested: (() -> Void)?
 
@@ -78,6 +83,17 @@ final class OverlayModel: ObservableObject {
             log("not connected yet; ask queued")
             return
         }
+        if let why = state.submitBlock(listening: listening, capturing: capturing) {
+            if capturing, !listening, state.phase != .working {
+                askAfterCapture = text
+                draft = ""
+                log("ask waits for the circle capture")
+            } else {
+                log("ask not sent: \(why)")
+                selectionNote = why
+            }
+            return
+        }
         log("state working")
         mutate { $0.submitted() }
         log("ask: \(text)" + (selection != nil ? " (with selection)" : ""))
@@ -96,6 +112,23 @@ final class OverlayModel: ObservableObject {
         selectionNote = note
         mutate { $0.clearHandSelection() }  // a drag-selected region replaces any hand selection
         if let sel { client.send(.select(sel)) }
+    }
+
+    /// Starts a capture generation; `finishCapture` with an older one is ignored.
+    func beginCapture() -> Int {
+        captureGen += 1
+        capturing = true
+        return captureGen
+    }
+
+    /// Applies a capture result only if it is the newest; then sends an ask that was waiting for it.
+    @discardableResult
+    func finishCapture(_ gen: Int, _ sel: Selection, note: String) -> Bool {
+        guard gen == captureGen else { log("stale capture \(gen) dropped (newest \(captureGen))"); return false }
+        capturing = false
+        setSelection(sel, note: note)
+        if let q = askAfterCapture { askAfterCapture = nil; submit(q) }
+        return true
     }
 
     /// The chip's clear button: drop the hand selection here and on the server (an empty `select` clears it there).

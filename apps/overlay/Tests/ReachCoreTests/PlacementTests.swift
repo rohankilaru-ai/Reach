@@ -47,4 +47,26 @@ import Testing
         let v = CGRect(x: 0, y: 0, width: 1000, height: 932)
         #expect(Placement.keepTop(old: old, newSize: CGSize(width: 420, height: 300), visible: v) == CGPoint(x: 0, y: 632))
     }
+
+    @Test func anchorCyclesNeverDrift() {
+        let v = CGRect(x: 0, y: 0, width: 1512, height: 949)
+        let anchor = Placement.notchAnchor(screen: CGRect(x: 0, y: 0, width: 1512, height: 982), visible: v, safeTop: 37,
+                                           auxLeft: CGRect(x: 0, y: 949, width: 662, height: 33),
+                                           auxRight: CGRect(x: 850, y: 949, width: 662, height: 33))
+        #expect(anchor == CGPoint(x: 756, y: 982 - 37 - Placement.gap))
+        let pill = CGSize(width: 80.5, height: 29), big = CGSize(width: 420, height: 90)
+        let first = Placement.origin(anchor: anchor, size: pill, visible: v)
+        var o = first
+        for _ in 0..<50 {
+            _ = Placement.origin(anchor: anchor, size: big, visible: v)
+            o = Placement.origin(anchor: anchor, size: pill, visible: v)
+        }
+        #expect(o == first && o.y + 29 == anchor.y)
+    }
+
+    @Test func restoresAnchorOnlyOnKnownDisplay() {
+        let d = ["1": CGRect(x: 0, y: 0, width: 800, height: 600)]
+        #expect(Placement.restoreAnchor(saved: ["1": CGPoint(x: 900, y: 700)], display: "1", displays: d) == CGPoint(x: 800, y: 600))
+        #expect(Placement.restoreAnchor(saved: ["2": CGPoint(x: 10, y: 10)], display: "2", displays: d) == nil)
+    }
 }

@@ -55,6 +55,14 @@ public struct PanelState: Equatable, Sendable {
 
     public mutating func clearHandSelection() { handSelection = nil }
 
+    /// Why a new ask cannot go now, or nil. One ask at a time; never while listening or while a circle is being read.
+    public func submitBlock(listening: Bool, capturing: Bool) -> String? {
+        if phase == .working { return "an ask is already running (Esc stops it)" }
+        if listening { return "still listening: release Option-Space to send" }
+        if capturing { return "still reading the circle" }
+        return nil
+    }
+
     public mutating func disconnected(_ why: String) {
         connected = false
         if phase == .working { phase = .failed; note = "connection lost: \(why)" }
