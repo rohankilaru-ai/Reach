@@ -9,6 +9,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let picker = RegionPicker()
     private let halo = RegionHalo()
     private var ghost: NSWindow?
+    private var ghostLabel: String??
+    private var ghostFade: DispatchWorkItem?
     private var escHotkey: UInt32?
     private let speech = SpeechInput()
     private var ptt = PushToTalk()
@@ -39,7 +41,11 @@ final class AppController: NSObject, NSApplicationDelegate {
             self?.voicePress()
         }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
-        model.onPointer = { [weak self] x, y, label in self?.showPointer(x: x, y: y, label: label) }
+        model.onPointer = { [weak self] x, y, label, byHand in self?.showPointer(x: x, y: y, label: label, byHand: byHand) }
+        model.onHandSelection = { [weak self] _ in
+            // open without taking focus: the user's hand is on whatever they were reading
+            if self?.panel.isVisible == false { self?.panel.orderFrontRegardless() }
+        }
         model.connect()
         show()
     }
@@ -219,26 +225,43 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// A ghost pointer that rests on a spot for a few seconds (the backend fills these from S4/S6).
-    private func showPointer(x: Double, y: Double, label: String?) {
-        ghost?.orderOut(nil)
+    /// One reusable ghost pointer. Task pointers rest 4 s; hand pointers (~15 Hz) fade calmly 1 s after the last one.
+    private func showPointer(x: Double, y: Double, label: String?, byHand: Bool) {
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         let size = NSSize(width: 160, height: 34)
-        let w = NSWindow(contentRect: NSRect(x: x - 9, y: top - y - 9, width: size.width, height: size.height),
-                         styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = .floating
-        w.isOpaque = false
-        w.backgroundColor = .clear
-        w.ignoresMouseEvents = true
-        w.contentView = NSHostingView(rootView: HStack(spacing: 6) {
-            Circle().fill(Palette.accent.opacity(0.85)).frame(width: 18, height: 18)
-                .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
-            if let label { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
-                .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(.black.opacity(0.6))) }
-            Spacer(minLength: 0)
-        })
+        let origin = NSPoint(x: x - 9, y: top - y - 9)
+        if ghost == nil || ghostLabel != .some(label) {
+            ghost?.orderOut(nil)
+            let w = NSWindow(contentRect: NSRect(origin: origin, size: size), styleMask: .borderless, backing: .buffered,
+                             defer: false)
+            w.level = .floating
+            w.isOpaque = false
+            w.backgroundColor = .clear
+            w.ignoresMouseEvents = true
+            w.contentView = NSHostingView(rootView: HStack(spacing: 6) {
+                Circle().fill(Palette.accent.opacity(0.85)).frame(width: 18, height: 18)
+                    .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
+                if let label { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
+                    .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(.black.opacity(0.6))) }
+                Spacer(minLength: 0)
+            })
+            ghost = w
+            ghostLabel = .some(label)
+        }
+        guard let w = ghost else { return }
+        w.setFrameOrigin(origin)
+        NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0; w.animator().alphaValue = 1 }  // stops a fade
         w.orderFrontRegardless()
-        ghost = w
-        DispatchQueue.main.asyncAfter(deadline: .now() + 4) { [weak w] in w?.orderOut(nil) }
+        ghostFade?.cancel()
+        let fade = DispatchWorkItem { [weak w] in
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.45
+                w?.animator().alphaValue = 0
+            }, completionHandler: { [weak w] in
+                MainActor.assumeIsolated { if w?.alphaValue == 0 { w?.orderOut(nil) } }
+            })
+        }
+        ghostFade = fade
+        DispatchQueue.main.asyncAfter(deadline: .now() + (byHand ? 1 : 4), execute: fade)
     }
 }

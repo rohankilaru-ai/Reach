@@ -23,6 +23,7 @@ class Selection(BaseModel):
     app: str | None = None
     region: list[float] | None = Field(default=None, description="[x, y, w, h] in screen points")
     image_path: str | None = None
+    source: str | None = Field(default=None, description="Who made it: 'pinch' (camera worker) or None (overlay/CLI)")
 
 
 # ---- client -> server ----
@@ -31,6 +32,9 @@ class Selection(BaseModel):
 class Hello(BaseModel):
     type: Literal["hello"] = "hello"
     token: str
+    role: Literal["overlay", "perception", "cli"] | None = Field(
+        default=None, description="Optional. 'overlay' clients receive relayed selection/pointer messages"
+    )
 
 
 class Ask(BaseModel):
@@ -58,7 +62,17 @@ class AddDoc(BaseModel):
     path: str
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc, Field(discriminator="type")]
+class PointerIn(BaseModel):
+    """Hand pointer from the perception worker (EXPERIMENTAL). Relayed to overlay clients as `pointer`."""
+
+    type: Literal["pointer"] = "pointer"
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    label: str | None = None
+    state: Literal["hover", "pinch"] | None = None
+
+
+Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn, Field(discriminator="type")]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -102,6 +116,9 @@ class Receipt(BaseModel):
     outcome: str | None = Field(
         default=None, description="Computed, never model-written: done | not_done | aborted, from the last browser task"
     )
+    selection_source: str | None = Field(
+        default=None, description="'pinch' when the ask used a hand selection (sent by the overlay or attached by the server)"
+    )
     write_outcome: str | None = Field(
         default=None,
         description="Computed from readbacks of native writes: verified, unverified or failed; None when nothing was written",
@@ -143,6 +160,8 @@ class Pointer(BaseModel):
     y: float
     label: str | None = None
     screen: int | None = None
+    state: str | None = Field(default=None, description="Relayed hand pointer: hover | pinch")
+    source: str | None = Field(default=None, description="'hand' when relayed from the perception worker")
 
 
 class Transcript(BaseModel):
@@ -154,6 +173,13 @@ class Transcript(BaseModel):
     text: str
 
 
+class SelectionMsg(BaseModel):
+    """A selection made outside the overlay (the pinch worker), relayed to overlay clients. Does not start an ask."""
+
+    type: Literal["selection"] = "selection"
+    selection: Selection
+
+
 class ErrorMsg(BaseModel):
     type: Literal["error"] = "error"
     message: str
@@ -161,7 +187,7 @@ class ErrorMsg(BaseModel):
 
 
 Outbound = Annotated[
-    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added, Field(discriminator="type")
+    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg, Field(discriminator="type")
 ]
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 

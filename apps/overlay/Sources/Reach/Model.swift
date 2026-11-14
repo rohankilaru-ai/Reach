@@ -22,7 +22,11 @@ final class OverlayModel: ObservableObject {
     private var retry: Timer?
     private var pendingAsk: String?
     var onPhase: ((Phase) -> Void)?
-    var onPointer: ((Double, Double, String?) -> Void)?
+    /// (x, y, label, byHand). Hand pointers arrive at ~15 Hz and fade after 1 s without one.
+    var onPointer: ((Double, Double, String?, Bool) -> Void)?
+    /// A selection arrived from the camera worker (pinch); the panel opens without taking focus.
+    var onHandSelection: ((Selection) -> Void)?
+    private var lastHandPointer = Date.distantPast
 
     init(files: RunFiles) {
         self.files = files
@@ -86,7 +90,17 @@ final class OverlayModel: ObservableObject {
     func setSelection(_ sel: Selection?, note: String?) {
         selection = sel
         selectionNote = note
+        mutate { $0.clearHandSelection() }  // a drag-selected region replaces any hand selection
         if let sel { client.send(.select(sel)) }
+    }
+
+    /// The chip's clear button: drop the hand selection here and on the server (an empty `select` clears it there).
+    func clearSelection() {
+        selection = nil
+        selectionNote = nil
+        mutate { $0.clearHandSelection() }
+        client.send(.select(Selection()))
+        log("selection cleared")
     }
 
     func needsUser(_ why: String) { mutate { $0.needsUser(why) } }
@@ -102,9 +116,18 @@ final class OverlayModel: ObservableObject {
             else if kind != "text_delta" { log("event \(kind)") }
         case .receipt(let r): log("receipt \(r.status): \(r.line)")
         case .evidence(let c): log("evidence \(c.title)")
-        case .pointer(_, let x, let y, let label):
-            log("pointer \(Int(x)),\(Int(y)) \(label ?? "")")
-            onPointer?(x, y, label)
+        case .pointer(let id, let x, let y, let label):
+            let byHand = id == nil
+            if !byHand || Date().timeIntervalSince(lastHandPointer) > 1 {
+                log("pointer \(Int(x)),\(Int(y)) \(label ?? "")\(byHand ? " (hand)" : "")")
+            }
+            if byHand { lastHandPointer = Date() }
+            onPointer?(x, y, label, byHand)
+        case .selection(let sel):
+            let chip = HandChip(sel)
+            log("selection by hand: \"\(chip.line)\" thumbnail \(chip.thumbnailPath ?? "none")")
+            selection = sel.isEmpty ? nil : sel
+            selectionNote = nil
         case .transcript(_, let role, let text): log("transcript \(role): \(text.prefix(120))")
         case .error(let m, _): log("server error: \(m)")
         case .added(let n, let p): log("added \(n) (\(p) passages)")
@@ -114,6 +137,7 @@ final class OverlayModel: ObservableObject {
         after.apply(msg)
         if after.phase != before { log("state \(after.phase.rawValue)") }
         mutate { $0.apply(msg) }
+        if case .selection(let sel) = msg, !sel.isEmpty { onHandSelection?(sel) }
         if case .ready = msg, let q = pendingAsk { pendingAsk = nil; submit(q) }
     }
 

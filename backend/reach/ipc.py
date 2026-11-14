@@ -12,10 +12,12 @@ import websockets
 from pydantic import ValidationError
 
 from .contracts import (
-    Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, Ready, Select, Transcript, inbound_adapter,
+    Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, PointerIn, Ready, Select, Transcript,
+    inbound_adapter,
 )
 from .bridge import evidence_cards
 from .ledger import count_ndi
+from .relay import Relay, log_line
 from .paths import drex_log, reach_dir, run_dir
 
 
@@ -60,6 +62,7 @@ class Server:
         self.Task = Task
         self.token = secrets.token_urlsafe(32)
         self.tasks: dict[str, Task] = {}
+        self.relay = Relay()
 
     async def handle(self, ws) -> None:
         try:
@@ -82,6 +85,8 @@ class Server:
                     return
 
         pump_task = asyncio.create_task(pump())
+        role, key = first.role, id(ws)
+        self.relay.join(key, role, out)
         mine: dict[str, object] = {}
         running: set[asyncio.Task] = set()
         try:
@@ -92,7 +97,11 @@ class Server:
                     out.put_nowait(ErrorMsg(message=f"bad message: {e.errors()[0]['msg']}").model_dump_json())
                     continue
                 if isinstance(msg, Ask):
-                    task = self.Task(msg)
+                    ask, sel_from = self.relay.attach(msg)
+                    task = self.Task(ask)
+                    task.selection_source = "pinch" if sel_from and sel_from.startswith("pinch") else None
+                    log_line({"kind": "ask", "task_id": task.id, "from": role, "selection": sel_from,
+                              "chars": len((ask.selection.text or "") if ask.selection else "")})
                     self.tasks[task.id] = task
                     mine[task.id] = task
                     out.put_nowait(Accepted(task_id=task.id).model_dump_json())
@@ -107,13 +116,16 @@ class Server:
                         targets = list(mine.values())
                     for task in targets:
                         task.abort()
-                elif isinstance(msg, Select):
-                    pass  # S2 consumes this; accepted and ignored for now
+                elif isinstance(msg, (Select, PointerIn)):
+                    fn = self.relay.select if isinstance(msg, Select) else self.relay.pointer
+                    if err := fn(key, role, msg):
+                        out.put_nowait(ErrorMsg(message=err).model_dump_json())
                 elif isinstance(msg, AddDoc):
                     t = asyncio.create_task(self._add(msg, out))
                     running.add(t)
                     t.add_done_callback(running.discard)
         finally:
+            self.relay.leave(key)
             for task in list(mine.values()):  # a client that goes away takes its running tasks with it
                 if task.id in self.tasks:
                     task.abort()
@@ -139,6 +151,7 @@ class Server:
                     log_evidence(card)
                     out.put_nowait(card.model_dump_json())
                 receipt.ndi_calls = count_ndi(drex_log(), task.id)
+            receipt.selection_source = getattr(task, "selection_source", None)
             if receipt.final_text:
                 out.put_nowait(
                     Transcript(task_id=task.id, role="assistant", text=receipt.final_text).model_dump_json()

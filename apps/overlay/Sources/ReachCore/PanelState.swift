@@ -19,6 +19,9 @@ public struct PanelState: Equatable, Sendable {
         set { pointerStore = newValue.map { PointerSpot(x: $0.x, y: $0.y, label: $0.label) } }
     }
     private var pointerStore: PointerSpot?
+    /// The selection made by hand (pinch), kept for the next typed or voice ask until cleared.
+    public private(set) var handSelection: Selection?
+    public var handChip: HandChip? { handSelection.map(HandChip.init) }
     private var awaitingAccept = false
 
     public init() {}
@@ -49,6 +52,8 @@ public struct PanelState: Equatable, Sendable {
         phase = .needsYou
         note = why
     }
+
+    public mutating func clearHandSelection() { handSelection = nil }
 
     public mutating func disconnected(_ why: String) {
         connected = false
@@ -102,6 +107,8 @@ public struct PanelState: Equatable, Sendable {
             if let id, !isMine(id) { return }
             if phase == .working || id != nil { phase = .failed }
             note = message
+        case .selection(let sel):
+            handSelection = sel.isEmpty ? nil : sel
         case .added(let name, let passages):
             note = "added \(name) (\(passages) passages)"
         case .unknown:
@@ -118,6 +125,27 @@ public struct PanelState: Equatable, Sendable {
     public static func == (a: PanelState, b: PanelState) -> Bool {
         a.phase == b.phase && a.connected == b.connected && a.taskID == b.taskID && a.answer == b.answer
             && a.note == b.note && a.receipt == b.receipt && a.evidence == b.evidence && a.decisions == b.decisions
-            && a.pointerStore == b.pointerStore
+            && a.pointerStore == b.pointerStore && a.handSelection == b.handSelection
+    }
+}
+
+/// What the "selected by hand" chip shows.
+public struct HandChip: Equatable, Sendable {
+    public var title = "Selected by hand"
+    /// First non-empty line of the selected text, else the region size.
+    public var line: String
+    public var thumbnailPath: String?
+
+    public init(_ sel: Selection) {
+        let first = (sel.text ?? "").split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }.first { !$0.isEmpty }
+        if let first {
+            line = first.count > 80 ? String(first.prefix(79)) + "…" : first
+        } else if let r = sel.region, r.count == 4 {
+            line = "region \(Int(r[2]))×\(Int(r[3])) · no text read"
+        } else {
+            line = "no text read"
+        }
+        thumbnailPath = sel.image_path
     }
 }

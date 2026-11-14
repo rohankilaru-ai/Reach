@@ -96,7 +96,49 @@ if args.contains("--replay") {
     }
 }
 
-if let audio = argValue("--voice-selftest") {
+/// Headless relay check (no panel, no capture): waits for a hand `selection` relayed by the server, prints the chip
+/// state, then asks `prompt` with that selection attached, like a typed ask would. PASS when the ask finishes.
+@MainActor func runRelaySelftest(_ prompt: String) {
+    let model = OverlayModel(files: files)
+    var pointers = 0
+    model.onPointer = { _, _, _, byHand in if byHand { pointers += 1 } }
+    model.onHandSelection = { _ in
+        let chip = model.state.handChip
+        log("chip: \(chip?.title ?? "none") · \"\(chip?.line ?? "")\" · thumbnail \(chip?.thumbnailPath ?? "none")"
+            + " (exists: \(chip?.thumbnailPath.map { FileManager.default.fileExists(atPath: $0) } ?? false))")
+        log("hand pointers received so far: \(pointers)")
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { runSelftestWith(model, prompt) }
+    }
+    log("relay selftest: waiting up to 40 s for a hand selection")
+    model.connect(waitSeconds: 10)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 40) {
+        if model.state.handSelection == nil { log("relay selftest FAIL: no selection relayed"); exit(5) }
+    }
+}
+
+@MainActor func runSelftestWith(_ model: OverlayModel, _ prompt: String) {
+    model.onPhase = { phase in
+        switch phase {
+        case .done:
+            log("answer: \(model.state.answer.replacingOccurrences(of: "\n", with: " ").prefix(200))")
+            log("chip after ask: \(model.state.handChip?.line ?? "none") (kept for the next ask)")
+            log("receipt selection_source: see .reach/logs/relay.jsonl")
+            log("relay selftest PASS")
+            exit(0)
+        case .failed:
+            log("relay selftest FAIL: \(model.state.note ?? "")")
+            exit(1)
+        default: break
+        }
+    }
+    model.submit(prompt)
+    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { log("relay selftest FAIL: ask timeout"); exit(2) }
+}
+
+if let prompt = argValue("--relay-selftest") {
+    MainActor.assumeIsolated { runRelaySelftest(prompt) }
+    app.run()
+} else if let audio = argValue("--voice-selftest") {
     MainActor.assumeIsolated { runVoiceSelftest(audio) }
     app.run()
 } else if let prompt = argValue("--selftest") {

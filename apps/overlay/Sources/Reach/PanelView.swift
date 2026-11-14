@@ -69,6 +69,10 @@ struct PanelView: View {
                     .lineLimit(2)
             }
 
+            if let chip = s.handChip {
+                HandChipView(chip: chip) { model.clearSelection() }
+            }
+
             if let note = model.selectionNote {
                 Label(note, systemImage: "viewfinder")
                     .font(.system(size: 11)).foregroundStyle(Palette.accent.opacity(0.9)).lineLimit(2)
@@ -193,4 +197,33 @@ final class ReachPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
     override func cancelOperation(_ sender: Any?) { onEscape?() }
+}
+
+/// "Selected by hand" (EXPERIMENTAL pinch selection): first line of the text, a thumbnail if captured, a clear button.
+struct HandChipView: View {
+    var chip: HandChip
+    var onClear: () -> Void
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if let path = chip.thumbnailPath, let img = NSImage(contentsOfFile: path) {
+                Image(nsImage: img).resizable().aspectRatio(contentMode: .fill)
+                    .frame(width: 30, height: 30).clipShape(RoundedRectangle(cornerRadius: 5))
+            } else {
+                Image(systemName: "hand.pinch").font(.system(size: 14)).foregroundStyle(Palette.accent)
+                    .frame(width: 30, height: 30)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text("\(chip.title) · experimental").font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(Palette.accent)
+                Text(chip.line).font(.system(size: 12)).foregroundStyle(.white.opacity(0.9)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Button(action: onClear) { Image(systemName: "xmark.circle.fill") }
+                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.55)).help("Drop this selection")
+        }
+        .padding(6)
+        .background(RoundedRectangle(cornerRadius: 8).fill(Palette.accent.opacity(0.10)))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Palette.accent.opacity(0.35), lineWidth: 1))
+    }
 }
