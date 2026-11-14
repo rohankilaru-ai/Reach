@@ -356,7 +356,7 @@ public struct PlainState: Equatable, Sendable {
         switch verdict {
         case .done, .stopped: return nil
         case .needsYou: return PlainState(sentence: "Circle the thing you mean.", action: .circle)
-        case .unverified: return PlainState(sentence: "I couldn't confirm the note was saved.", action: .retry)
+        case .unverified: return PlainState(sentence: "I couldn't confirm that finished.", action: .retry)
         case .failed(let why):
             if why.contains("note write") { return PlainState(sentence: "The note wasn't saved.", action: .retry) }
             if why.contains("browser") { return PlainState(sentence: "The browser task didn't finish.", action: .retry) }
