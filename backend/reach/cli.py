@@ -21,7 +21,7 @@ from .paths import drex_log, reach_dir, run_dir
 
 
 def _print_receipt(r: dict) -> None:
-    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls", "outcome", "browser", "write_outcome")
+    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls", "outcome", "browser", "write_outcome", "intent", "screen_captured")
     print("\n--- receipt ---")
     print(json.dumps({k: r.get(k) for k in keys}, indent=2))
 
@@ -39,7 +39,12 @@ def _render(event: dict) -> None:
     elif kind == "tool_call_start":
         print(f"\n[tool {event['name']}]", flush=True)
     elif kind == "decision":
-        print(f"\n[drex {event.get('purpose')}]", file=sys.stderr, flush=True)
+        extra = ""
+        if event.get("purpose") == "intent":
+            from .ledger import format_log_line
+
+            extra = " " + format_log_line(event).split("decision", 1)[-1].strip() + f" action={event.get('action')}"
+        print(f"\n[drex {event.get('purpose')}]{extra}", file=sys.stderr, flush=True)
 
 
 def cmd_serve(args) -> int:
@@ -53,10 +58,21 @@ def cmd_serve(args) -> int:
         from .bridge import InternBridge
 
         bridge = InternBridge()
+    from .tools import browser
+
+    browser.clear_children()  # stale pids from a crashed server are never signalled
+
+    def _on_term(signum, frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, _on_term)  # `reach stop`: unwind so the browser children are ended below
     try:
         asyncio.run(Server(bridge).serve())
     except KeyboardInterrupt:
         pass
+    finally:
+        browser.kill_children()
+        browser.clear_children()
     return 0
 
 
@@ -269,6 +285,13 @@ def cmd_stop(args) -> int:
         print(f"stopped server pid {pid}")
     except (OSError, ValueError, KeyError):
         print("no server running")
+    from .tools import browser
+
+    # The server ends its browser children on SIGTERM; this also covers a server that died without doing so.
+    time.sleep(0.2)
+    killed = browser.kill_children()
+    if killed:
+        print(f"stopped {len(killed)} browser task(s)")
     return 0
 
 

@@ -24,12 +24,15 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSUIElement</key><true/>
   <key>NSScreenCaptureUsageDescription</key><string>Reach reads the region you select so it can answer about it.</string>
-  <key>NSMicrophoneUsageDescription</key><string>Reach listens only while you hold Control-Option-Space, to turn what you say into a question. Audio is not saved.</string>
-  <key>NSSpeechRecognitionUsageDescription</key><string>Reach turns what you say into text on this Mac while you hold Control-Option-Space. If on-device recognition is unavailable, Apple's speech service is used and the panel says so.</string>
+  <key>NSMicrophoneUsageDescription</key><string>Reach listens only while you hold Option-Space, to turn what you say into a question. Audio is not saved.</string>
+  <key>NSSpeechRecognitionUsageDescription</key><string>Reach turns what you say into text on this Mac while you hold Option-Space. If on-device recognition is unavailable, Apple's speech service is used and the panel says so.</string>
+  <key>NSCameraUsageDescription</key><string>Reach uses the camera only for optional hand tracking, when you turn it on.</string>
+  <key>NSAppleEventsUsageDescription</key><string>Reach controls Chrome, Finder, Notes or TextEdit only when a task you asked for needs it.</string>
   <key>ReachRepo</key><string>$REPO</string>
 </dict></plist>
 PLIST
 # Ad-hoc signed without the hardened runtime, so the microphone needs no audio-input entitlement (that entitlement
 # is only enforced under the hardened runtime or the App Sandbox).
-codesign --force -s - "$APP"
+# Set REACH_SIGN_IDENTITY to a code-signing identity name so macOS keeps your permission grants across rebuilds; ad hoc otherwise.
+codesign --force -s "${REACH_SIGN_IDENTITY:--}" "$APP"
 echo "built $APP"

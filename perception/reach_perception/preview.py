@@ -39,5 +39,12 @@ def show(img) -> int:
     return cv2.waitKey(1) & 0xFF
 
 
+def poll_key() -> int:
+    """Key poll without drawing, used when the camera delivered no frame."""
+    import cv2
+
+    return cv2.waitKey(30) & 0xFF
+
+
 def close() -> None:
     cv2.destroyAllWindows()

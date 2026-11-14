@@ -11,12 +11,77 @@ Hands come from `finger_processing` (repo root), the single camera + MediaPipe p
 from __future__ import annotations
 
 import argparse
+import queue
 import statistics
 import sys
+import threading
 import time
 
 from .pinch import MIN_DRAG
-from .screen_map import CORNERS, ScreenMap, box_around, screen_size
+from .screen_map import CORNERS, ScreenMap, box_around, build_map, loop_path, path_bbox, reset_calibration, screen_size
+
+FRAME_FAIL_MSG = "[worker] camera stopped delivering frames; exiting. Check that it is connected and not in use."
+
+
+class ReadWorker:
+    """Runs capture + OCR for selections on one background thread so the camera loop and preview never block.
+
+    `submit(rect)` is non-blocking; `poll()` returns finished results (rect, text, image path) without waiting.
+    `capture` and `recognise` are injected so tests need neither Screen Recording nor Vision.
+    """
+
+    def __init__(self, capture, recognise, max_pending: int = 4) -> None:
+        self._capture, self._recognise = capture, recognise
+        self._jobs: queue.Queue = queue.Queue(maxsize=max_pending)
+        self._done: queue.Queue = queue.Queue()
+        self.pending = 0
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    @property
+    def busy(self) -> bool:
+        with self._lock:
+            return self.pending > 0
+
+    def submit(self, rect) -> bool:
+        with self._lock:
+            try:
+                self._jobs.put_nowait(rect)
+            except queue.Full:
+                return False
+            self.pending += 1
+            return True
+
+    def _loop(self) -> None:
+        while True:
+            rect = self._jobs.get()
+            if rect is None:
+                return
+            text, img = "", None
+            try:
+                img = self._capture(rect)
+                text = self._recognise(img) if img else ""
+            except Exception as exc:  # a failed read must not kill the thread
+                print(f"[worker] read failed: {exc}")
+            self._done.put((rect, text, img))
+
+    def poll(self) -> list:
+        out = []
+        while True:
+            try:
+                out.append(self._done.get_nowait())
+            except queue.Empty:
+                break
+        with self._lock:
+            self.pending -= len(out)
+        return out
+
+    def close(self) -> None:
+        try:
+            self._jobs.put_nowait(None)
+        except queue.Full:
+            pass
 
 
 PERMISSION_MSG = (
@@ -82,6 +147,13 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     bridge.connect()
     print(f"[worker] screen {sw:.0f}x{sh:.0f} pt, mapping={'calibrated' if smap.calibrated else 'fixed'}, "
           f"bridge: {bridge.status}")
+    def captures_dir():
+        from .bridge_client import server_reach_dir  # same .reach the server checks image_path against
+
+        return server_reach_dir() / "captures"
+
+    paths: dict[tuple, list] = {}  # rect -> loop path, picked up when its read finishes
+    reader = None if no_ocr else ReadWorker(lambda r: capture_region(r, captures_dir()), ocr)
     calib: list | None = None  # corners collected during calibration
     last = "ready"
     ocr_label = "OCR off: pointer demo only" if no_ocr else "OCR on"
@@ -91,7 +163,10 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
         while True:
             hf = fp.wait_next(last_id, timeout=1.0)
             if hf is None:
-                if fp.finished.is_set():
+                if fp.finished.is_set():  # finger_processing gave up on the camera after repeated failures
+                    print(FRAME_FAIL_MSG)
+                    return 3
+                if not no_preview and preview.poll_key() == ord("q"):
                     break
                 continue
             last_id = hf.frame_id
@@ -108,31 +183,40 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                     calib.append(e.data["end"])
                     last = f"calibration: got {CORNERS[len(calib) - 1]}"
                     if len(calib) == 4:
-                        smap = ScreenMap(sw, sh, calib)
-                        last = f"calibration saved to {smap.save(calib)}"
+                        smap, warn = build_map(sw, sh, calib)
+                        if warn:
+                            last = warn
+                            print(f"[worker] WARNING: {warn}")
+                        else:
+                            last = f"calibration saved to {smap.save(calib)}"
                         calib = None
                 elif e.kind == "select":
                     s, en = e.data["start"], e.data["end"]
-                    if abs(s[0] - en[0]) < MIN_DRAG and abs(s[1] - en[1]) < MIN_DRAG:
+                    path = loop_path([smap.to_screen(p) for p in e.data.get("trail", [])])
+                    if path:  # a drawn loop: region is its bounding box
+                        rect = [round(v) for v in path_bbox(path)]
+                        paths[tuple(rect)] = path
+                    elif abs(s[0] - en[0]) < MIN_DRAG and abs(s[1] - en[1]) < MIN_DRAG:
                         rect = box_around(smap.to_screen(en), sw, sh)
                     else:
                         rect = smap.rect_to_screen(s, en)
-                    text, img = None, None
-                    if not no_ocr:
-                        img = capture_region(rect)
-                        text = ocr(img) if img else ""
-                        if not text:
-                            ocr_label = "no text read (Screen Recording permission?): pointer demo only"
-                        else:
-                            ocr_label = f"OCR: {len(text)} chars"
-                    sent = bridge.select(rect, text or None, str(img) if img else None)
-                    last = f"select {rect} {'sent' if sent else 'local only'}"
-                    print(f"[worker] {last}; {ocr_label}")
+                    if reader is not None and reader.submit(rect):
+                        ocr_label = "reading..."
+                        last = f"select {rect}: reading..."
+                    else:
+                        sent = bridge.select(rect, None, None, paths.pop(tuple(rect), None))
+                        last = f"select {rect} {'sent' if sent else 'local only'}"
+                        print(f"[worker] {last}; {ocr_label}")
+            for rect, text, img in (reader.poll() if reader else []):
+                ocr_label = f"OCR: {len(text)} chars" if text else \
+                    "no text read (Screen Recording permission?): pointer demo only"
+                sent = bridge.select(rect, text or None, str(img) if img else None, paths.pop(tuple(rect), None))
+                last = f"select {rect} {'sent' if sent else 'local only'}"
+                print(f"[worker] {last}; {ocr_label}")
             if eng.pointer:
                 sx, sy = smap.to_screen(eng.pointer)
-                bridge.pointer(round(sx), round(sy), eng.pinching, True)
-            elif not eng.tracking:
-                bridge.pointer(None, None, False, False)
+                bridge.pointer(round(sx), round(sy), eng.pinching)
+            # hand lost: send nothing; the overlay fades the ghost after 1 s
             if no_preview:
                 continue
             ratio = f"{eng.ratio:.2f}" if eng.ratio is not None else "-"
@@ -143,18 +227,19 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
             if todo:
                 lines.insert(0, todo)
             raw = fp.latest_raw()
-            if raw is None:
-                continue
-            key = preview.show(preview.draw(raw.image, lm, eng, lines))
+            key = preview.poll_key() if raw is None else preview.show(preview.draw(raw.image, lm, eng, lines))
             if key == ord("q"):
                 break
             if key == ord("c"):
                 calib = []
             if key == ord("r"):
-                smap = ScreenMap(sw, sh)
+                smap = reset_calibration(sw, sh)
+                last = "mapping reset; saved calibration deleted"
     except KeyboardInterrupt:
         pass
     finally:
+        if reader is not None:
+            reader.close()
         fp.stop()
         bridge.close()
         if not no_preview:
@@ -167,13 +252,15 @@ def main(argv: list[str] | None = None) -> int:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--selftest", action="store_true", help="run on synthetic landmark fixtures, no camera")
     ap.add_argument("--camera-check", action="store_true", help="open the camera for 3 s and print timings")
+    ap.add_argument("--bridge", action="store_true",
+                    help="with --selftest: send the replayed pointer and select to a running `reach serve`")
     ap.add_argument("--no-preview", action="store_true")
     ap.add_argument("--no-ocr", action="store_true", help="send rect only; preview says 'pointer demo only'")
     a = ap.parse_args(argv)
     if a.selftest:
         from .selftest import main as st
 
-        return st()
+        return st(bridge=a.bridge)
     if a.camera_check:
         return camera_check()
     return run(a.no_preview, a.no_ocr)

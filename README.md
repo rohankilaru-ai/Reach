@@ -1,101 +1,117 @@
 # Reach
 
-**A desktop assistant you can type to, talk to, and point at. Drex decides, Intern runs it, and every action is checked.**
+**A desktop assistant you can type to, talk to, circle things for, and that acts on your Mac. Drex decides, Intern runs it, and every action is checked.**
 
-Reach sits at the top of your Mac screen. Ask it a question, hold a key and speak, or select something on screen. It answers from your documents with cited quotes, looks at the part of the screen you selected, runs a browser task, and writes results into your notes. It then reads the destination back to check the write landed.
+Reach lives at the top of your Mac screen. Ask it a question, hold a key and speak, or circle something on screen while you talk. It answers from your documents with cited quotes, looks at your screen, points at where to click, runs browser tasks, opens Chrome tabs, writes into your notes and reads the result back to confirm it landed. Every ask goes through Nace's Intern harness with Drex Max supervising each step.
 
-Built for the Drexathon, Wildcard track. Hackathon code written on 2026-11-14.
+Built for the Drexathon, Wildcard track. All code here was written on 2026-11-14.
 
 ## What runs where
 
-| Part | What it is | Role |
+| Part | What it is | Role in Reach |
 | --- | --- | --- |
-| **Intern** (Nace harness, v0.30.1) | The agent loop. Every ask opens a real Intern Session. | Runs tools, keeps the journal, holds the tool guard |
-| **Drex Max** (`drex-max-v1.1`) | Nace's decision model | **System 1.** Supervises each turn, judges each tool call, picks which of 12 commands you meant |
-| **Qwen3.8-27B on DeepInfra** | Language model | **System 2.** Plans and writes the answers you read |
-| **NDI** (`nace-sdk`) | Document pipeline | Parses PDFs, and grounds each quoted passage to a page and region |
-| **Nace browser harness** (patched) | Browser agent | Runs web tasks; Drex Max makes the page actions |
-| **Qwen3-VL on DeepInfra** | Vision model | Reads a screen region; also the browser harness's helper |
+| **Intern** (Nace harness, v0.30.1) | The agent loop. Every ask opens a real Intern Session. | Runs tools, keeps the journal, holds the tool guard; Reach adds tools and a secret-path policy through Intern's extension interface |
+| **Drex Max** (`drex-max-v1.1`) | Nace's decision model | **System 1.** Understands each task before it runs (~260 ms), supervises each turn, judges each tool call, decides whether a message continues the last conversation, checks whether overheard speech is meant for Reach, routes 12 voice commands. Inside the browser harness it makes the page actions |
+| **Qwen3.8-27B on DeepInfra** | Language model | **System 2.** Plans, picks tools and writes the answers you read |
+| **NDI** (`nace-sdk`) | Document pipeline | Parses PDFs; grounds each cited quote to a page and region |
+| **Nace browser harness** (patched) | Browser agent | Runs web tasks in its own browser |
+| **Qwen3-VL-235B on DeepInfra** | Vision model | Reads your screen or a circled region, tables, and points at form fields; also the browser harness's helper |
+| **Whisper large-v3-turbo and Kokoro-82M on DeepInfra** | Speech | Cloud transcription and spoken replies (on-device Apple speech is the fallback) |
 
-Drex Max does not write the answers. It answers typed questions with calibrated probabilities in about 250 ms, and Reach uses those to supervise, gate and route. The text you read comes from Qwen.
+Drex Max never writes the answers: it answers typed questions with calibrated probabilities. The text you read and hear comes from Qwen.
 
 ```
  overlay (Swift)  ──► localhost WebSocket ──►  Reach backend (Python)
- hotkeys, voice,          token-protected       │
- selection, pinch*                              ▼
+ pill, hotkeys, voice,    token-protected       │
+ circle, hands*                                 ▼
                                          Intern Session
-                                   System 2 Qwen3.8-27B  ◄─ judged by ─►  System 1 Drex Max
+                                  System 2 Qwen3.8-27B  ◄─ judged by ─►  System 1 Drex Max
                                                 │
-        ┌───────────────┬───────────────────────┼─────────────────┬──────────────┐
-   evidence_search   browser_task        note_append /       see_region     reach_now
-   (NDI, cited)    (Nace harness)       shelf_to_note       (Qwen3-VL)
-                                        (read back)
+   ┌─────────────┬──────────────┬───────────────┼──────────────┬──────────────┬─────────────┐
+ evidence_    browser_      note_append /   see_screen /    point_at      chrome_*     ax_* / finder_*
+ search (NDI) task (Nace)   shelf_to_note   see_region      (pointers)    (tabs)       (Do mode*)
 ```
 `*` experimental
 
 ## Status
 
-Labels: **implemented** = a gate passed on a fresh input; **experimental** = runs, not reliable or not tested live; **planned** = not built.
+Labels: **implemented** = a gate passed on a fresh input; **experimental** = runs, but not reliable or not verified by a person; **planned** = not built. Evidence is in `docs/evidence/`.
 
-| Feature | Label | Evidence |
+| Feature | Label | Evidence and caveats |
 | --- | --- | --- |
-| Intern as the harness, Drex Max as System 1, Qwen3.8-27B on DeepInfra as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `docs/evidence/receipt.json` |
-| Drex decisions in the log (supervise, guard, wrap-up, memory, command routing) | implemented | `reach log` |
-| NDI evidence: ingest a PDF, cited quotes, ground to page and region | implemented | two real PDFs, 5 of 5 cited quotes found verbatim; `docs/GROUND_SHAPE.md` |
-| Browser task through an Intern tool, with Drex judging each call | implemented | `docs/evidence/browser-run.json`; abort stops the browser in under 0.3 s |
-| Verified notes: write to a notes file, TextEdit or Notes, then read back (`write_outcome`) | implemented | receipt field `write_outcome` |
-| Screen region question (`see_region`) | implemented, accuracy varies | a labelled image was read correctly; a chess position was read but the model did not call checkmate |
-| Overlay: hotkeys, streamed answers, evidence cards, receipt line | implemented | `apps/overlay/README.md`; not every path tried by hand |
-| Voice: hold Control-Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
-| 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: on 90 held-out hard utterances Drex Max got 87 right (96.7%), Qwen3.8-27B 83 (one-label) and 82 (12-way); the intervals overlap, so this is a lead, not a proven win. Drex made 0 wrong commands, Qwen 2 to 3. Median latency 265 ms vs 544 ms (one-label Qwen). Command line only |
-| Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
-| Lip reading / silent speech | planned | not built |
-| Controlling other apps by mouse or keyboard | planned (deliberately not done) | Reach only acts through apps' scripting interfaces and files |
-| Gaze, Adobe and Keenable integrations | planned | |
+| Intern as harness; Drex Max as System 1; Qwen3.8-27B (DeepInfra) as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `receipt.json` |
+| Drex task understanding before every ask (kind, needs-screen, risky, continues-previous) | implemented | `docs/evidence/intent.md`: held-out kind accuracy 22/25; 0 wrong risky calls; p50 257 ms |
+| Conversation memory: Drex decides whether a message continues the last exchange | implemented | live check: follow-up scored 0.98, unrelated topic 0.009 |
+| NDI evidence: add a PDF, cited quotes grounded to page and region | implemented | two real PDFs; `docs/GROUND_SHAPE.md` |
+| Browser task as an Intern tool, Drex judges each call | implemented | `docs/evidence/browser-run.json`; runs hidden by default (a visible window lost runs in a test) |
+| Verified notes (file, TextEdit, Notes) with read-back (`write_outcome`) | implemented | receipt field `write_outcome` |
+| Screen look with no circle (`see_screen`) and circled regions (`see_region`) | implemented | `docs/evidence/auto-screen.md`; vision answers can be wrong, especially on dense images such as chess boards |
+| Pointers that show where to click or type (`point_at`) | implemented on generated screens | 54/54 steps on 10 clean mock-ups (`docs/evidence/guide.md`); not tested on dense real apps |
+| Chrome tabs: list, open, switch, close and move tabs Reach opened | implemented | never closes tabs you opened yourself; listing sends tab titles to the model |
+| Overlay: top pill, hover to expand, one-gesture circle plus voice, zoom lens, permission checklist | experimental | unit and headless tests pass; gestures not yet verified by hand on every path |
+| Voice: hold Option-Space to talk; cloud Whisper transcription and Kokoro replies, Apple on-device as fallback | experimental | `docs/evidence/cloud-voice.md`: on clean test audio Apple's recogniser was more accurate and 4 to 8 times faster; microphone audio goes to DeepInfra when the cloud setting is on |
+| Hands-free listening: wake word "Reach", Drex decides whether speech is meant for Reach (Option-Shift-Space toggles) | experimental | `docs/evidence/addressed.md`: held-out precision 0.94, recall 0.79 on 40 hand-written utterances; always-on listening is off at launch, recognition runs on the Mac |
+| Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | experimental | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
+| 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
+| Hand pointer and pinch-to-select with MediaPipe | experimental | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
+| Teammate's finger tracking and cursor demo (`finger_processing/`, `cursor_demo/`) | experimental | own tests; not an agent tool |
+| Silent speech: lip reading into the 12-command router (research-only weights, not shipped) | experimental | model runs (0.4 s per 1.5 s clip); no accuracy measured, no live mouthed run |
+| Control of other apps by mouse or keyboard events | planned (not done on purpose) | Reach uses scripting interfaces, files and the Accessibility API only |
+| Gaze, Adobe and Keenable | planned | |
 
 ## Quick start
 
-Needs macOS 14+ on Apple Silicon, [uv](https://docs.astral.sh/uv/), Node 22.18+, a recent Xcode (for the overlay), and two keys.
+Needs macOS 14+ on Apple Silicon, [uv](https://docs.astral.sh/uv/), Node 22.18+, a recent Xcode, and two keys (`NACE_API_KEY`, `DEEPINFRA_API_KEY`).
 
 ```bash
-cp .env.example .env        # then add NACE_API_KEY and DEEPINFRA_API_KEY yourself
+cp .env.example .env        # add NACE_API_KEY and DEEPINFRA_API_KEY yourself
 cd backend && uv sync
 export INTERN_HOME=$PWD/../.intern-home && mkdir -p "$INTERN_HOME" && ln -sf "$PWD/../.env" "$INTERN_HOME/.env"
 
-uv run reach add ~/Downloads/some.pdf          # NDI parses and caches it
+uv run reach add ~/Downloads/some.pdf                 # NDI parses and caches it
 uv run reach ask "what does this paper conclude? cite it"
-uv run reach log                               # Drex's decisions for each ask
-uv run reach replay ../fixtures/events/ask.jsonl   # no keys needed
+uv run reach log                                      # Drex's decisions for each ask
+uv run reach replay ../fixtures/events/ask.jsonl      # no keys needed
 
-../scripts/setup-browser.sh                    # optional: builds the patched browser harness
-../scripts/build-overlay.sh && open ../apps/overlay/build/Reach.app
+../scripts/setup-browser.sh                           # optional: the patched browser harness
+REACH_SIGN_IDENTITY="<your code-signing identity>" ../scripts/build-overlay.sh   # identity optional; keeps permission grants across rebuilds
+open ../apps/overlay/build/Reach.app                  # the app starts the backend itself
 ```
 
-Controls: **Option-Space** opens the panel. **Control-Option-Space** (hold) speaks. **Option-Shift-Space** drags a screen selection. **Esc** cancels.
-Permissions macOS may ask for: Screen Recording (drag-select), Microphone and Speech Recognition (voice), Automation (TextEdit and Notes), Camera (pinch worker only).
+**Controls.** **Option-Space**: tap to type, hold to talk; while holding, circle what you mean with the mouse. **Option-Shift-Space**: hands-free listening on or off. **Esc** cancels. Move the mouse to the top-centre of the screen to show the pill. The "Set up Reach" window checks permissions and turns green when everything required is granted.
+Permissions: Screen Recording, Microphone and Speech Recognition are required; Accessibility (Do mode), Camera (hands) and Automation (Chrome, Finder, Notes, TextEdit) are optional. `swift scripts/request-permissions.swift` raises the prompts for the terminal.
+
+## Privacy: what leaves your Mac
+
+- Your typed or spoken request text goes to Nace (Drex) and DeepInfra (Qwen).
+- A screenshot goes to DeepInfra only when you circle something or ask about your screen; captures are deleted after an hour.
+- Microphone audio goes to DeepInfra (Whisper) only while you hold the key with cloud voice on. Hands-free listening uses on-device recognition and keeps no audio; only the text of speech Drex judges is for Reach is acted on.
+- Chrome tab titles and URLs go to the model when you ask Reach to list tabs.
+- Documents are parsed by NDI (Nace).
 
 ## How NDI grounds answers
 
-`reach add` uploads the PDF to NDI and keeps the parsed passages locally, keyed by file hash. An Intern tool, `evidence_search`, returns passages with ids like `E3`. The model cites ids; Reach turns each cited id into a card holding the exact stored quote, and asks NDI to ground that quote to a page and a region box. Quotes come from the stored passage, never from the model's wording. Grounding finds where text appears; it does not prove the model's reasoning from it.
+`reach add` uploads the PDF to NDI and keeps the parsed passages locally, keyed by file hash. An Intern tool, `evidence_search`, returns passages with ids like `E3`. The model cites ids; Reach turns each into a card holding the exact stored quote and asks NDI to ground it to a page and region box. Quotes come from the stored passage, never from the model's wording. Grounding finds where text appears; it does not prove the model's reasoning from it.
 
 ## Safety
 
 - The local server listens on 127.0.0.1 only and needs a token file readable by you alone.
-- No synthetic keystrokes or mouse events anywhere in the code. Native writes use an allowlist of destinations and are verified by reading back.
-- A policy hook refuses tool calls that touch key files or dump the environment. See `backend/reach/guard_policy.py` and its tests.
+- Reach's agent tools send no synthetic keystrokes or mouse events. Native writes use an allowlist and are verified by reading back. Do mode acts only through the Accessibility API's semantic actions (press, set value); it shows a pointer a second before acting, refuses password fields and purchase or delete buttons, stops when you touch the mouse or keyboard, and is off unless `REACH_DO_MODE=1`. The separate, opt-in `cursor_demo/` moves the pointer to follow your fingertip and is not an Intern tool.
+- Intern's shell, write and edit tools are removed. A policy hook refuses calls that touch key files or dump the environment (`backend/reach/guard_policy.py`).
 - Documents, web pages and selected text are data, not instructions.
+- Drex judges risky requests ("delete my files") and Reach asks for confirmation first.
 
 ## Limits (read before judging)
 
 - Drex Max supervises and routes; it does not generate text.
-- The browser is the harness's own headless Chromium, not your own Chrome tab. In our one risky-form test the page was not submitted, but Drex judged the call routine, so we do not claim it blocks risky actions. Loop mode is used because default mode did not complete the click test.
-- Intern's memory feature refuses the first `evidence_search` in each session; the model retries, costing one extra call per ask.
+- The browser tool runs the harness's own hidden browser, not your Chrome. In one risky-form test the page was not submitted, but Drex judged the call routine, so we do not claim it blocks risky actions. Loop mode is used because default mode did not complete the click test.
+- The Nace console's firewall blocked our network address for about 25 minutes after heavy parallel testing; the app cannot answer while Drex is unreachable.
 - Cost figures are list-price estimates from token counts; Drex responses carry no price. Provider balances are the truth.
-- Vision models misread chess boards and similar dense images; treat `see_region` answers as a second opinion.
-- Nothing here was benchmarked against a frontier model. The router comparison is Drex Max against Qwen3.8-27B only, on 90 hand-written held-out utterances written by us, with simulated lip-reader noise; the confidence intervals overlap and two Qwen misses are judgement calls on items we labelled ourselves. See `docs/evidence/bench_v2.md`.
+- Vision models misread chess boards and similar dense images; treat answers as a second opinion.
+- Nothing was benchmarked against a frontier model. The router comparison is Drex Max against Qwen3.8-27B only, on hand-written data.
 
 ## Repository
 
-`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/` MediaPipe pinch worker · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and router test sets · `docs/evidence/` real logs and benchmark output · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences.
+`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/` MediaPipe pinch worker and silent-speech spike · `finger_processing/`, `cursor_demo/` teammate's hand tracking and cursor demo · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and test sets · `docs/evidence/` real logs, receipts, benchmarks · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences · `docs/AGENT_BOARD.md` how we worked in parallel.
 
 MIT licensed. Third-party components and their terms are in `THIRD_PARTY.md`.

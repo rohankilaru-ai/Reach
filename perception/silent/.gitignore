@@ -1,0 +1,4 @@
+# Research/non-commercial weights and downloaded third-party code: never commit.
+models/
+third_party/
+.venv/

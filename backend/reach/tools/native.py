@@ -12,6 +12,7 @@ receipt builder parses.
 
 from __future__ import annotations
 
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -67,7 +68,8 @@ def check_notes_path(path: Path, allowed: Path | None = None) -> Path:
     """The file destination is one fixed file. Anything else (another path, a symlink elsewhere) is refused."""
     allowed = (allowed or NOTES_FILE).expanduser()
     p = path.expanduser()
-    if p.resolve() != allowed.resolve() or (p.exists() and p.is_symlink()):
+    # lstat-based: a symlink is refused even when it dangles (resolve() would follow it to its target).
+    if p.is_symlink() or p.parent.resolve() / p.name != allowed.parent.resolve() / allowed.name:
         raise PermissionError(f"refused: file notes go only to {allowed}")
     return p
 
@@ -81,7 +83,9 @@ def write_file(text: str, path: Path | None = None, allowed: Path | None = None)
         before = p.read_text(encoding="utf-8") if p.exists() else None
         p.parent.mkdir(parents=True, exist_ok=True)
         chunk = ("" if not before or before.endswith("\n") else "\n") + text.rstrip("\n") + "\n"
-        with p.open("a", encoding="utf-8") as f:
+        # O_NOFOLLOW: a symlink planted between the check and the open is refused, not followed.
+        fd = os.open(p, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW, 0o644)
+        with os.fdopen(fd, "a", encoding="utf-8") as f:
             f.write(chunk)
     except OSError as e:
         return WriteResult(destination="file", outcome="failed", detail=f"write error {type(e).__name__}")
@@ -233,8 +237,11 @@ class ShelfToNote(Tool):
         import asyncio
 
         items = shelf_items(args.item_ids)
-        if not items:
-            r = WriteResult(destination=args.destination, outcome="failed", detail="no such evidence ids")
+        found = {i.get("id") for i in items}
+        missing = [pid for pid in args.item_ids if pid.strip() not in found]
+        if not items or missing:  # never write a partial set and call it done
+            detail = f"no such evidence ids: {', '.join(missing)}" if missing else "no such evidence ids"
+            r = WriteResult(destination=args.destination, outcome="failed", detail=detail[:200])
             return tool_output(r, self.name)
         text = "\n\n".join(citation_block(i) for i in items)
         r = await asyncio.to_thread(note_write, args.destination, text)
@@ -254,13 +261,17 @@ class OpenSource(Tool):
     effects: ClassVar[frozenset[str]] = frozenset({"read"})
 
     async def run(self, args: Any, ctx: ToolContext) -> ToolOutput:
+        import asyncio
+
         from .. import evidence
 
         p = evidence.get_passage(args.item_id)
         if p is None or not p.get("path") or not Path(p["path"]).is_file():
             return ToolOutput(status="error", content=f"No source file for {args.item_id}.")
         try:
-            subprocess.run(["open", p["path"]], timeout=OSASCRIPT_TIMEOUT_S, check=True, capture_output=True)
+            await asyncio.to_thread(  # never block the server's event loop
+                subprocess.run, ["open", p["path"]], timeout=OSASCRIPT_TIMEOUT_S, check=True, capture_output=True
+            )
         except (subprocess.SubprocessError, OSError) as e:
             return ToolOutput(status="error", content=f"Could not open the file ({type(e).__name__}).")
         page = f"; the passage is on page {p['page']} (the viewer opens at its first page)" if p.get("page") else ""

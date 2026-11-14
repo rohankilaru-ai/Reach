@@ -23,6 +23,10 @@ class Selection(BaseModel):
     app: str | None = None
     region: list[float] | None = Field(default=None, description="[x, y, w, h] in screen points")
     image_path: str | None = None
+    source: str | None = Field(default=None, description="Who made it: 'pinch' (camera worker) or None (overlay/CLI)")
+    path: list[list[float]] | None = Field(
+        default=None, description="Circle selection: the loop as [[x, y], ...] in screen points, top-left origin (<= ~64)"
+    )
 
 
 # ---- client -> server ----
@@ -31,6 +35,9 @@ class Selection(BaseModel):
 class Hello(BaseModel):
     type: Literal["hello"] = "hello"
     token: str
+    role: Literal["overlay", "perception", "cli"] | None = Field(
+        default=None, description="Optional. 'overlay' clients receive relayed selection/pointer messages"
+    )
 
 
 class Ask(BaseModel):
@@ -58,7 +65,61 @@ class AddDoc(BaseModel):
     path: str
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc, Field(discriminator="type")]
+class PointerIn(BaseModel):
+    """Hand pointer from the perception worker (EXPERIMENTAL). Relayed to overlay clients as `pointer`."""
+
+    type: Literal["pointer"] = "pointer"
+    x: float = Field(allow_inf_nan=False)
+    y: float = Field(allow_inf_nan=False)
+    label: str | None = None
+    state: Literal["hover", "pinch"] | None = None
+
+
+class Hypotheses(BaseModel):
+    """EXPERIMENTAL (S8a): N-best transcript hypotheses for one utterance, best first, e.g. from the lip-reading
+    worker (perception/silent). The server routes them with the 12-command router and broadcasts a `transcript`
+    result. It never runs an agent task."""
+
+    type: Literal["transcript"] = "transcript"
+    hypotheses: list[Annotated[str, Field(max_length=200)]] = Field(min_length=1, max_length=10)
+    scores: list[float] | None = Field(default=None, description="log-probabilities, same order as hypotheses")
+    source: str = Field(default="lipreading", max_length=40)
+    experimental: bool = True
+
+
+class Utterance(BaseModel):
+    """Hands-free speech (always listening): the server asks Drex whether it is addressed to the assistant and answers
+    the sender with `addressed`. It never runs an agent task. Contract: docs/evidence/addressed.md."""
+
+    type: Literal["utterance"] = "utterance"
+    text: str = Field(max_length=500)
+    source: str = Field(default="always_listening", max_length=40)
+    wake_matched: bool | None = None
+
+
+
+
+class SttIn(BaseModel):
+    """Cloud speech-to-text of a recording under .reach/audio/ (at most 60 s). Answered with `stt_result`."""
+
+    type: Literal["stt"] = "stt"
+    audio_path: str
+    format: str = "wav"
+    id: str | None = Field(default=None, max_length=64, description="Echoed in the result so late answers can be dropped")
+
+
+class TtsIn(BaseModel):
+    """Cloud text-to-speech. Text is cleaned (citations, markdown) and capped at 600 chars. Answered with `tts_audio`."""
+
+    type: Literal["tts"] = "tts"
+    text: str
+    voice: str | None = Field(default=None, max_length=64)
+    id: str | None = Field(default=None, max_length=64)
+
+
+Inbound = Annotated[
+    Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses | Utterance | SttIn | TtsIn, Field(discriminator="type")
+]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -102,6 +163,9 @@ class Receipt(BaseModel):
     outcome: str | None = Field(
         default=None, description="Computed, never model-written: done | not_done | aborted, from the last browser task"
     )
+    selection_source: str | None = Field(
+        default=None, description="'pinch' when the ask used a hand selection (sent by the overlay or attached by the server)"
+    )
     write_outcome: str | None = Field(
         default=None,
         description="Computed from readbacks of native writes: verified, unverified or failed; None when nothing was written",
@@ -109,6 +173,12 @@ class Receipt(BaseModel):
     browser: list[dict[str, Any]] = Field(
         default_factory=list,
         description="One entry per browser_task: outcome, status, kind, reason, final_url, cost_usd, drex_calls",
+    )
+    intent: dict[str, Any] | None = Field(
+        default=None, description="Drex task understanding before Intern ran: kind, probs, hint_used, action"
+    )
+    screen_captured: bool = Field(
+        default=False, description="Privacy: True when see_screen captured the screen for this task (sent only to the vision model)"
     )
 
 
@@ -143,6 +213,8 @@ class Pointer(BaseModel):
     y: float
     label: str | None = None
     screen: int | None = None
+    state: str | None = Field(default=None, description="Relayed hand pointer: hover | pinch")
+    source: str | None = Field(default=None, description="'hand' when relayed from the perception worker")
 
 
 class Transcript(BaseModel):
@@ -152,6 +224,20 @@ class Transcript(BaseModel):
     task_id: str
     role: Literal["user", "assistant"]
     text: str
+    # S8a additive fields: set only on a routed `transcript` (hypotheses) result. `uncertain` results never act.
+    command: str | None = None
+    probability: float | None = None
+    uncertain: bool | None = None
+    reason: str | None = None
+    source: str | None = None
+    experimental: bool | None = None
+
+
+class SelectionMsg(BaseModel):
+    """A selection made outside the overlay (the pinch worker), relayed to overlay clients. Does not start an ask."""
+
+    type: Literal["selection"] = "selection"
+    selection: Selection
 
 
 class ErrorMsg(BaseModel):
@@ -160,8 +246,43 @@ class ErrorMsg(BaseModel):
     task_id: str | None = None
 
 
+class Addressed(BaseModel):
+    """Reply to `utterance`: whether the speech is addressed to the assistant. Unsure or timed out => addressed False."""
+
+    type: Literal["addressed"] = "addressed"
+    text: str
+    p_addressed: float | None = None
+    addressed: bool = False
+    command: str | None = None
+    reason: str = ""
+    wake_matched: bool = False
+    latency_ms: int = 0
+
+
+class SttResult(BaseModel):
+    type: Literal["stt_result"] = "stt_result"
+    text: str = ""
+    ms: int = 0
+    language: str | None = None
+    error: str | None = None
+    id: str | None = None
+
+
+class TtsAudio(BaseModel):
+    """A WAV under .reach/audio/; the client plays it and deletes it. `error` set (and path empty) on failure."""
+
+    type: Literal["tts_audio"] = "tts_audio"
+    path: str = ""
+    format: str = "wav"
+    ms: int = 0
+    error: str | None = None
+    id: str | None = None
+
+
 Outbound = Annotated[
-    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added, Field(discriminator="type")
+    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg
+    | Addressed | SttResult | TtsAudio,
+    Field(discriminator="type"),
 ]
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 

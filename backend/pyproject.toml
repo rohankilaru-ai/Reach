@@ -9,6 +9,10 @@ dependencies = [
     "websockets>=13",
 ]
 
+[project.optional-dependencies]
+# Do mode (EXPERIMENTAL, opt-in with REACH_DO_MODE=1): Accessibility API semantic actions. Not needed for tests.
+do = ["pyobjc-framework-ApplicationServices>=10", "pyobjc-framework-Quartz>=10"]
+
 [project.scripts]
 reach = "reach.cli:main"
 

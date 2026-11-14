@@ -1,78 +1,7 @@
 import AppKit
+import ReachCore
 import ScreenCaptureKit
 import Vision
-
-// MARK: - drag rectangle
-
-/// A transparent full-screen window per display that records one drag, in global Cocoa coordinates.
-@MainActor
-final class RegionPicker {
-    private var windows: [NSWindow] = []
-    private var done: ((NSRect?) -> Void)?
-
-    func begin(_ completion: @escaping (NSRect?) -> Void) {
-        cancel()
-        done = completion
-        for screen in NSScreen.screens {
-            let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            w.level = .screenSaver
-            w.backgroundColor = NSColor.black.withAlphaComponent(0.12)
-            w.isOpaque = false
-            w.ignoresMouseEvents = false
-            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            let v = DragView(frame: NSRect(origin: .zero, size: screen.frame.size))
-            v.onFinish = { [weak self] local in
-                guard let self else { return }
-                let global = local.map { $0.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY) }
-                self.finish(global)
-            }
-            w.contentView = v
-            w.makeKeyAndOrderFront(nil)
-            windows.append(w)
-        }
-        NSCursor.crosshair.push()
-        NSApp.activate(ignoringOtherApps: true)
-    }
-
-    func cancel() { finish(nil) }
-
-    private func finish(_ rect: NSRect?) {
-        guard !windows.isEmpty || done != nil else { return }
-        windows.forEach { $0.orderOut(nil) }
-        if !windows.isEmpty { NSCursor.pop() }
-        windows = []
-        let cb = done
-        done = nil
-        cb?(rect.flatMap { $0.width > 4 && $0.height > 4 ? $0 : nil })
-    }
-}
-
-final class DragView: NSView {
-    var onFinish: ((NSRect?) -> Void)?
-    private var start: NSPoint?
-    private var current: NSRect?
-
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func keyDown(with event: NSEvent) { if event.keyCode == 53 { onFinish?(nil) } }
-    override func mouseDown(with event: NSEvent) { start = convert(event.locationInWindow, from: nil) }
-    override func mouseDragged(with event: NSEvent) {
-        guard let start else { return }
-        let p = convert(event.locationInWindow, from: nil)
-        current = NSRect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
-        needsDisplay = true
-    }
-    override func mouseUp(with event: NSEvent) { onFinish?(current) }
-    override func draw(_ dirtyRect: NSRect) {
-        guard let r = current else { return }
-        NSColor.clear.setFill()
-        r.fill(using: .copy)
-        Palette.accentNS.setStroke()
-        let path = NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6)
-        path.lineWidth = 2
-        path.stroke()
-    }
-}
 
 // MARK: - halo around the chosen region
 
@@ -81,12 +10,18 @@ final class DragView: NSView {
 final class RegionHalo {
     private var window: NSWindow?
 
-    func show(around rect: NSRect) {
+    /// A gentle halo that fades in along the loop (global Cocoa points).
+    func show(loop: [CGPoint]) {
+        let box = Lasso.boundingBox(loop)
+        show(around: box, path: loop)
+    }
+
+    func show(around rect: NSRect, path loop: [CGPoint]? = nil) {
         hide()
         let pad: CGFloat = 10
         let frame = rect.insetBy(dx: -pad, dy: -pad)
         let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = .floating
+        w.level = NSWindow.Level(rawValue: NSWindow.Level.statusBar.rawValue + 1)   // above the ready layer and the panel (click-through)
         w.backgroundColor = .clear
         w.isOpaque = false
         w.ignoresMouseEvents = true
@@ -96,7 +31,21 @@ final class RegionHalo {
         let v = NSView(frame: NSRect(origin: .zero, size: frame.size))
         v.wantsLayer = true
         let ring = CAShapeLayer()
-        ring.path = CGPath(roundedRect: v.bounds.insetBy(dx: 4, dy: 4), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        if let loop, loop.count >= 3 {
+            let p = CGMutablePath()
+            p.addLines(between: loop.map { CGPoint(x: $0.x - frame.minX, y: $0.y - frame.minY) })
+            p.closeSubpath()
+            ring.path = p
+            ring.lineJoin = .round
+        } else {
+            ring.path = CGPath(roundedRect: v.bounds.insetBy(dx: 4, dy: 4), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        }
+        let fadeIn = CABasicAnimation(keyPath: "strokeEnd")
+        fadeIn.fromValue = 0
+        fadeIn.toValue = 1
+        fadeIn.duration = 0.45
+        fadeIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.add(fadeIn, forKey: "draw")
         ring.fillColor = nil
         ring.strokeColor = Palette.accentNS.cgColor
         ring.lineWidth = 2.5
@@ -137,10 +86,18 @@ enum CaptureError: Error, CustomStringConvertible {
     }
 }
 
+nonisolated(unsafe) private var askedForCapture = false
+
 enum RegionCapture {
     /// Captures `rect` (global Cocoa coordinates) with ScreenCaptureKit and writes a PNG into `dir`.
     static func capture(_ rect: NSRect, into dir: URL) async throws -> (CGImage, URL) {
-        guard CGPreflightScreenCaptureAccess() else { throw CaptureError.permission }
+        // Robust check: preflight can say no while capture works (and the reverse right after a grant), so a false
+        // preflight asks macOS once per run and then lets the real capture below decide; only a throw means missing.
+        if !CGPreflightScreenCaptureAccess(), !askedForCapture {
+            askedForCapture = true
+            _ = CGRequestScreenCaptureAccess()
+            await MainActor.run { PermissionProbe.askedScreenThisRun = true }
+        }
         guard let screen = await MainActor.run(body: { NSScreen.screens.first { $0.frame.intersects(rect) } }),
               let number = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
         else { throw CaptureError.noDisplay }
@@ -160,10 +117,12 @@ enum RegionCapture {
         config.width = Int(src.width * scale)
         config.height = Int(src.height * scale)
         config.showsCursor = false
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Leave out every Reach window (panel, ready layer, halo, lens), whatever is on screen at the time.
+        let mine = content.applications.filter { $0.processID == getpid() }
+        let filter = SCContentFilter(display: display, excludingApplications: mine, exceptingWindows: [])
         let image: CGImage
         do { image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) }
-        catch { throw CaptureError.failed(error.localizedDescription) }
+        catch { throw CGPreflightScreenCaptureAccess() ? CaptureError.failed(error.localizedDescription) : CaptureError.permission }
 
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let url = dir.appendingPathComponent("region-\(Int(Date().timeIntervalSince1970 * 1000)).png")
@@ -171,6 +130,22 @@ enum RegionCapture {
         guard let png = rep.representation(using: .png, properties: [:]) else { throw CaptureError.failed("png") }
         try png.write(to: url)
         return (image, url)
+    }
+
+    /// Captures the loop's bounding box, masks everything outside the loop (transparent) and saves that PNG.
+    static func captureLoop(_ loop: [CGPoint], box: NSRect, into dir: URL) async throws -> (CGImage, URL) {
+        let (raw, url) = try await capture(box, into: dir)
+        let scale = CGFloat(raw.width) / max(box.width, 1)
+        guard let masked = Lasso.mask(raw, polygon: Lasso.toImageSpace(loop, box: box, scale: scale)) else {
+            throw CaptureError.failed("mask")
+        }
+        let rep = NSBitmapImageRep(cgImage: masked)
+        guard let png = rep.representation(using: .png, properties: [:]) else { throw CaptureError.failed("png") }
+        let out = url.deletingLastPathComponent().appendingPathComponent(
+            url.lastPathComponent.replacingOccurrences(of: "region-", with: "circle-"))
+        try png.write(to: out)
+        try? FileManager.default.removeItem(at: url)   // keep only the masked image
+        return (masked, out)
     }
 
     /// Reads text locally with Vision; nothing leaves the machine here.

@@ -22,6 +22,9 @@ from ..paths import REPO_ROOT, reach_dir
 MODEL = os.environ.get("REACH_VISION_MODEL", "Qwen/Qwen3-VL-235B-A22B-Instruct")
 ENDPOINT = "https://api.deepinfra.com/v1/openai/chat/completions"
 TIMEOUT_S = 90
+MAX_SIDE = 1280
+"""Images are downscaled to at most this many pixels on the long side before upload (fewer image tokens, faster)."""
+MAX_TOKENS = 400
 MAX_BYTES = 8 * 2**20
 KEY = "DEEPINFRA_API_KEY"
 
@@ -49,6 +52,18 @@ def load_key() -> None:
                 return
 
 
+def newest_captures(root: Path) -> list[Path]:
+    """Capture PNGs under `root`, oldest first: overlay captures (captures/*.png) and pinch selections
+    (selection-*.png, written by perception/reach_perception/capture.py)."""
+    found = [p for p in (root / "captures").glob("*.png") if p.is_file()] if (root / "captures").is_dir() else []
+    found += [p for p in root.glob("selection-*.png") if p.is_file()]
+    return sorted(found, key=lambda x: x.stat().st_mtime)
+
+
+MAX_DEFAULT_AGE_S = 120
+"""A capture older than this is never used by default; the user must select again."""
+
+
 def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
     """The PNG to look at: the given path, or the newest capture. Only files under .reach/ are readable."""
     root = (root or reach_dir()).resolve()
@@ -57,10 +72,18 @@ def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
         if not p.is_absolute():
             p = root / p
     else:
-        caps = sorted((root / "captures").glob("*.png"), key=lambda x: x.stat().st_mtime) if (root / "captures").is_dir() else []
+        caps = newest_captures(root)
         if not caps:
             raise FileNotFoundError("no screen capture yet; select a region first")
         p = caps[-1]
+        import time
+
+        age = time.time() - p.stat().st_mtime
+        if age > MAX_DEFAULT_AGE_S:
+            raise FileNotFoundError(
+                f"the newest capture is {int(age)} s old, so it is probably not what you mean; "
+                "ask the user to circle the thing on screen first"
+            )
     p = p.resolve()
     if not p.is_relative_to(root):
         raise PermissionError("refused: see_region reads only images under .reach/")
@@ -71,11 +94,31 @@ def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
     return p
 
 
+def downscale_png(png: bytes, max_side: int = MAX_SIDE) -> bytes:
+    """The PNG with its long side at most `max_side` px; unchanged when already small enough or unreadable."""
+    import io
+
+    try:
+        from PIL import Image
+
+        im = Image.open(io.BytesIO(png))
+        if max(im.size) <= max_side:
+            return png
+        scale = max_side / max(im.size)
+        im = im.convert("RGB").resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))),
+                                      Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, format="PNG", optimize=False)
+        return out.getvalue()
+    except Exception:
+        return png
+
+
 def build_request(png: bytes, question: str, model: str = MODEL) -> dict[str, Any]:
-    url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    url = "data:image/png;base64," + base64.b64encode(downscale_png(png)).decode("ascii")
     return {
         "model": model,
-        "max_tokens": 700,
+        "max_tokens": MAX_TOKENS,
         "temperature": 0.2,
         "messages": [
             {"role": "system", "content": "You look at a region of the user's screen and answer their question about "

@@ -42,12 +42,18 @@ final class SpeechInput: @unchecked Sendable {
     private var request: SFSpeechAudioBufferRecognitionRequest?
     private var task: SFSpeechRecognitionTask?
 
+    /// Cloud voice: while listening, the mic is ALSO written as 16 kHz mono 16-bit WAV here (nil: not recording).
+    var recordTo: URL?
+    private(set) var recorded: URL?
+    private var wav: WavWriter?
+
     /// True when recognition runs on this Mac; false means Apple's server would be used.
     var onDevice: Bool { recognizer?.supportsOnDeviceRecognition ?? false }
     var available: Bool { recognizer?.isAvailable ?? false }
 
     /// Starts the mic tap. `onResult` is called on the main queue with partials, then once with the final.
-    func start(onResult: @escaping (Heard) -> Void, onError: @escaping (String) -> Void) {
+    func start(onResult: @escaping (Heard) -> Void, onError: @escaping (String) -> Void,
+               onLevel: ((Float) -> Void)? = nil) {
         guard let recognizer, recognizer.isAvailable else { onError("speech recognition unavailable"); return }
         let req = SFSpeechAudioBufferRecognitionRequest()
         req.shouldReportPartialResults = true
@@ -56,7 +62,21 @@ final class SpeechInput: @unchecked Sendable {
         let format = input.outputFormat(forBus: 0)
         guard format.sampleRate > 0, format.channelCount > 0 else { onError("no microphone input"); return }
         input.removeTap(onBus: 0)
-        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in req.append(buf) }
+        let level = onLevel
+        recorded = nil
+        wav = recordTo.flatMap { WavWriter(url: $0, from: format) }
+        let writer = wav
+        input.installTap(onBus: 0, bufferSize: 1024, format: format) { buf, _ in
+            req.append(buf)
+            writer?.append(buf)
+            if let level, let ch = buf.floatChannelData?[0], buf.frameLength > 0 {
+                var sum: Float = 0
+                for i in 0..<Int(buf.frameLength) { sum += ch[i] * ch[i] }
+                let rms = (sum / Float(buf.frameLength)).squareRoot()
+                let v = min(1, max(0, (20 * log10(max(rms, 1e-5)) + 50) / 40))   // -50 dB..-10 dB -> 0..1
+                DispatchQueue.main.async { level(v) }
+            }
+        }
         engine.prepare()
         do { try engine.start() } catch {
             input.removeTap(onBus: 0)
@@ -90,6 +110,7 @@ final class SpeechInput: @unchecked Sendable {
     private func stopEngine() {
         if engine.isRunning { engine.stop() }
         engine.inputNode.removeTap(onBus: 0)
+        if let w = wav { recorded = w.close(); wav = nil }
     }
 
     /// Transcribes an audio file (the selftest path; no microphone).
@@ -133,5 +154,46 @@ enum MicAuth {
             AVCaptureDevice.requestAccess(for: .audio) { ok in DispatchQueue.main.async { done(ok) } }
         default: done(false)
         }
+    }
+}
+
+/// Writes mic buffers as 16 kHz mono 16-bit PCM WAV (what Whisper and the backend's 60 s check expect).
+final class WavWriter: @unchecked Sendable {
+    private let file: AVAudioFile
+    private let converter: AVAudioConverter
+    private let out: AVAudioFormat
+    private let lock = NSLock()
+    private var open = true
+    let url: URL
+
+    init?(url: URL, from input: AVAudioFormat) {
+        guard let out = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 16000, channels: 1, interleaved: true),
+              let conv = AVAudioConverter(from: input, to: out) else { return nil }
+        try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        guard let f = try? AVAudioFile(forWriting: url, settings: out.settings, commonFormat: .pcmFormatInt16,
+                                       interleaved: true) else { return nil }
+        self.url = url; self.file = f; self.converter = conv; self.out = out
+    }
+
+    func append(_ buf: AVAudioPCMBuffer) {
+        lock.lock(); defer { lock.unlock() }
+        guard open else { return }
+        let cap = AVAudioFrameCount(Double(buf.frameLength) * out.sampleRate / buf.format.sampleRate) + 16
+        guard let dst = AVAudioPCMBuffer(pcmFormat: out, frameCapacity: cap) else { return }
+        var fed = false
+        var err: NSError?
+        converter.convert(to: dst, error: &err) { _, status in
+            if fed { status.pointee = .noDataNow; return nil }
+            fed = true
+            status.pointee = .haveData
+            return buf
+        }
+        if err == nil, dst.frameLength > 0 { try? file.write(from: dst) }
+    }
+
+    /// Closes the file (AVAudioFile finalizes the header when released) and returns its URL.
+    func close() -> URL {
+        lock.lock(); open = false; lock.unlock()
+        return url
     }
 }

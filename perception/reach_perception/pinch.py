@@ -101,6 +101,7 @@ class GestureEngine:
         self.ratio: float | None = None
         self.drag_start: tuple[float, float] | None = None
         self.drag_last: tuple[float, float] | None = None
+        self.drag_trail: list[tuple[float, float]] = []
         self._last_seen: int | None = None
         self._below_since: int | None = None
         self._above_since: int | None = None
@@ -111,6 +112,7 @@ class GestureEngine:
     def _reset_pinch(self) -> None:
         self.pinching = False
         self.drag_start = self.drag_last = None
+        self.drag_trail = []
         self._below_since = self._above_since = None
 
     def update(self, t_ms: int, lm) -> list[Event]:
@@ -122,7 +124,8 @@ class GestureEngine:
                 self.pointer = None
                 self.palm = False
                 self._reset_pinch()
-                self._palm_since = None
+                self._palm_since = self._palm_gone_since = None
+                self._palm_fired = False
                 self.fx.reset(), self.fy.reset()
                 ev.append(Event("lost", t_ms, {"drag_cancelled": cancelled}))
             return ev
@@ -155,8 +158,7 @@ class GestureEngine:
                     self._palm_fired = False
                     self.palm = False
         if palm_now:
-            if self.pinching:
-                self._reset_pinch()
+            self._reset_pinch()  # also clears a stale `_below_since` so an interrupted pinch cannot count
             return ev
 
         # Pinch with hysteresis and hold times.
@@ -168,6 +170,7 @@ class GestureEngine:
                     self.pinching = True
                     self._above_since = None
                     self.drag_start = self.drag_last = self.pointer
+                    self.drag_trail = [self.pointer]
                     ev.append(Event("pinch_down", t_ms, {"at": self.pointer}))
             else:
                 self._below_since = None
@@ -177,11 +180,13 @@ class GestureEngine:
                     self._above_since = t_ms
                 if t_ms - self._above_since >= RELEASE_HOLD_MS:
                     start, end = self.drag_start, self.drag_last or self.pointer
+                    trail = list(self.drag_trail)
                     self._reset_pinch()
                     if start is not None and end is not None:
-                        ev.append(Event("select", t_ms, {"start": start, "end": end,
+                        ev.append(Event("select", t_ms, {"start": start, "end": end, "trail": trail,
                                                          "rect": rect_from_points(start, end)}))
             else:
                 self._above_since = None
                 self.drag_last = self.pointer  # end of drag = last point while still pinched
+                self.drag_trail.append(self.pointer)
         return ev

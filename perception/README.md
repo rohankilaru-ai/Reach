@@ -23,8 +23,12 @@ uv run python -m reach_perception.worker                  # preview window; q qu
 uv run pytest -q                                          # camera-free, key-free
 ```
 If the backend is running (`reach serve`), the worker reads `$REACH_DIR/run/server.json` and `run/token`
-(default `<repo>/.reach`; set `REACH_DIR` to the main checkout's `.reach` when running from a worktree). Without a
-backend it runs local-only.
+(default `<repo>/.reach`; from a git worktree with no server of its own it falls back to the main checkout's
+`.reach`, and captures go to the same `.reach/captures/` so the server accepts their path). Its hello says
+`role: "perception"`. Without a server it runs local-only.
+
+`--selftest --bridge` replays the synthetic `clean_pinch` fixture to a running server: one `pointer` per frame and one
+`select` (synthetic text plus a 2x2 synthetic PNG). No camera, no screen capture, no keys.
 
 ## Permissions the owner must grant
 - **Camera** for the terminal app that runs the worker (System Settings > Privacy & Security > Camera). Until it is
@@ -41,7 +45,7 @@ backend it runs local-only.
   4-corner calibration (press `c`, reach to each corner and pinch) solved as a homography and saved to
   `.reach/calibration.json`.
 - `worker.py`: camera -> landmarks -> gestures -> bridge. On pinch release: rect in screen points (a tiny drag becomes
-  a 480x160 box around the pointer), `screencapture -x -R` to `.reach/selection-<ts>.png`, local OCR with the macOS
+  a 480x160 box around the pointer), `screencapture -x -R` to `.reach/captures/selection-<ts>.png`, local OCR with the macOS
   Vision framework (`capture.py`), then `select {selection: {region, text, image_path}}` over the bridge.
 - `preview.py`: OpenCV window, mirrored, landmarks, state line, labelled EXPERIMENTAL.
 - Camera frames are never written to disk. The only file written per selection is the screen-region PNG.
@@ -52,6 +56,6 @@ backend it runs local-only.
 - Vision OCR is tested on rendered text (pytest); it has not been checked on a live `screencapture` of a paragraph,
   which also needs Screen Recording permission. One early probe returned empty text and a rerun read it correctly, so
   an empty result is reported as "pointer demo only". `--no-ocr` sends the rect only.
-- Bridge: the backend accepts `select` but ignores it today (S2 consumes it). `pointer` is declared server -> client
-  only, so an inbound `pointer {x, y, pinch, tracking}` gets a "bad message" reply; the worker then stops sending
-  pointers. The backend needs an inbound pointer message for the overlay to follow the hand.
+- Bridge: `select` and `pointer {x, y, state: hover|pinch}` are relayed by the server to overlay clients
+  (`backend/reach/relay.py`); the select is kept 60 s for the next ask. When the hand is lost nothing is sent and the
+  overlay fades its ghost pointer after 1 s. Real-hand use through the overlay is untested.

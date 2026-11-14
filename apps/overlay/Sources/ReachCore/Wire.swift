@@ -43,24 +43,40 @@ public struct Selection: Codable, Equatable, Sendable {
     /// [x, y, w, h] in screen points (top-left origin).
     public var region: [Double]?
     public var image_path: String?
+    /// "pinch" when the camera worker made it (relayed by the server); nil for the overlay's own selections.
+    public var source: String?
+    /// Circle selection: the loop as `[[x, y], ...]` in screen points, top-left origin (at most ~64 points).
+    public var path: [[Double]]?
 
-    public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil) {
-        self.text = text; self.app = app; self.region = region; self.image_path = image_path
+    public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil,
+                source: String? = nil, path: [[Double]]? = nil) {
+        self.text = text; self.app = app; self.region = region; self.image_path = image_path; self.source = source
+        self.path = path
     }
+
+    public var isEmpty: Bool { (text ?? "").isEmpty && region == nil && image_path == nil }
 }
 
 public enum ClientMessage: Equatable, Sendable {
-    case hello(token: String)
+    /// `role` tells the server what kind of client this is; "overlay" receives relayed hand selections and pointers.
+    case hello(token: String, role: String? = "overlay")
     case ask(text: String, selection: Selection?)
     case abort(taskID: String?)
     case select(Selection)
+    /// Cloud speech-to-text of a WAV under .reach/audio/ (answered by `sttResult`).
+    case stt(audioPath: String, id: String)
+    /// Cloud text-to-speech (answered by `ttsAudio`).
+    case tts(text: String, id: String)
+    /// Hands-free: one segment heard while always listening (answered by `addressed`). Text only, never audio.
+    case utterance(text: String, wakeMatched: Bool)
 
     public func json() throws -> String {
         var obj: [String: JSONValue] = [:]
         let enc = JSONEncoder()
         switch self {
-        case .hello(let token):
+        case .hello(let token, let role):
             obj = ["type": .string("hello"), "token": .string(token)]
+            if let role { obj["role"] = .string(role) }
         case .ask(let text, let sel):
             obj = ["type": .string("ask"), "text": .string(text)]
             if let sel { obj["selection"] = try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel)) }
@@ -69,6 +85,13 @@ public enum ClientMessage: Equatable, Sendable {
             if let id { obj["task_id"] = .string(id) }
         case .select(let sel):
             obj = ["type": .string("select"), "selection": try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel))]
+        case .stt(let path, let id):
+            obj = ["type": .string("stt"), "audio_path": .string(path), "format": .string("wav"), "id": .string(id)]
+        case .tts(let text, let id):
+            obj = ["type": .string("tts"), "text": .string(text), "id": .string(id)]
+        case .utterance(let text, let wake):
+            obj = ["type": .string("utterance"), "text": .string(text), "source": .string("always_listening"),
+                   "wake_matched": .bool(wake)]
         }
         enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
@@ -88,10 +111,14 @@ public struct Receipt: Decodable, Equatable, Sendable {
     public var final_text: String?
     public var tools: [String]?
     public var ndi_calls: Int?
+    /// done | not_done | aborted, from the last browser task (nil when there was none).
+    public var outcome: String?
+    /// verified | unverified | failed, from readbacks of native writes (nil when nothing was written).
+    public var write_outcome: String?
 
     /// One compact line for the panel.
     public var line: String {
-        "\(reason) · Drex asks \(system1_asks) · \(tokens) tok · \(duration_ms) ms"
+        "\(reason)\(write_outcome.map { " · write \($0)" } ?? "") · Drex asks \(system1_asks) · \(tokens) tok · \(duration_ms) ms"
     }
 }
 
@@ -153,10 +180,18 @@ public enum ServerMessage: Equatable, Sendable {
     case event(taskID: String, kind: String, body: JSONValue)
     case receipt(Receipt)
     case evidence(EvidenceCard)
-    case pointer(taskID: String?, x: Double, y: Double, label: String?)
+    /// A nil task id is a hand pointer relayed from the camera worker.
+    /// `state` is the relayed hand state ("hover" | "pinch"), nil for task pointers.
+    case pointer(taskID: String?, x: Double, y: Double, label: String?, state: String? = nil)
+    /// A selection made by hand (pinch), relayed by the server. It does not start an ask.
+    case selection(Selection)
     case transcript(taskID: String, role: String, text: String)
     case error(message: String, taskID: String?)
     case added(name: String, passages: Int)
+    case sttResult(text: String, ms: Int, error: String?, id: String?)
+    case ttsAudio(path: String, ms: Int, error: String?, id: String?)
+    /// Hands-free: is the utterance aimed at the assistant?
+    case addressed(AddressedReply)
     case unknown(type: String)
 
     public static func decode(_ text: String) throws -> ServerMessage {
@@ -177,13 +212,29 @@ public enum ServerMessage: Equatable, Sendable {
         case "evidence":
             return .evidence(try JSONDecoder().decode(EvidenceCard.self, from: data))
         case "pointer":
-            return .pointer(taskID: tid, x: v["x"]?.number ?? 0, y: v["y"]?.number ?? 0, label: v["label"]?.string)
+            guard let x = v["x"]?.number, let y = v["y"]?.number, x.isFinite, y.isFinite else { return .unknown(type: type) }
+            return .pointer(taskID: (tid?.isEmpty ?? true) ? nil : tid, x: x, y: y, label: v["label"]?.string,
+                            state: v["state"]?.string)
+        case "selection":
+            guard let sel = v["selection"] else { return .unknown(type: type) }
+            return .selection(try JSONDecoder().decode(Selection.self, from: JSONEncoder().encode(sel)))
         case "transcript":
             return .transcript(taskID: tid ?? "", role: v["role"]?.string ?? "", text: v["text"]?.string ?? "")
         case "error":
             return .error(message: v["message"]?.string ?? "error", taskID: tid)
         case "added":
             return .added(name: v["name"]?.string ?? "", passages: Int(v["passages"]?.number ?? 0))
+        case "stt_result":
+            return .sttResult(text: v["text"]?.string ?? "", ms: Int(v["ms"]?.number ?? 0), error: v["error"]?.string,
+                              id: v["id"]?.string)
+        case "tts_audio":
+            return .ttsAudio(path: v["path"]?.string ?? "", ms: Int(v["ms"]?.number ?? 0), error: v["error"]?.string,
+                             id: v["id"]?.string)
+        case "addressed":
+            var on = false
+            if case .bool(let b)? = v["addressed"] { on = b }
+            return .addressed(AddressedReply(text: v["text"]?.string ?? "", pAddressed: v["p_addressed"]?.number,
+                                             addressed: on, command: v["command"]?.string, reason: v["reason"]?.string))
         default:
             return .unknown(type: type)
         }

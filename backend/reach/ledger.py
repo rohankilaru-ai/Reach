@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextvars import ContextVar
 from pathlib import Path
@@ -11,6 +12,8 @@ from typing import Any
 from .contracts import BROWSER_TOOL, LEDGER_TYPES, Receipt
 
 WRITE_TOOLS = frozenset({"note_append", "shelf_to_note"})
+WRITE_TOOLS = WRITE_TOOLS | frozenset({"table_to_note", "chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"})
+WRITE_TOOLS = WRITE_TOOLS | frozenset({"ax_press", "ax_set_text", "finder_open", "finder_reveal"})  # Do mode (EXPERIMENTAL)
 
 
 def parse_outcome(content: str) -> str | None:
@@ -19,6 +22,16 @@ def parse_outcome(content: str) -> str | None:
 
     m = re.match(r"outcome=(verified|unverified|failed)\b", content or "")
     return m.group(1) if m else None
+
+
+_CLAIM_YES = re.compile(r"\b(saved|added|appended|wrote|written|done|completed|finished|success(fully)?|submitted|"
+                        r"in your notes)\b", re.I)
+_CLAIM_NO = re.compile(r"n't\b|\b(not|cannot|couldn't|failed|unable|unverified)\b", re.I)
+
+
+def claims_success(text: str) -> bool:
+    """Whether the model's answer says the action worked (saved, added, done...) without saying it failed."""
+    return bool(_CLAIM_YES.search(text or "")) and not _CLAIM_NO.search(text or "")
 
 
 def worst(outcomes: list[str]) -> str | None:
@@ -49,6 +62,9 @@ def append_ndi(path: Path, task_id: str, op: str, **fields: Any) -> None:
 
 CURRENT_TASK: ContextVar[str] = ContextVar("reach_task", default="-")
 """Set by the bridge for each run, so tools can log under the task id."""
+
+CURRENT_OUT: ContextVar[Any] = ContextVar("reach_out", default=None)
+"""Set by the server for each run: puts one raw JSON message (e.g. a `pointer`) on the asking client's queue."""
 
 
 def append_tool_entry(kind: str, path: Path | None = None, **fields: Any) -> None:
@@ -163,10 +179,13 @@ class ReceiptBuilder:
         self.text: list[str] = []
         self.write_outcomes: list[str] = []
         self.browser: list[dict[str, Any]] = []
+        self.screen_captured = False
 
     def feed(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
         if kind == "tool_call_end":
+            if event.get("name") == "see_screen" and str(event.get("content", "")).startswith("screen_captured=true"):
+                self.screen_captured = True
             (self.refused if event.get("status") == "refused" else self.tools).append(event.get("name", "?"))
             if event.get("name") in WRITE_TOOLS:
                 o = parse_outcome(event.get("content", "")) if event.get("status") != "refused" else "failed"
@@ -187,16 +206,37 @@ class ReceiptBuilder:
         elif kind == "run_end":
             self.run_end = event
 
+    def browser_cost(self) -> float:
+        """Spend reported by the browser harness for this task's browser_task runs."""
+        total = 0.0
+        for b in self.browser:
+            try:
+                total += float(b.get("cost_usd") or 0)
+            except (TypeError, ValueError):
+                pass
+        return total
+
     def receipt(self, *, aborted: bool = False, error: str | None = None) -> Receipt:
         end = self.run_end or {}
         usage = end.get("usage") or {}
         reason = end.get("reason") or ("aborted" if aborted else (f"error: {error}" if error else "no_run_end"))
         status = "ok" if reason == "completed" else ("aborted" if reason == "aborted" else "failed")
         outcome = None
+        final_text = end.get("final_text") or "".join(self.text)
+        notes: list[str] = []
         if self.browser:
             outcome = "aborted" if aborted else self.browser[-1].get("outcome", "not_done")
             if status == "ok" and outcome != "done":
                 status = "failed"  # the run completed but the browser task did not: never show it as done
+                notes.append(f"browser task {outcome}")
+        write_outcome = worst(self.write_outcomes)
+        if status == "ok" and write_outcome in ("failed", "unverified"):
+            status = "failed"  # a write that did not read back is never shown as done
+            notes.append(f"note write {write_outcome}")
+        if notes:
+            if claims_success(final_text):
+                notes.append("the answer text claims success but the action did not complete")
+            reason = "; ".join(notes)
         duration = end.get("duration_ms")
         if duration is None:
             duration = int((time.monotonic() - self.started) * 1000)
@@ -208,10 +248,11 @@ class ReceiptBuilder:
             refused=self.refused,
             system1_asks=self.decisions,
             tokens=int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)),
-            est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost, 6),
+            est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost + self.browser_cost(), 6),
             duration_ms=int(duration),
-            final_text=end.get("final_text") or "".join(self.text),
+            final_text=final_text,
             outcome=outcome,
             browser=self.browser,
-            write_outcome=worst(self.write_outcomes),
+            write_outcome=write_outcome,
+            screen_captured=self.screen_captured,
         )
