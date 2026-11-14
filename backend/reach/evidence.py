@@ -266,26 +266,50 @@ def _clean(s: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _strip_math(s: str) -> str:
+    """Keep inline math as readable text: drop the $ delimiters and simple LaTeX commands."""
+    s = re.sub(r"\$([^$\n]+)\$", r"\1", s)
+    s = re.sub(r"\\(?:mathrm|text|mathbf|mathit)\{([^}]*)\}", r"\1", s)
+    return s.replace("\\%", "%")
+
+
 def sentences(text: str) -> list[str]:
-    """Plain-prose sentences of a passage: no math, tables or code; 40 to 300 characters."""
+    """Prose sentences of a passage. Inline math is tolerated; display math, table rows and code are skipped."""
     out = []
     for para in re.split(r"\n\s*\n", text):
-        if any(ch in para for ch in "$|\\`") or para.lstrip().startswith(("!", "<")):
+        lines = [
+            ln for ln in para.splitlines()
+            if not ln.lstrip().startswith(("|", "```", "!", "<table", "<tr", "<td", "$$"))
+        ]
+        para = _strip_math(" ".join(lines))
+        if "$$" in para or "\\begin" in para:
             continue
         for s in re.split(r"(?<=[.!?])\s+(?=[A-Z(])", _clean(para)):
             s = s.strip()
-            if 40 <= len(s) <= 300 and not re.search(r"[\[\]*_]", s):
+            if 30 <= len(s) <= 400 and not re.search(r"[\[\]*_`\\|]", s):
                 out.append(s)
     return out
 
 
+_NUM_RE = re.compile(r"\d+(?:\.\d+)?")
+
+
+def _numbers(text: str) -> set[str]:
+    return set(_NUM_RE.findall(text))
+
+
 def best_quote(passage: str, context: str) -> str:
-    """The passage sentence that overlaps most with the answer sentence(s) citing it."""
+    """The passage sentence that best supports the citing answer: shared numbers first, then term overlap."""
     cands = sentences(passage)
     if not cands:
-        return _clean(passage)[:240]
+        return _clean(_strip_math(passage))[:240]
     ctx = set(tokens(context))
-    return max(cands, key=lambda s: (len(ctx & set(tokens(s))), -abs(len(s) - 160)))
+    nums = _numbers(context)
+
+    def score(s: str) -> tuple:
+        return (3 * len(nums & _numbers(s)) + len(ctx & set(tokens(s))), -abs(len(s) - 160))
+
+    return max(cands, key=score)
 
 
 def citing_context(answer: str, pid: str) -> str:

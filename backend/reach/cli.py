@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import fcntl
 import json
 import os
 import signal
@@ -81,20 +82,30 @@ async def _ensure_server():
         return ws
     from .ipc import clear_run_files
 
-    clear_run_files()  # stale files from a dead server
-    logs = reach_dir() / "logs"
-    logs.mkdir(parents=True, exist_ok=True)
-    with (logs / "server.log").open("a") as log:
-        subprocess.Popen(
-            [sys.executable, "-m", "reach.cli", "serve"],
-            stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
-        )
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        await asyncio.sleep(0.3)
+    run_dir().mkdir(parents=True, exist_ok=True)
+    lock_fd = os.open(run_dir() / "start.lock", os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        # flock serialises first starts: the loser blocks here, then finds the winner's server
+        await asyncio.to_thread(fcntl.flock, lock_fd, fcntl.LOCK_EX)
         ws = await _connect()
         if ws is not None:
             return ws
+        clear_run_files()  # stale files from a dead server
+        logs = reach_dir() / "logs"
+        logs.mkdir(parents=True, exist_ok=True)
+        with (logs / "server.log").open("a") as log:
+            subprocess.Popen(
+                [sys.executable, "-m", "reach.cli", "serve"],
+                stdout=log, stderr=log, stdin=subprocess.DEVNULL, start_new_session=True,
+            )
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            await asyncio.sleep(0.3)
+            ws = await _connect()
+            if ws is not None:
+                return ws
+    finally:
+        os.close(lock_fd)
     raise SystemExit("reach: server did not start; see .reach/logs/server.log")
 
 
