@@ -369,7 +369,7 @@ without a measurement, or that the costs shown are invoices. Pre-existing work i
 ## 7. Open questions that block work
 
 **Answered at 11:45 AM (2026-11-14):** 1. `NACE_API_KEY` works; Drex Max id is `drex-max-v1.1`. 2. No Claude key; slice B
-(DeepInfra helper) runs, Haiku is not planned. 3. Teammate (`KevinGeng07`) has repo access and takes S6, then S8a. The
+(DeepInfra helper) runs, Haiku is not planned. 3. A teammate has repo access. The
 owner drives S0 to S5. Greptile is on for the repo and is advisory only, not a required check. S0 passed (Intern plus
 Drex Max plus Qwen, and an NDI parse of a real PDF). The rest are still open:
 
