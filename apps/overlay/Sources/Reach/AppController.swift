@@ -90,6 +90,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         // Dictation: Option-Shift-D, the menu item, or "Reach, start/stop dictating" (own on-device recognizer).
         dictation = DictationController(model: model)
         dictation.install()
+        dictation.beforeEsc = { [weak self] in self?.dropFoldEsc() }
         dictation.onChange = { [weak self] in
             guard let self else { return }
             if self.dictation.isOn, !self.panel.isVisible { self.panel.orderFrontRegardless() }
@@ -283,6 +284,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         if focus { panel.makeKey() }
+        syncFoldEsc()
     }
 
     /// `leave`: an idle, Esc or click-outside fold; in Auto / Hidden the pill leaves as soon as the fold finishes.
@@ -305,7 +307,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// An ask is running or a hold / capture / voice turn is in progress: the panel never folds then.
     private var askRunning: Bool {
-        model.state.phase == .working || gesture.phase != .idle || ptt.phase != .idle || model.capturing || lens.isOpen
+        model.state.phase == .working || gesture.phase != .idle || ptt.phase != .idle || model.capturing
     }
 
     /// A real interaction inside the panel: restarts the 8 s fold (and the 20 s hard maximum).
@@ -328,7 +330,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Esc folds the expanded panel even when it is not key (answers open without focus). Registered only while the
     /// panel is expanded and nothing else owns Esc; released on fold so other apps get Esc back.
     private func syncFoldEsc() {
-        let want = model.expanded && !askRunning && escHotkey == nil && voiceEsc.isEmpty
+        // the lens and dictation register their own Esc; never hold it while they are up
+        let want = model.expanded && !askRunning && escHotkey == nil && voiceEsc.isEmpty && !lens.isOpen
+            && dictation?.isOn != true
         if want, foldEsc == nil {
             foldEsc = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: 0, name: "Esc (fold panel)") { [weak self] in
                 self?.escape()
@@ -492,6 +496,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             Hotkeys.shared.unregister(id)
             escHotkey = nil
         }
+        syncFoldEsc()
     }
 
     private var compactFold: DispatchWorkItem?
@@ -622,6 +627,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func openLens(_ sel: Selection) {
+        dropFoldEsc()   // the lens registers its own Esc
         // never over the panel or the circled area
         var avoid = [panel.frame]
         var target = CGRect(x: panel.frame.midX, y: panel.frame.minY, width: 1, height: 1)
