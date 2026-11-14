@@ -128,13 +128,13 @@ class ActionCfg:
     drag_threshold_px: float = 12.0     # below this, a pinch is a click at the down point
     dead_zone_px: float = 2.0           # still hand: ignore cursor moves this small (no shiver)
     palm_exit_s: float = 1.0
-    scroll_gain: float = 30.0           # lines per (normalized unit / s) per frame step
+    scroll_gain: float = 3.0           # lines per (normalized unit / s) per frame step
     scroll_deadzone: float = 0.15       # normalized units / s
     scroll_min_interval_s: float = 0.05
     scroll_invert: bool = False         # default: fingers up = content up, like a touch screen
     edge_margin: float = 0.03           # joints this close to the frame border: no click decisions
     drop_speed: float = 1.2             # downward pointer speed (normalized / s) ...
-    drop_wrist_y: float = 0.8           # ... with the wrist already this low = hand leaving the frame
+    drop_tip_y: float = 0.85            # ... with the index tip already this low = hand leaving the frame
     drop_lockout_s: float = 0.5         # after a drop, no new pinch for this long
 
 
@@ -219,8 +219,7 @@ class HandsEngine:
             return self.state
 
         # hand dropping fast out of the bottom of the frame: release and ignore pinches for a moment
-        wrist_y = frame.landmarks[0][1] if frame.landmarks else 0.0
-        if frame.velocity[1] > c.drop_speed and wrist_y > c.drop_wrist_y:
+        if frame.velocity[1] > c.drop_speed and frame.fingers["index"].tip[1] > c.drop_tip_y:
             self._no_pinch_until = now + c.drop_lockout_s
             if self.button_down or self._pending:
                 self.release("hand leaving · released")

@@ -16,7 +16,7 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
 ## What was tested for real (no camera, no real mouse events)
 
 `uv run pytest -q` at the repo root: 74 passed (Kevin's 42 unchanged + 32 hands mode).
-`cd backend && uv run pytest -q`: 329 passed (includes 4 new for `reach hands` / the `hands` message, using
+`cd backend && uv run pytest -q`: 332 passed (includes 4 new for `reach hands` / the `hands` message, using
 `sleep 30` as a harmless stand-in child). `cd apps/overlay && swift test`: 83 passed (includes `handsModeWire`).
 
 - **Direction.** `test_direction_hand_right_moves_cursor_right_and_up_is_up` feeds RAW (unmirrored) camera
@@ -44,7 +44,7 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
   direction (fingers up = content up, `--scroll-invert` flips it); no Accessibility = never holds a button.
 - **Safety** (the button is released in every case, tested): hand gone, frames stalled, mode stop, takeover (you
   moved the real mouse: 2 s pause), held over 20 s, open palm; fast hand loss: 1-frame flicker keeps the drag,
-  3 frames gone release it; a fast downward move with the wrist already low (hand leaving the frame) mid-pinch
+  3 frames gone release it; a fast downward move with the index tip already low (hand leaving the frame) mid-pinch
   releases and ignores pinches for 0.5 s, while fast downward moves mid-frame still move and drag normally; a
   half-visible hand (thumb/index/middle tip within 3% of the border) never clicks but the cursor still moves, so
   the bottom of the screen stays reachable.
@@ -107,5 +107,5 @@ not included. The run may have had no hand in view, so `num_hands: 2` cost with 
   shows the last request; it does not yet read `hands_state` back. Spoken "Reach, hands mode on/off" was not added.
 - The model: hands mode uses `finger_processing/hand_landmarker.task` and falls back to
   `perception/models/hand_landmarker.task` (already downloaded in the main checkout).
-- Scroll speed (up to 15 lines per event) and the HUD label width at 240 px are unverified.
+- Scroll speed (gain lowered tenfold, untuned; up to 15 lines per event) and the HUD label width at 240 px are unverified.
 - `perception/` (the old pinch worker) is untouched for comparison.

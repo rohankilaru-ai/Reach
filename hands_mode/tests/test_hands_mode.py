@@ -369,7 +369,7 @@ def test_hand_leaving_downward_mid_pinch_releases_and_blocks_pinch():
     e, m, c = engine()
     pinch_down(e, c)
     c.t += 0.03
-    e.update(F(pinch=True, v=(0.0, 2.0), landmarks=((0.5, 0.9, 0.0),)))   # fast down, wrist near the bottom
+    e.update(F(pinch=True, v=(0.0, 2.0), tip=(0.5, 0.9)))   # fast down, fingertip near the bottom
     assert not e.button_down and "leaving" in e.state
     c.t += 0.2
     pinch_down(e, c)                                       # lowering hand "pinches": ignored
@@ -404,6 +404,8 @@ def test_fast_downward_moves_mid_frame_are_not_a_drop():
     c.t += 0.03
     e.update(F(pinch=True, at=(160, 300), v=(0.0, 3.0)))   # fast drag down, mid-frame
     assert e.button_down and m.log[-1][0] == "drag"
+    e.update(F(pinch=True, at=(160, 340), v=(0.0, 3.0), landmarks=((0.5, 0.85, 0.0),), tip=(0.5, 0.6)))
+    assert e.button_down                                   # low wrist, mid-frame tip: still dragging
 
 
 def test_index_pinch_lands_where_the_cursor_was():
