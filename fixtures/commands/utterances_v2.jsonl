@@ -1,0 +1,120 @@
+{"id": "v2d01", "split": "dev", "source": "typed", "text": "um ok so whats this chart even saying", "gold": "explain_this", "tags": ["filler"], "why": "asks what the chart means"}
+{"id": "v2d02", "split": "dev", "source": "lip", "hypotheses": ["oben dat", "open that"], "gold": "open_this", "tags": ["lip_rank2"], "why": "top guess is a lip blur of the 2nd, which is open"}
+{"id": "v2d03", "split": "dev", "source": "dictated", "text": "maybe go down a bit... no wait, up", "gold": "scroll_up", "tags": ["correction", "confusable"], "why": "self-correction: final intent is up"}
+{"id": "v2d04", "split": "dev", "source": "typed", "text": "scrol donw", "gold": "scroll_down", "tags": ["noise"], "why": "swapped letters of scroll down"}
+{"id": "v2d05", "split": "dev", "source": "dictated", "text": "hang on, I need to grab the door", "gold": "pause", "tags": ["confusable"], "why": "temporary break, will come back"}
+{"id": "v2d06", "split": "dev", "source": "typed", "text": "ok you can pick it up again from there", "gold": "continue", "tags": ["filler"], "why": "resume from the same spot"}
+{"id": "v2d07", "split": "dev", "source": "dictated", "text": "put these two next to each other, which one is cheaper", "gold": "compare_these", "tags": ["confusable"], "why": "side-by-side + which is cheaper = compare; 'next'/'put' are decoys"}
+{"id": "v2d08", "split": "dev", "source": "dictated", "text": "drag that into this folder", "gold": "put_this_here", "tags": [], "why": "move held item to a place"}
+{"id": "v2d09", "split": "dev", "source": "typed", "text": "nah scrap that request", "gold": "cancel", "tags": [], "why": "withdraws the pending request"}
+{"id": "v2d10", "split": "dev", "source": "typed", "text": "nxt pls", "gold": "next", "tags": ["noise"], "why": "dropped letter of next"}
+{"id": "v2d11", "split": "dev", "source": "dictated", "text": "shut it all off right now", "gold": "stop", "tags": [], "why": "end all activity"}
+{"id": "v2d12", "split": "dev", "source": "lip", "hypotheses": ["pours", "pauz", "porz"], "gold": "pause", "tags": ["lip_rank2"], "why": "2nd guess is a near-spelling of pause, others are sound-alikes"}
+{"id": "v2d13", "split": "dev", "source": "dictated", "text": "siguiente", "gold": "next", "tags": ["foreign"], "why": "Spanish for next"}
+{"id": "v2d14", "split": "dev", "source": "typed", "text": "explane ths pls", "gold": "explain_this", "tags": ["noise"], "why": "misspelled explain this"}
+{"id": "v2d15", "split": "dev", "source": "dictated", "text": "not down, the other way", "gold": "scroll_up", "tags": ["negation", "confusable"], "why": "the opposite of down is up"}
+{"id": "v2d16", "split": "dev", "source": "dictated", "text": "uh yeah go ahead from where you were", "gold": "continue", "tags": ["filler"], "why": "resume from the same position"}
+{"id": "v2d17", "split": "dev", "source": "typed", "text": "okay so which of these two is better", "gold": "compare_these", "tags": ["filler"], "why": "asks which of two is better"}
+{"id": "v2d18", "split": "dev", "source": "lip", "hypotheses": ["canse", "can't sell", "cancel"], "gold": "cancel", "tags": ["lip_rank3"], "why": "all three are sound-alikes of cancel"}
+{"id": "v2d19", "split": "dev", "source": "dictated", "text": "the following slide", "gold": "next", "tags": [], "why": "advance one slide"}
+{"id": "v2d20", "split": "dev", "source": "dictated", "text": "enough, end all of it now", "gold": "stop", "tags": [], "why": "end everything"}
+{"id": "v2d21", "split": "dev", "source": "typed", "text": "launch the pdf i'm pointing at", "gold": "open_this", "tags": [], "why": "open the pointed-at file"}
+{"id": "v2d22", "split": "dev", "source": "dictated", "text": "leave it right there on the left", "gold": "put_this_here", "tags": [], "why": "place the held item at a spot"}
+{"id": "v2d23", "split": "dev", "source": "dictated", "text": "arrête tout", "gold": "stop", "tags": ["foreign"], "why": "French: stop everything"}
+{"id": "v2d24", "split": "dev", "source": "typed", "text": "what does this acronym stand for", "gold": "explain_this", "tags": [], "why": "asks for meaning"}
+{"id": "v2d25", "split": "dev", "source": "dictated", "text": "book me a table for two at eight", "gold": "uncertain", "tags": ["oov"], "why": "restaurant booking is not a command"}
+{"id": "v2d26", "split": "dev", "source": "lip", "hypotheses": ["mmf", "nn"], "gold": "uncertain", "tags": ["garbled"], "why": "no recoverable word"}
+{"id": "v2d27", "split": "dev", "source": "dictated", "text": "wait, no", "gold": "uncertain", "tags": ["ambiguous"], "why": "could be pause or cancel"}
+{"id": "v2d28", "split": "dev", "source": "typed", "text": "scroll down and open the third link", "gold": "uncertain", "tags": ["multi_intent"], "why": "two different commands"}
+{"id": "v2d29", "split": "dev", "source": "typed", "text": "don't scroll", "gold": "uncertain", "tags": ["negation"], "why": "negation with no positive instruction"}
+{"id": "v2d30", "split": "dev", "source": "lip", "hypotheses": ["skip", "stahp"], "gold": "uncertain", "tags": ["lip_ambiguous"], "why": "guesses support next and stop about equally"}
+{"id": "v2h01", "split": "held_out", "source": "typed", "text": "uhh what does this word mean exactly", "gold": "explain_this", "tags": ["filler"], "why": "asks for meaning"}
+{"id": "v2h02", "split": "held_out", "source": "dictated", "text": "can you tell me in plain english what this clause says", "gold": "explain_this", "tags": [], "why": "asks for a simpler account"}
+{"id": "v2h03", "split": "held_out", "source": "lip", "hypotheses": ["expain dis", "ex plane this"], "gold": "explain_this", "tags": ["lip_missing"], "why": "both are blurred explain this"}
+{"id": "v2h04", "split": "held_out", "source": "dictated", "text": "qué significa esto", "gold": "explain_this", "tags": ["foreign"], "why": "Spanish: what does this mean"}
+{"id": "v2h05", "split": "held_out", "source": "typed", "text": "dumb this down for me", "gold": "explain_this", "tags": [], "why": "asks for a simpler account"}
+{"id": "v2h06", "split": "held_out", "source": "dictated", "text": "ok so um I don't get this paragraph at all", "gold": "explain_this", "tags": ["filler"], "why": "implicit request to explain"}
+{"id": "v2h07", "split": "held_out", "source": "lip", "hypotheses": ["exblain", "explain", "ex brain"], "gold": "explain_this", "tags": ["lip_rank2"], "why": "2nd guess is explain"}
+{"id": "v2h08", "split": "held_out", "source": "typed", "text": "opne the link", "gold": "open_this", "tags": ["noise"], "why": "swapped letters of open"}
+{"id": "v2h09", "split": "held_out", "source": "dictated", "text": "go into that folder", "gold": "open_this", "tags": [], "why": "enter = open the folder"}
+{"id": "v2h10", "split": "held_out", "source": "dictated", "text": "abre esto", "gold": "open_this", "tags": ["foreign"], "why": "Spanish: open this"}
+{"id": "v2h11", "split": "held_out", "source": "lip", "hypotheses": ["oven dis", "opun dis"], "gold": "open_this", "tags": ["lip_missing"], "why": "sound-alikes of open this"}
+{"id": "v2h12", "split": "held_out", "source": "dictated", "text": "double click that thing for me", "gold": "open_this", "tags": [], "why": "double click opens the item"}
+{"id": "v2h13", "split": "held_out", "source": "typed", "text": "dont open the email, open the attachment", "gold": "open_this", "tags": ["negation", "correction"], "why": "one command: open, on the attachment"}
+{"id": "v2h14", "split": "held_out", "source": "dictated", "text": "maybe scroll up... actually no, down", "gold": "scroll_down", "tags": ["correction", "confusable"], "why": "final intent is down"}
+{"id": "v2h15", "split": "held_out", "source": "typed", "text": "lower please, I wanna see the bottom", "gold": "scroll_down", "tags": [], "why": "toward the bottom"}
+{"id": "v2h16", "split": "held_out", "source": "lip", "hypotheses": ["skull dawn", "scroll down"], "gold": "scroll_down", "tags": ["lip_rank2"], "why": "2nd guess is scroll down"}
+{"id": "v2h17", "split": "held_out", "source": "dictated", "text": "runter scrollen bitte", "gold": "scroll_down", "tags": ["foreign"], "why": "German: scroll down please"}
+{"id": "v2h18", "split": "held_out", "source": "dictated", "text": "um not up, down", "gold": "scroll_down", "tags": ["negation", "confusable", "filler"], "why": "explicit down"}
+{"id": "v2h19", "split": "held_out", "source": "typed", "text": "sroll dwon a tad", "gold": "scroll_down", "tags": ["noise"], "why": "misspelled scroll down"}
+{"id": "v2h20", "split": "held_out", "source": "dictated", "text": "scroll down, wait no, up up", "gold": "scroll_up", "tags": ["correction", "confusable"], "why": "final intent is up"}
+{"id": "v2h21", "split": "held_out", "source": "lip", "hypotheses": ["scoll ip", "scroll hip"], "gold": "scroll_up", "tags": ["lip_missing"], "why": "blurred scroll up"}
+{"id": "v2h22", "split": "held_out", "source": "dictated", "text": "sube un poco", "gold": "scroll_up", "tags": ["foreign"], "why": "Spanish: go up a little"}
+{"id": "v2h23", "split": "held_out", "source": "typed", "text": "srcoll u p", "gold": "scroll_up", "tags": ["noise"], "why": "misspelled scroll up"}
+{"id": "v2h24", "split": "held_out", "source": "dictated", "text": "I missed the heading, back up a little", "gold": "scroll_up", "tags": ["confusable"], "why": "heading is above; 'back up' could read as undo"}
+{"id": "v2h25", "split": "held_out", "source": "dictated", "text": "don't go down, I need the bit above", "gold": "scroll_up", "tags": ["negation"], "why": "wants content above"}
+{"id": "v2h26", "split": "held_out", "source": "dictated", "text": "one sec, phone's ringing", "gold": "pause", "tags": ["confusable"], "why": "short break"}
+{"id": "v2h27", "split": "held_out", "source": "typed", "text": "pasue", "gold": "pause", "tags": ["noise"], "why": "swapped letters"}
+{"id": "v2h28", "split": "held_out", "source": "lip", "hypotheses": ["paws it", "pause it"], "gold": "pause", "tags": ["lip_rank2"], "why": "2nd guess is pause it"}
+{"id": "v2h29", "split": "held_out", "source": "dictated", "text": "un momento", "gold": "pause", "tags": ["foreign"], "why": "Spanish: one moment"}
+{"id": "v2h30", "split": "held_out", "source": "dictated", "text": "freeze the voice there, I'll be back in a minute", "gold": "pause", "tags": [], "why": "temporary, will return"}
+{"id": "v2h31", "split": "held_out", "source": "dictated", "text": "stop for a second, I'll be right back", "gold": "pause", "tags": ["confusable"], "why": "'stop' word but temporary = pause"}
+{"id": "v2h32", "split": "held_out", "source": "typed", "text": "hold up lemme catch up", "gold": "pause", "tags": ["filler"], "why": "temporary break"}
+{"id": "v2h33", "split": "held_out", "source": "typed", "text": "contiue", "gold": "continue", "tags": ["noise"], "why": "dropped letter"}
+{"id": "v2h34", "split": "held_out", "source": "dictated", "text": "ok I'm back, where were we, go", "gold": "continue", "tags": ["filler"], "why": "resume after a break"}
+{"id": "v2h35", "split": "held_out", "source": "lip", "hypotheses": ["go ohn", "con tin you", "coffin you"], "gold": "continue", "tags": ["lip_missing"], "why": "sound-alikes of go on / continue"}
+{"id": "v2h36", "split": "held_out", "source": "dictated", "text": "continúa", "gold": "continue", "tags": ["foreign"], "why": "Spanish: continue"}
+{"id": "v2h37", "split": "held_out", "source": "dictated", "text": "unpause", "gold": "continue", "tags": [], "why": "undo a pause = resume"}
+{"id": "v2h38", "split": "held_out", "source": "typed", "text": "pick up where you stopped", "gold": "continue", "tags": ["confusable"], "why": "'stopped' decoy; resume"}
+{"id": "v2h39", "split": "held_out", "source": "typed", "text": "cmopare thes two", "gold": "compare_these", "tags": ["noise"], "why": "swapped letters"}
+{"id": "v2h40", "split": "held_out", "source": "dictated", "text": "which of these is the better deal", "gold": "compare_these", "tags": [], "why": "which of several is better"}
+{"id": "v2h41", "split": "held_out", "source": "lip", "hypotheses": ["come pear thees", "compair theez"], "gold": "compare_these", "tags": ["lip_missing"], "why": "sound-alikes of compare these"}
+{"id": "v2h42", "split": "held_out", "source": "dictated", "text": "vergleiche die beiden", "gold": "compare_these", "tags": ["foreign"], "why": "German: compare the two"}
+{"id": "v2h43", "split": "held_out", "source": "dictated", "text": "what's the difference between these two plans", "gold": "compare_these", "tags": ["confusable"], "why": "difference between two = compare, not explain"}
+{"id": "v2h44", "split": "held_out", "source": "typed", "text": "um ok so line up these quotes against each other", "gold": "compare_these", "tags": ["filler"], "why": "set quotes against each other"}
+{"id": "v2h45", "split": "held_out", "source": "dictated", "text": "plonk that right there", "gold": "put_this_here", "tags": [], "why": "place the held item"}
+{"id": "v2h46", "split": "held_out", "source": "typed", "text": "mvoe it hree", "gold": "put_this_here", "tags": ["noise"], "why": "move it here, misspelled"}
+{"id": "v2h47", "split": "held_out", "source": "lip", "hypotheses": ["pud it heer", "putt this ear"], "gold": "put_this_here", "tags": ["lip_missing"], "why": "sound-alikes of put it here"}
+{"id": "v2h48", "split": "held_out", "source": "dictated", "text": "pon esto aquí", "gold": "put_this_here", "tags": ["foreign"], "why": "Spanish: put this here"}
+{"id": "v2h49", "split": "held_out", "source": "dictated", "text": "stick the image in this spot", "gold": "put_this_here", "tags": [], "why": "place the image"}
+{"id": "v2h50", "split": "held_out", "source": "dictated", "text": "not there, here", "gold": "put_this_here", "tags": ["negation", "correction"], "why": "placement correction"}
+{"id": "v2h51", "split": "held_out", "source": "dictated", "text": "actually scratch that last ask", "gold": "cancel", "tags": [], "why": "withdraw last request"}
+{"id": "v2h52", "split": "held_out", "source": "typed", "text": "cancle", "gold": "cancel", "tags": ["noise"], "why": "swapped letters"}
+{"id": "v2h53", "split": "held_out", "source": "lip", "hypotheses": ["cansul"], "gold": "cancel", "tags": ["lip_missing"], "why": "single blurred guess for cancel"}
+{"id": "v2h54", "split": "held_out", "source": "dictated", "text": "olvídalo", "gold": "cancel", "tags": ["foreign"], "why": "Spanish: drop it / never mind"}
+{"id": "v2h55", "split": "held_out", "source": "dictated", "text": "no no, don't run that search after all", "gold": "cancel", "tags": ["negation"], "why": "withdraws the pending search"}
+{"id": "v2h56", "split": "held_out", "source": "dictated", "text": "wait, I didn't mean to ask that, drop it", "gold": "cancel", "tags": ["confusable"], "why": "'wait'/'drop' decoys; withdraws request"}
+{"id": "v2h57", "split": "held_out", "source": "typed", "text": "abort that query only", "gold": "cancel", "tags": ["confusable"], "why": "only the query, not everything = cancel not stop"}
+{"id": "v2h58", "split": "held_out", "source": "typed", "text": "nxet", "gold": "next", "tags": ["noise"], "why": "swapped letters"}
+{"id": "v2h59", "split": "held_out", "source": "dictated", "text": "skip ahead to the one after", "gold": "next", "tags": [], "why": "advance one"}
+{"id": "v2h60", "split": "held_out", "source": "lip", "hypotheses": ["neks one", "next won"], "gold": "next", "tags": ["lip_missing"], "why": "sound-alikes of next one"}
+{"id": "v2h61", "split": "held_out", "source": "dictated", "text": "nächste bitte", "gold": "next", "tags": ["foreign"], "why": "German: next please"}
+{"id": "v2h62", "split": "held_out", "source": "dictated", "text": "ok continue to the next slide", "gold": "next", "tags": ["confusable"], "why": "'continue' decoy; advance a slide"}
+{"id": "v2h63", "split": "held_out", "source": "typed", "text": "move on, following step", "gold": "next", "tags": [], "why": "advance a step"}
+{"id": "v2h64", "split": "held_out", "source": "dictated", "text": "not the previous one, the one after", "gold": "next", "tags": ["negation"], "why": "the one after = next"}
+{"id": "v2h65", "split": "held_out", "source": "dictated", "text": "kill it all, now", "gold": "stop", "tags": [], "why": "end everything"}
+{"id": "v2h66", "split": "held_out", "source": "typed", "text": "stpo", "gold": "stop", "tags": ["noise"], "why": "swapped letters"}
+{"id": "v2h67", "split": "held_out", "source": "lip", "hypotheses": ["stob", "stawp"], "gold": "stop", "tags": ["lip_missing"], "why": "sound-alikes of stop"}
+{"id": "v2h68", "split": "held_out", "source": "dictated", "text": "basta, para todo", "gold": "stop", "tags": ["foreign"], "why": "Spanish: enough, stop everything"}
+{"id": "v2h69", "split": "held_out", "source": "dictated", "text": "shut up shut up", "gold": "stop", "tags": [], "why": "end the speech now"}
+{"id": "v2h70", "split": "held_out", "source": "dictated", "text": "don't pause it, end the whole thing", "gold": "stop", "tags": ["negation", "confusable"], "why": "explicit end, not pause"}
+{"id": "v2h71", "split": "held_out", "source": "typed", "text": "cancel everything, all of it, I'm done", "gold": "stop", "tags": ["confusable"], "why": "'cancel' word but everything = stop"}
+{"id": "v2h72", "split": "held_out", "source": "dictated", "text": "what's the weather like in Lisbon", "gold": "uncertain", "tags": ["oov"], "why": "not a command"}
+{"id": "v2h73", "split": "held_out", "source": "typed", "text": "send this to my boss", "gold": "uncertain", "tags": ["oov"], "why": "not a command"}
+{"id": "v2h74", "split": "held_out", "source": "dictated", "text": "zoom in", "gold": "uncertain", "tags": ["oov"], "why": "zoom is not in the label set"}
+{"id": "v2h75", "split": "held_out", "source": "typed", "text": "highlight this in yellow", "gold": "uncertain", "tags": ["oov"], "why": "not a command"}
+{"id": "v2h76", "split": "held_out", "source": "lip", "hypotheses": ["hmm", "mm hm"], "gold": "uncertain", "tags": ["garbled"], "why": "no command word"}
+{"id": "v2h77", "split": "held_out", "source": "lip", "hypotheses": ["fwth", "th"], "gold": "uncertain", "tags": ["garbled"], "why": "no recoverable word"}
+{"id": "v2h78", "split": "held_out", "source": "typed", "text": "asdfgh", "gold": "uncertain", "tags": ["garbled"], "why": "keyboard mash"}
+{"id": "v2h79", "split": "held_out", "source": "dictated", "text": "um so like", "gold": "uncertain", "tags": ["filler"], "why": "filler only"}
+{"id": "v2h80", "split": "held_out", "source": "dictated", "text": "wait", "gold": "uncertain", "tags": ["ambiguous"], "why": "pause or cancel"}
+{"id": "v2h81", "split": "held_out", "source": "dictated", "text": "ruko", "gold": "uncertain", "tags": ["foreign", "ambiguous"], "why": "Hindi: wait/stop; pause or stop"}
+{"id": "v2h82", "split": "held_out", "source": "typed", "text": "pause and then explain this bit", "gold": "uncertain", "tags": ["multi_intent"], "why": "two different commands"}
+{"id": "v2h83", "split": "held_out", "source": "dictated", "text": "compare these and then move the winner over here", "gold": "uncertain", "tags": ["multi_intent"], "why": "two different commands"}
+{"id": "v2h84", "split": "held_out", "source": "lip", "hypotheses": ["stawp", "scrol up"], "gold": "uncertain", "tags": ["lip_ambiguous"], "why": "guesses are two different commands"}
+{"id": "v2h85", "split": "held_out", "source": "lip", "hypotheses": ["goh on", "go dawn"], "gold": "uncertain", "tags": ["lip_ambiguous"], "why": "continue vs scroll down"}
+{"id": "v2h86", "split": "held_out", "source": "typed", "text": "no don't open it", "gold": "uncertain", "tags": ["negation"], "why": "negation with no positive instruction"}
+{"id": "v2h87", "split": "held_out", "source": "dictated", "text": "scroll", "gold": "uncertain", "tags": ["ambiguous"], "why": "no direction"}
+{"id": "v2h88", "split": "held_out", "source": "dictated", "text": "take me back", "gold": "uncertain", "tags": ["ambiguous"], "why": "scroll up, cancel, or previous item (not a command)"}
+{"id": "v2h89", "split": "held_out", "source": "typed", "text": "can you open this and compare it with the last one", "gold": "uncertain", "tags": ["multi_intent"], "why": "two different commands"}
+{"id": "v2h90", "split": "held_out", "source": "dictated", "text": "delete this paragraph", "gold": "uncertain", "tags": ["oov"], "why": "not a command"}
