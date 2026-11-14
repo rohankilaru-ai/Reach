@@ -109,3 +109,22 @@ not included. The run may have had no hand in view, so `num_hands: 2` cost with 
   `perception/models/hand_landmarker.task` (already downloaded in the main checkout).
 - Scroll speed (gain lowered tenfold, untuned; up to 15 lines per event) and the HUD label width at 240 px are unverified.
 - `perception/` (the old pinch worker) is untouched for comparison.
+
+## Hand signals (thumbs-up, peace)
+
+- What: in hands mode, a thumbs-up (thumb out, four fingers curled) held 0.6 s toggles dictation; a peace sign
+  (index and middle up, tips more than 1.8 knuckle gaps apart (about 0.5 hand scale), ring and pinky curled) held 0.6 s starts a voice ask like
+  holding Option-Space, and a second peace sign ends it and sends. 1.5 s cooldown after either; never while pinching,
+  pointing, dragging or selecting; one signal per hold. A closed fist does nothing. Index and middle together stay the
+  scroll pose; spread apart they no longer scroll while signals are on.
+- How: `hands_mode/signals.py` (pure) -> `run.py` prints `GESTURE thumbs_up|peace` -> `backend/reach/hands.py`
+  parses it -> `hands_gesture` {gesture} to overlays -> `AppController.handSignal` (dictation controller / the
+  Option-Space hold path) with a 1 s pill hint. The engine itself never clicks on a signal.
+- Off: `REACH_HAND_SIGNALS=0` in `.reach/server.env` (the child inherits the server's environment).
+- Tested: synthetic finger-state sequences (`hands_mode/tests/test_signals.py`), GESTURE line parsing and the
+  watcher broadcast (`backend/tests/test_hands.py`), decode and mapping (`HandsModeTests.swift`).
+- Known: going straight from pointing into a thumbs-up within 0.5 s is also a curl click (the index curls sharply);
+  pass through the relaxed clutch pose, or wait 0.5 s, before a thumbs-up. Held (stale) frames and the takeover pause
+  never fire a signal.
+- Not tested live: real landmarks for thumbs-up (MediaPipe's thumb-extended ratio on a sideways thumb) and the 1.8
+  knuckle-gap spread threshold on real hands (unit tests use synthetic landmarks, not the real pipeline).

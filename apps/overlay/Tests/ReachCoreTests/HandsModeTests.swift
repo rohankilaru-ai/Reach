@@ -125,4 +125,17 @@ import Testing
         #expect(t.update(mouse: CGPoint(x: 770, y: 980), now: 2.21, expanded: false, hot: hot, panel: panel, busy: false,
                          dwellZone: zone) == .expand)
     }
+
+    @Test func handSignalsMapToDictationAndListening() throws {
+        #expect(try ServerMessage.decode(#"{"type":"hands_gesture","gesture":"thumbs_up"}"#) == .handsGesture("thumbs_up"))
+        #expect(try ServerMessage.decode(#"{"type":"hands_gesture","gesture":"peace"}"#) == .handsGesture("peace"))
+        #expect(HandsMode.signal("thumbs_up", dictationOn: false, listening: false) == .toggleDictation)
+        #expect(HandsMode.signal("thumbs_up", dictationOn: true, listening: true) == .toggleDictation)
+        #expect(HandsMode.signal("peace", dictationOn: false, listening: false) == .startListening)
+        #expect(HandsMode.signal("peace", dictationOn: false, listening: true) == .stopListening)
+        #expect(HandsMode.signal("fist", dictationOn: false, listening: false) == nil)
+        #expect(HandsMode.signalHint(.toggleDictation, dictationOn: false) == "👍 Dictation on")
+        #expect(HandsMode.signalHint(.startListening, dictationOn: false) == "✌️ Listening")
+        #expect(HandsMode.signalHintSeconds == 1)
+    }
 }

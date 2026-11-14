@@ -13,6 +13,8 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from hands_mode.signals import tip_spread
+
 
 def is_pointing(frame) -> bool:
     f = frame.fingers
@@ -63,12 +65,14 @@ class ActionCfg:
     curl_max_s: float = 0.5             # ... reached within this long of leaving the pointing pose (a sag is not a tap)
     pre_curl_s: float = 0.12            # ... clicks where the pointer was this long before the curl began
     curl_pinch_guard: float = 0.30      # thumb this close to the index tip may be a pinch closing: wait one frame
+    peace_spread: float = 1.8           # hand signals on: index+middle tips this many knuckle gaps apart = peace, not scroll
 
 
 class HandsEngine:
     def __init__(self, mouse, cfg: ActionCfg | None = None, clock=time.monotonic, selector=None):
         self.mouse, self.cfg, self.clock, self.selector = mouse, cfg or ActionCfg(), clock, selector
         self.active = True
+        self.signals = False   # run.py turns this on with hand signals (spread index+middle stops scrolling)
         self.state = "waiting for hand"
         self.button_down = False
         self.selecting = False
@@ -250,6 +254,9 @@ class HandsEngine:
         if frame.pinch_active:   # a pinch that did not press (lockout, middle without selector): do nothing
             return self.state
 
+        if is_two_finger(frame) and self.signals and tip_spread(frame) > c.peace_spread:
+            self.state = "peace · hold for listen"   # spread apart: a hand signal, never a scroll
+            return self.state
         if is_two_finger(frame):
             vy = frame.scroll_velocity[1]
             settled = self._last_up is None or now - self._last_up[0] > 0.3   # fingers spring apart after a pinch
