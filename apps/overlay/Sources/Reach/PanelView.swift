@@ -98,6 +98,15 @@ struct PanelView: View {
         .environment(\.colorScheme, .dark)
     }
 
+    static func handsColor(_ t: HandsMode.Tint) -> Color {
+        switch t {
+        case .grey: return .white.opacity(0.55)
+        case .blue: return Color(red: 0.35, green: 0.62, blue: 1.0)
+        case .green: return Color(red: 0.3, green: 0.85, blue: 0.5)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.25)
+        }
+    }
+
     /// The idle island: a compact dark glass capsule that breathes softly. Drag it; double-click snaps it back.
     private var pill: some View {
         HStack(spacing: 8) {
@@ -125,6 +134,20 @@ struct PanelView: View {
                 .opacity(model.handsFreeFlicker ? 0.3 : 1)
                 .animation(.easeInOut(duration: 0.2), value: model.handsFreeFlicker)
                 .help(HandsFree.hint)
+            }
+            if model.handsOn || model.handsLine != nil {
+                // hands mode: a small hand with a calm pulse and "Hands on" (or a short hint / "Hands off")
+                let look = HandsMode.look(phase: model.handsPhase)
+                HStack(spacing: 4) {
+                    Image(systemName: look.tint == .green ? "hand.pinch.fill" : "hand.raised.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(model.handsOn ? Self.handsColor(look.tint) : .white.opacity(0.6))
+                        .opacity(model.handsOn && !breathe ? (look.pulse ? 0.35 : 0.7) : 1)
+                    Text(model.handsLine ?? (model.handsPhase == nil ? HandsMode.onLabel : look.label))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                }
+                .help(HandsMode.hint)
             }
             if let chip = model.handsFreeChip, model.handsFree {
                 Text(chip).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
@@ -343,15 +366,24 @@ struct PanelView: View {
                         }
                     }
                     if model.showDetails, let r = s.receipt {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.line)
-                            if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
-                            if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
-                            ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                        // one friendly line; the raw receipt only behind the menu's "Show technical details"
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(ReceiptSummary.line(r))
+                                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                            if model.technicalDetails {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.line)
+                                    if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
+                                    if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
+                                    ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                                }
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.42))
+                            }
                         }
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.42))
-                        .lineLimit(1).truncationMode(.middle)
+                        .lineLimit(1).truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
                         .transition(.opacity)
                     }
                 } else if showsField {

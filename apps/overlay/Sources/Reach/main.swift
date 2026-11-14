@@ -458,7 +458,34 @@ if args.contains("--replay") {
     return ok ? 0 : 1
 }
 
-if args.contains("--handsfree-selftest") {
+/// `--hands-selftest`: headless, no backend, no camera, never starts hands mode. Checks the toggle, the state sync
+/// from `hands_state` and the receipt summary line; prints PASS/FAIL lines.
+@MainActor
+func runHandsSelftest() -> Int32 {
+    var ok = true
+    func check(_ name: String, _ cond: Bool) { ok = ok && cond; log("hands selftest \(cond ? "PASS" : "FAIL"): \(name)") }
+    check("off + Accessibility -> send on", HandsMode.toggle(currentOn: false, accessibility: true) == .send(on: true))
+    check("off, no Accessibility -> needs you", HandsMode.toggle(currentOn: false, accessibility: false) == .needsAccessibility)
+    check("on -> send off", HandsMode.toggle(currentOn: true, accessibility: false) == .send(on: false))
+    var s = HandsModeState()
+    check("server on -> one-time hint", s.apply(on: true, pid: 42, reason: "started") == .showHint && s.on)
+    check("repeat on -> no-op", s.apply(on: true, pid: 42, reason: nil) == .none)
+    check("exit (open palm) -> Hands off", s.apply(on: false, pid: nil, reason: "exited") == .showOff(reason: "exited") && !s.on)
+    check("second on -> no hint", s.apply(on: true, pid: 43, reason: "started") == .none)
+    let m = try? ServerMessage.decode(#"{"type":"hands_state","on":false,"pid":null,"reason":"exited"}"#)
+    check("hands_state decodes", m == .handsState(on: false, pid: nil, reason: "exited"))
+    check("phrase on/off", HandsMode.phrase("Reach, hands mode on.") == true && HandsMode.phrase("reach hands mode off") == false
+          && HandsMode.phrase("what is hands mode") == nil)
+    _ = s.apply(on: true, pid: 43, reason: nil, phase: "pinching")
+    check("phase pinching -> green pulse", s.phase == "pinching" && HandsMode.look(phase: s.phase).tint == .green)
+    check("phase paused -> amber", HandsMode.look(phase: "paused").tint == .amber)
+    log("hands selftest \(ok ? "PASS" : "FAIL")")
+    return ok ? 0 : 1
+}
+
+if args.contains("--hands-selftest") {
+    exit(MainActor.assumeIsolated { runHandsSelftest() })
+} else if args.contains("--handsfree-selftest") {
     exit(MainActor.assumeIsolated { runHandsFreeSelftest() })
 } else if args.contains("--permissions-selftest") {
     MainActor.assumeIsolated { runPermissionsSelftest() }

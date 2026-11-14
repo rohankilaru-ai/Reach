@@ -22,6 +22,8 @@ async def _client(port, token, role=None):
     ws = await websockets.connect(f"ws://127.0.0.1:{port}")
     await ws.send(Hello(token=token, role=role).model_dump_json())
     assert json.loads(await ws.recv())["type"] == "ready"
+    if role == "overlay":  # an overlay is told the current hands mode truth on connect
+        assert json.loads(await ws.recv())["type"] == "hands_state"
     return ws
 
 
