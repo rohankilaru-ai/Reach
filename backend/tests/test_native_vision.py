@@ -92,20 +92,20 @@ def _end(name, content, status="ok"):
 def test_receipt_outcome_mapping_worst_wins():
     b = ReceiptBuilder("t")
     b.feed(_end("evidence_search", "[E1] ..."))
-    assert b.receipt().outcome is None  # no write, no outcome
+    assert b.receipt().write_outcome is None  # no write, no outcome
     b.feed(_end("note_append", "outcome=verified destination=file chars=10"))
     r = b.receipt()
-    assert r.outcome == "verified" and r.status == "failed"  # status untouched (no run_end)
+    assert r.write_outcome == "verified" and r.status == "failed"  # status untouched (no run_end)
     b.feed(_end("shelf_to_note", "outcome=unverified destination=notes chars=0", status="error"))
-    assert b.receipt().outcome == "unverified"
+    assert b.receipt().write_outcome == "unverified"
     b.feed(_end("note_append", "refused by guard", status="refused"))
-    assert b.receipt().outcome == "failed"
+    assert b.receipt().write_outcome == "failed"
 
 
 def test_receipt_outcome_unparseable_is_not_verified():
     b = ReceiptBuilder("t")
     b.feed(_end("note_append", "I wrote it, trust me"))
-    assert b.receipt().outcome == "unverified"
+    assert b.receipt().write_outcome == "unverified"
 
 
 def test_vision_request_building_without_sending():

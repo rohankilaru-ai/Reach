@@ -57,6 +57,32 @@ class EvidenceSearch(Tool):
         return ToolOutput(content="\n\n".join(parts))
 
 
+class BrowserTaskArgs(BaseModel):
+    task: str = Field(description="What to do in the browser, in plain words, e.g. 'open the Travel category and report the first book title'")
+    start_url: str = Field(description="The public web page to start from (https://...)")
+
+
+class BrowserTask(Tool):
+    """Runs one bounded web task in a real browser (Nace browser harness, Drex Max clicks). Judged by the guard."""
+
+    name: ClassVar[str] = "browser_task"
+    description: ClassVar[str] = (
+        "Open a real web browser at start_url and carry out one bounded task (navigate, click, read) on public pages, "
+        "then return what it found. Use it whenever the user asks you to use the browser or look something up on a "
+        "website. It reports DONE only when the task finished; otherwise report to the user that it was NOT done and "
+        "why. It never pays, sends, or submits on its own."
+    )
+    Args: ClassVar[type[BaseModel]] = BrowserTaskArgs
+    effects: ClassVar[frozenset[str]] = frozenset({"read", "write", "network"})
+
+    async def run(self, args: Any, ctx: ToolContext) -> ToolOutput:
+        from .tools import browser
+
+        s = await browser.run_task(args.task, args.start_url, abort=ctx.abort)
+        content = browser.render(s)
+        return ToolOutput(status="ok" if s["done"] else "error", content=content)
+
+
 class ReachTools(Extension):
     name: ClassVar[str] = "reach"
 
@@ -64,4 +90,6 @@ class ReachTools(Extension):
         from .tools.native import NoteAppend, OpenSource, ShelfToNote
         from .tools.vision import SeeRegion
 
-        return [ReachNow(), EvidenceSearch(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion()]
+        return [
+            ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(),
+        ]
