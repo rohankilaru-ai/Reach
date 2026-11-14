@@ -1,0 +1,133 @@
+diff --git a/src/drex.ts b/src/drex.ts
+index 48ea554..3527d7f 100644
+--- a/src/drex.ts
++++ b/src/drex.ts
+@@ -166,7 +166,11 @@ export class Drex {
+             throw requestError(error as Error, ms, usd, usage);
+           }
+         }
+-        if (j.model && j.model !== this.model && !j.model.startsWith(this.model + "-v"))
++        if (
++          j.model &&
++          j.model !== this.model &&
++          !(typeof j.model === "string" && j.model.startsWith(this.model + "-v"))
++        )
+           throw requestError(new WrongModel(wrongModelMessage(this.model, j.model)), ms, usd, usage);
+         return { answers: j.answers as DrexReply["answers"], usage, ms, usd: usd ?? 0, requestId: j.request_id };
+       }
+diff --git a/src/keycheck.ts b/src/keycheck.ts
+index c0ac001..fa70d1c 100644
+--- a/src/keycheck.ts
++++ b/src/keycheck.ts
+@@ -33,7 +33,8 @@ export async function checkDrexKey(key: string | undefined, fetchFn: FetchFn = f
+       return { ok: false, message: `Drex rejected this key (HTTP ${r.status}).` };
+     if (!r.ok) return { ok: false, message: `Drex answered HTTP ${r.status}. ${await reason(r)}`.trim() };
+     const j = bodyOf(await r.json());
+-    if (j.model && j.model !== DREX_MODEL && !j.model.startsWith(DREX_MODEL + "-v")) return { ok: false, message: wrongModelMessage(DREX_MODEL, j.model) };
++    if (j.model && j.model !== DREX_MODEL && !(typeof j.model === "string" && j.model.startsWith(DREX_MODEL + "-v")))
++      return { ok: false, message: wrongModelMessage(DREX_MODEL, j.model) };
+     return { ok: true, message: "Works with Drex Max." };
+   } catch (e) {
+     return { ok: false, message: `Couldn't reach Drex: ${(e as Error).message}` };
+@@ -137,6 +138,20 @@ export const checkOpenRouterKey = (
+     },
+   );
+ 
++// Reach patch: DeepInfra's OpenAI-compatible endpoint, Bearer auth like Fireworks
++export const checkDeepInfraKey = (
++  key: string | undefined,
++  model: string,
++  fetchFn: FetchFn = fetch,
++): Promise<KeyCheck> =>
++  tinyCall(
++    "DeepInfra",
++    "https://api.deepinfra.com/v1/openai/chat/completions",
++    key,
++    { model, messages: [{ role: "user", content: "Say ok." }], max_tokens: 4 },
++    fetchFn,
++  );
++
+ export const checkGoogleKey = (key: string | undefined, model: string, fetchFn: FetchFn = fetch): Promise<KeyCheck> =>
+   tinyCall(
+     "Google Gemini",
+@@ -152,6 +167,7 @@ export const LLM_KEY_CHECKS: Record<ProviderId, LlmKeyCheck> = {
+   anthropic: checkAnthropicKey,
+   openai: checkOpenAIKey,
+   fireworks: checkFireworksKey,
++  deepinfra: checkDeepInfraKey,
+   google: checkGoogleKey,
+   openrouter: checkOpenRouterKey,
+ };
+diff --git a/src/manifest.json b/src/manifest.json
+index 5f7c9eb..fad5819 100644
+--- a/src/manifest.json
++++ b/src/manifest.json
+@@ -19,6 +19,7 @@
+     "https://api.anthropic.com/*",
+     "https://api.openai.com/*",
+     "https://api.fireworks.ai/*",
++    "https://api.deepinfra.com/*",
+     "https://generativelanguage.googleapis.com/*",
+     "https://openrouter.ai/*"
+   ],
+diff --git a/src/settings.ts b/src/settings.ts
+index b4e760c..52f1c00 100644
+--- a/src/settings.ts
++++ b/src/settings.ts
+@@ -10,6 +10,7 @@ const KEYS: (keyof Settings)[] = [
+   "anthropicKey",
+   "openaiKey",
+   "fireworksKey",
++  "deepinfraKey",
+   "googleKey",
+   "openrouterKey",
+   "model",
+diff --git a/src/sidepanel.html b/src/sidepanel.html
+index 4b6ce5a..d1f694d 100644
+--- a/src/sidepanel.html
++++ b/src/sidepanel.html
+@@ -27,7 +27,8 @@
+       </div>
+       <div class="field">
+         <label for="llmKey"
+-          >LLM API key <small id="llmKeyKind">Anthropic, OpenAI, Google Gemini, OpenRouter or Fireworks</small></label
++          >LLM API key
++          <small id="llmKeyKind">Anthropic, OpenAI, Google Gemini, OpenRouter, Fireworks or DeepInfra</small></label
+         ><input id="llmKey" type="password" autocomplete="off" spellcheck="false" />
+       </div>
+       <div class="field">
+diff --git a/src/sidepanel.ts b/src/sidepanel.ts
+index 1526f23..2f86c95 100644
+--- a/src/sidepanel.ts
++++ b/src/sidepanel.ts
+@@ -147,10 +147,10 @@ function showLLMKey(keep: string): void {
+   const provider = providerOfKey($("llmKey", HTMLInputElement).value) || providerOf(keep);
+   const known = Boolean(providerOfKey($("llmKey", HTMLInputElement).value));
+   $("llmKeyKind", HTMLElement).textContent = !$("llmKey", HTMLInputElement).value.trim()
+-    ? "Anthropic, OpenAI, Google Gemini, OpenRouter or Fireworks"
++    ? "Anthropic, OpenAI, Google Gemini, OpenRouter, Fireworks or DeepInfra"
+     : known
+       ? `${PROVIDERS[provider].label} key`
+-      : "Not a key we know: Anthropic, OpenAI, Google Gemini, OpenRouter or Fireworks";
++      : "Not a key we know: Anthropic, OpenAI, Google Gemini, OpenRouter, Fireworks or DeepInfra";
+   const models = MODELS.filter((m) => providerOf(m) === provider);
+   $("model", HTMLSelectElement).innerHTML = models
+     .map((m) => `<option value="${m}">${MODEL_NAMES[m]} ($${priceOf(m)[0]} / $${priceOf(m)[1]} per M tokens)</option>`)
+@@ -185,7 +185,7 @@ async function saveSettings(): Promise<void> {
+     provider = providerOfKey(llmKey);
+   if (llmKey && !provider) {
+     setStatus(
+-      "That LLM key isn't one we know: use an Anthropic, OpenAI, Google Gemini, OpenRouter or Fireworks key.",
++      "That LLM key isn't one we know: use an Anthropic, OpenAI, Google Gemini, OpenRouter, Fireworks or DeepInfra key.",
+       "bad",
+     );
+     return;
+@@ -258,7 +258,7 @@ async function askForKeys(): Promise<void> {
+   setStatus(
+     which === "Drex"
+       ? "Add your Drex key first."
+-      : `Add an LLM key first: ${which ? `a ${which} key for ${MODEL_NAMES[s.model] || s.model}, or ` : ""}any Anthropic, OpenAI, Google Gemini, OpenRouter or Fireworks key.`,
++      : `Add an LLM key first: ${which ? `a ${which} key for ${MODEL_NAMES[s.model] || s.model}, or ` : ""}any Anthropic, OpenAI, Google Gemini, OpenRouter, Fireworks or DeepInfra key.`,
+     "bad",
+   );
+ }
