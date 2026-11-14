@@ -17,7 +17,8 @@ typing). **Always** keeps the pill on screen. **Hidden (hotkey only)** ignores h
 show it.
 
 **Menu bar item** (a small monochrome dashed circle): Show/Hide pill, Pill: Auto / Always / Hidden, Voice: Cloud /
-On-device, Speak replies (checkmark), Set up Reach…, Quit Reach. All settings persist in UserDefaults.
+On-device, Speak replies (checkmark), Hands-free listening, Hands mode (⌃⌥H), Record hand gesture…, Set up Reach…,
+Quit Reach. All settings persist in UserDefaults.
 
 **Set up Reach** (permissions checklist): opened from the menu bar item, from the Fix action, and automatically once
 per launch when a required permission is missing. Each row has a live dot (green granted, grey not yet) and a Grant
@@ -164,6 +165,26 @@ AVAudioPlayer (deleted after playback); on error or after 3 s, AVSpeechSynthesiz
 stops playback and drops late audio. The overlay never holds a key; the backend calls DeepInfra.
 Headless check (needs `reach serve` running): `.build/debug/Reach --reach-dir <repo>/.reach --cloud-voice-selftest "Add 17 apples"`.
 Evidence: `docs/evidence/cloud-voice.md`.
+
+## Hands mode toggle and hand gestures (EXPERIMENTAL)
+
+Hands mode (your hand moves the real mouse; the backend runs a separate camera process) turns on or off from the menu
+bar item **Hands mode (⌃⌥H)**, the global hotkey **Control-Option-H**, or by typing or saying the whole utterance
+"hands on", "hands off" or "hands" (toggle; "hands mode on" works too, "hands on the table" is an ordinary ask). Like
+"zoom", these words are handled locally and never sent as an ask (`HandsCommand.parse`). The checkmark follows the
+server's `hands_state` reply. While Hands mode is on the panel shows a ✋ line with what it is doing (from
+`.reach/logs/hands.jsonl`) and a small **+ gesture** chip.
+
+**Hand gestures** window (EXPERIMENTAL, untested with real hands; opened from **Record hand gesture…** or the
++ gesture chip): the saved gestures from `.reach/gestures.json` ("name · what it does · 1 or 2 hands", refreshed every
+second while open) with a × that sends `hands_forget`, and a form: Name (up to 40 characters), Does (Go to top, Go to
+bottom, Press keys… e.g. `cmd+shift+t`, Voice command = one of the router commands, Ask Reach… with a prompt) and
+**Record**, which sends `hands_record {name, action {kind, value}}`. Perform the gesture twice when asked (about 10
+frames each); for two-hand gestures keep both hands in view. The status line shows the latest Hands mode status
+("recording 'top' · example 1/2 · get ready 3", "saved gesture 'top'"). Top, bottom and keys are done by Hands mode
+itself; for `command` and `ask` gestures the server relays `hands_gesture` to the overlay: a command runs exactly
+like the same router command heard by hands-free (stop/cancel/pause stop locally, others ask with a chip), an ask is
+sent as a typed ask with the current selection. The ✋ line shows "gesture: NAME" for about 2.5 s.
 
 ## Hands-free
 

@@ -31,6 +31,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarItem?
     private var pillMode = PillMode.load()
     private var handsFree: HandsFreeController!
+    private lazy var gestures = GesturesWindow(model: model)
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -93,6 +94,12 @@ final class AppController: NSObject, NSApplicationDelegate {
         Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "Option-Shift-Space (hands-free)") {
             [weak self] in self?.handsFree.flip()
         }
+        // Hands mode: Control-Option-H toggles, same as the menu item.
+        Hotkeys.shared.register(keyCode: Keys.h, modifiers: Keys.control | Keys.option, name: "Control-Option-H (hands mode)") {
+            [weak self] in self?.model.setHands()
+        }
+        model.onOpenGestures = { [weak self] in self?.gestures.open() }
+        model.onGestureCommand = { [weak self] c in self?.handsFree.run(command: c) }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
         model.onCompact = { [weak self] c in self?.showCompact(c) }
         model.onBadge = { [weak self] on in self?.menuBar?.setBadge(on) }

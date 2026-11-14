@@ -6,6 +6,35 @@ import ctypes
 import ctypes.util
 
 
+# macOS virtual key codes (Carbon kVK_*) and modifier flags, for gesture key combos like "cmd+shift+t".
+KEYCODES = {
+    **dict(zip("asdfhgzxcv", range(10))), "b": 11, "q": 12, "w": 13, "e": 14, "r": 15, "y": 16, "t": 17,
+    "1": 18, "2": 19, "3": 20, "4": 21, "6": 22, "5": 23, "=": 24, "9": 25, "7": 26, "-": 27, "8": 28, "0": 29,
+    "]": 30, "o": 31, "u": 32, "[": 33, "i": 34, "p": 35, "return": 36, "enter": 36, "l": 37, "j": 38, "'": 39,
+    "k": 40, ";": 41, "\\": 42, ",": 43, "/": 44, "n": 45, "m": 46, ".": 47, "tab": 48, "space": 49, "`": 50,
+    "delete": 51, "backspace": 51, "escape": 53, "esc": 53, "forwarddelete": 117, "home": 115, "end": 119,
+    "pageup": 116, "pagedown": 121, "left": 123, "right": 124, "down": 125, "up": 126,
+    "f1": 122, "f2": 120, "f3": 99, "f4": 118, "f5": 96, "f6": 97, "f7": 98, "f8": 100, "f9": 101, "f10": 109,
+    "f11": 103, "f12": 111,
+}
+MODIFIERS = {"cmd": 0x100000, "command": 0x100000, "shift": 0x20000, "alt": 0x80000, "opt": 0x80000,
+             "option": 0x80000, "ctrl": 0x40000, "control": 0x40000}
+
+
+def parse_combo(combo: str) -> tuple[int, int]:
+    """"cmd+shift+t" -> (key code, modifier flags). Raises ValueError on an unknown key or no key."""
+    parts = [p.strip().lower() for p in combo.split("+") if p.strip()]
+    flags, keys = 0, []
+    for p in parts:
+        if p in MODIFIERS:
+            flags |= MODIFIERS[p]
+        else:
+            keys.append(p)
+    if len(keys) != 1 or keys[0] not in KEYCODES:
+        raise ValueError(f"bad key combo {combo!r}")
+    return KEYCODES[keys[0]], flags
+
+
 class _Point(ctypes.Structure):
     _fields_ = [("x", ctypes.c_double), ("y", ctypes.c_double)]
 
@@ -70,6 +99,9 @@ class MacActionMouse(MacMouse):
         cg.CGEventCreateScrollWheelEvent2.restype = ctypes.c_void_p
         cg.CGEventCreateScrollWheelEvent2.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.c_uint32,
                                                       ctypes.c_int32, ctypes.c_int32, ctypes.c_int32]
+        cg.CGEventCreateKeyboardEvent.restype = ctypes.c_void_p
+        cg.CGEventCreateKeyboardEvent.argtypes = [ctypes.c_void_p, ctypes.c_uint16, ctypes.c_bool]
+        cg.CGEventSetFlags.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
         self.can_click = self.trusted  # without Accessibility, CGEventPost of button events is dropped
 
     def _post_button(self, kind: int, x: float, y: float, clicks: int = 1) -> None:
@@ -91,6 +123,15 @@ class MacActionMouse(MacMouse):
         e = self._cg.CGEventCreateScrollWheelEvent2(None, self.SCROLL_UNIT_LINE, 1, int(lines), 0, 0)
         self._cg.CGEventPost(self.HID_EVENT_TAP, e)
         self._cf.CFRelease(e)
+
+    def key(self, combo: str) -> None:
+        """Press and release a key combo like "cmd+up" (needs Accessibility, like clicks)."""
+        code, flags = parse_combo(combo)
+        for down in (True, False):
+            e = self._cg.CGEventCreateKeyboardEvent(None, code, down)
+            self._cg.CGEventSetFlags(e, flags)
+            self._cg.CGEventPost(self.HID_EVENT_TAP, e)
+            self._cf.CFRelease(e)
 
 
 class PrintMouse:
@@ -128,3 +169,7 @@ class PrintMouse:
 
     def scroll(self, lines) -> None:
         self._rec("scroll", int(lines))
+
+    def key(self, combo: str) -> None:
+        parse_combo(combo)   # same validation as the real backend
+        self._rec("key", combo.lower())

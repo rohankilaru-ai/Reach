@@ -128,6 +128,12 @@ final class HandsFreeController {
         act(d)
     }
 
+    /// A relayed hand gesture's router command: handled exactly like the same command routed from speech.
+    func run(command: String) {
+        guard HandsFree.commands.contains(command), command != "uncertain" else { log("gesture: unknown command \(command)"); return }
+        act(HandGestures.decision(command: command))
+    }
+
     private func act(_ d: AddressedDecision) {
         switch d {
         case .ignore: flicker()

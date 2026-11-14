@@ -13,6 +13,18 @@ final class OverlayModel: ObservableObject {
     @Published var draft = ""
     /// Hands mode (your hand moves the real mouse), as last requested from the menu.
     @Published var handsOn = false
+    /// "gesture: NAME" for a moment after a relayed hand gesture ran (EXPERIMENTAL).
+    @Published var gestureFlash: String?
+    /// A relayed hand gesture with a `command` action: the app runs it like a routed voice command.
+    var onGestureCommand: ((String) -> Void)?
+    var onOpenGestures: (() -> Void)?
+
+    /// Hands mode on/off/toggle: the menu item, Control-Option-H and the words "hands on" / "hands off" / "hands".
+    func setHands(_ on: Bool? = nil) {
+        handsOn = on ?? !handsOn
+        log("hands mode \(handsOn ? "on" : "off") requested")
+        send(.hands(on: handsOn))
+    }
     @Published var selection: Selection?
     @Published var selectionNote: String?
     /// Voice line under the text field: "listening…", "heard: …", "didn't catch that". Survives `submitted()`.
@@ -160,6 +172,11 @@ final class OverlayModel: ObservableObject {
             else { selectionNote = "circle something first, then say zoom" }
             return
         }
+        if let h = HandsCommand.parse(text) {   // local too: "hands on", "hands off", "hands"
+            draft = ""
+            setHands(h == .toggle ? nil : h == .on)
+            return
+        }
         guard state.connected else {
             pendingAsk = (text, fromVoice)
             log("not connected yet; ask queued")
@@ -299,6 +316,22 @@ final class OverlayModel: ObservableObject {
             // never log the overheard text: only the probability and the flag
             log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
             onAddressed?(r)
+            return
+        case .handsState(let on):
+            log("hands_state \(on ? "on" : "off")")
+            if handsOn != on { handsOn = on }
+            return
+        case .handsGesture(let name, let action):
+            log("hand gesture \(name): \(action.summary)")
+            gestureFlash = "gesture: \(name)"
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
+                if self?.gestureFlash == "gesture: \(name)" { self?.gestureFlash = nil }
+            }
+            switch action.kind {
+            case .command: onGestureCommand?(action.value)
+            case .ask: submit(action.value)   // a typed ask; carries the current selection like any other
+            case .top, .bottom, .keys: break  // done by Hands mode itself, never relayed
+            }
             return
         case .unknown(let t): log("ignored message type \(t)")
         }

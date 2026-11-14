@@ -117,6 +117,13 @@ class BridgeClient:
             sel["image_path"] = image_path
         return self._send({"type": "select", "selection": sel})
 
+    def send(self, obj: dict) -> bool:
+        return self._send(obj)
+
+    def gesture(self, name: str, action: dict) -> bool:
+        """A custom gesture fired (EXPERIMENTAL): the server relays it to the overlay, which runs the command/ask."""
+        return self._send({"type": "hands_gesture", "name": name, "action": action})
+
     def close(self) -> None:
         ws, self.ws = self.ws, None
         if ws is not None:

@@ -71,6 +71,10 @@ public enum ClientMessage: Equatable, Sendable {
     case utterance(text: String, wakeMatched: Bool)
     /// Hands mode on/off: the backend starts or stops the hand-as-mouse process (answered by `hands_state`).
     case hands(on: Bool)
+    /// Hand gestures (EXPERIMENTAL): record a new gesture bound to an action (answered on the hands.jsonl feed).
+    case handsRecord(name: String, action: GestureAction)
+    /// Hand gestures (EXPERIMENTAL): delete a saved gesture.
+    case handsForget(name: String)
 
     public func json() throws -> String {
         var obj: [String: JSONValue] = [:]
@@ -96,6 +100,11 @@ public enum ClientMessage: Equatable, Sendable {
                    "wake_matched": .bool(wake)]
         case .hands(let on):
             obj = ["type": .string("hands"), "on": .bool(on)]
+        case .handsRecord(let name, let action):
+            obj = ["type": .string("hands_record"), "name": .string(name),
+                   "action": .object(["kind": .string(action.kind.rawValue), "value": .string(action.value)])]
+        case .handsForget(let name):
+            obj = ["type": .string("hands_forget"), "name": .string(name)]
         }
         enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
@@ -196,6 +205,10 @@ public enum ServerMessage: Equatable, Sendable {
     case ttsAudio(path: String, ms: Int, error: String?, id: String?)
     /// Hands-free: is the utterance aimed at the assistant?
     case addressed(AddressedReply)
+    /// Hands mode on/off as the server now sees it (reply to `hands`).
+    case handsState(on: Bool)
+    /// A saved hand gesture fired; the server relays its `command` / `ask` action to the overlay (EXPERIMENTAL).
+    case handsGesture(name: String, action: GestureAction)
     case unknown(type: String)
 
     public static func decode(_ text: String) throws -> ServerMessage {
@@ -239,6 +252,14 @@ public enum ServerMessage: Equatable, Sendable {
             if case .bool(let b)? = v["addressed"] { on = b }
             return .addressed(AddressedReply(text: v["text"]?.string ?? "", pAddressed: v["p_addressed"]?.number,
                                              addressed: on, command: v["command"]?.string, reason: v["reason"]?.string))
+        case "hands_state":
+            var on = false
+            if case .bool(let b)? = v["on"] { on = b }
+            return .handsState(on: on)
+        case "hands_gesture":
+            guard let name = v["name"]?.string, let kind = v["action"]?["kind"]?.string.flatMap(GestureAction.Kind.init)
+            else { return .unknown(type: type) }
+            return .handsGesture(name: name, action: GestureAction(kind: kind, value: v["action"]?["value"]?.string ?? ""))
         default:
             return .unknown(type: type)
         }

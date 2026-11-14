@@ -264,11 +264,16 @@ struct PanelView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                if model.handsOn, let g = s.gesture {  // what Hands mode is doing (EXPERIMENTAL)
-                    Text("✋ \(g.line)")
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(Palette.accent.opacity(0.9))
-                        .lineLimit(1)
+                if model.handsOn {  // what Hands mode is doing (EXPERIMENTAL)
+                    HStack(spacing: 8) {
+                        Text("✋ \(model.gestureFlash ?? s.gesture?.line ?? "hands: on")")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(Palette.accent.opacity(0.9))
+                            .lineLimit(1)
+                        Spacer(minLength: 0)
+                        Chip(icon: "plus", text: "gesture") { model.onOpenGestures?() }
+                            .help("Record a hand gesture (experimental)")
+                    }
                 }
 
                 if showsField {

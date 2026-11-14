@@ -13,6 +13,14 @@ Gestures (the closest hand drives)
   open palm held 1 s                        leave hands mode
 Touching the real mouse/trackpad pauses hands mode for 2 s. Ctrl+C stops it.
 Each state change is appended to .reach/logs/hands.jsonl for the overlay.
+
+Custom gestures (EXPERIMENTAL, hands_mode/gestures.py)
+  Record from the overlay: the server writes .reach/run/hands_request.json; hands mode counts down 3-2-1 and
+  captures two short examples (10 frames each, one or two hands) into .reach/gestures.json. The mouse is idle
+  while recording. Live hand windows close to an example are confirmed by Drex Max (NACE_API_KEY; decisions in
+  .reach/logs/drex.jsonl); without a key or on a Drex error a stricter local match decides. Actions: top/bottom
+  (Cmd+Up/Down), keys ("cmd+shift+t"), or a voice command / ask sent to the overlay. While both hands are in view
+  and a two-hand gesture exists, the mouse pauses ("two hands · gestures").
 """
 
 from __future__ import annotations
@@ -25,12 +33,13 @@ import sys
 import time
 from pathlib import Path
 
-from pathlib import Path
-
 from finger_processing import FingerProcessor, load_config
 from finger_processing.processing import resolve_path
 
 from hands_mode.actions import ActionCfg, HandsEngine
+from hands_mode.bridge import BridgeClient
+from hands_mode.drex import DrexClient
+from hands_mode.gestures import GestureLayer
 from hands_mode.mouse import MacActionMouse, PrintMouse
 
 STALL_S, MAX_REOPENS = 1.0, 3   # no new camera frame for STALL_S: release, reopen the camera (at most 3 times)
@@ -104,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
         print("--control is macOS only; running as a dry run.")
     selector = make_selector(not args.no_select)
     engine = HandsEngine(mouse, ActionCfg(scroll_invert=args.scroll_invert), selector=selector)
+    bridge = BridgeClient()
+    gestures = GestureLayer(engine, mouse, bridge, drex=DrexClient())
 
     def on_signal(signum, _frame):
         engine.stop("stopped")
@@ -161,19 +172,22 @@ def main(argv: list[str] | None = None) -> int:
                     last_id, last_frame_t = -1, time.monotonic()
             else:
                 last_id, last_frame_t = frame.frame_id, time.monotonic()
+            status, paused = gestures.update(frame, time.monotonic())
+            if frame is not None and not paused:
                 engine.update(frame)
             if selector is not None and (status := selector.poll()):
                 print(f"[select] {status}", flush=True)
-            if engine.state != last_state:
-                last_state = engine.state
-                print(f"[hands] {engine.state}", flush=True)
-                log_state(feed, engine.state)
+            state = status or engine.state
+            if state != last_state:
+                last_state = state
+                print(f"[hands] {state}", flush=True)
+                log_state(feed, state)
             now = time.monotonic()
             if show and now - last_draw > 1 / 20:
                 last_draw = now
                 raw = fp.latest_raw()
                 if raw is not None:
-                    cv2.imshow("Hands mode", render(raw.image, fp.latest(), engine.state))
+                    cv2.imshow("Hands mode", render(raw.image, fp.latest(), last_state))
                 if cv2.waitKey(1) & 0xFF in (ord("q"), 27):
                     break
     except KeyboardInterrupt:
@@ -187,6 +201,7 @@ def main(argv: list[str] | None = None) -> int:
         fp.stop()
         if selector is not None:
             selector.close()
+        bridge.close()
         if show:
             cv2.destroyAllWindows()
         if fp.error:
