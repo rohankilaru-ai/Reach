@@ -70,6 +70,10 @@ class Relay:
                 n += 1
         return n
 
+    def broadcast(self, msg: str) -> int:
+        """Send a server-made message (e.g. a guide pointer) to every overlay client."""
+        return self._broadcast(-1, msg)
+
     def select(self, sender: int, role: str | None, msg: Select) -> str | None:
         """Returns an error string, or None when handled."""
         sel = msg.selection

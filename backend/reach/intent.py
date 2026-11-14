@@ -62,7 +62,11 @@ TOOL_FAMILY: dict[str, str] = {
     "document_question": "use evidence_search on the user's documents and cite passage ids",
     "browser_task": "use browser_task",
     "write_to_notes": "use note_append (or shelf_to_note for evidence ids)",
-    "screen_question": "use see_region if a region image is given, otherwise the selected text",
+    "screen_question": (
+        "use see_region for 'what is this' about a region image (otherwise the selected text); use point_at for "
+        "'where do I click / how do I fill this in / show me how', then answer in words: the pointer shows where, "
+        "the user clicks and types (never claim you did)"
+    ),
     "chat": "answer directly; no tool is needed",
     "mac_control": "Reach has no tool for controlling the Mac; say what you cannot do rather than pretend",
 }
