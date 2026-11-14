@@ -13,21 +13,29 @@ import time
 from collections import deque
 from dataclasses import dataclass
 
+from hands_mode.signals import tip_spread
+
+
+def _fingers(frame):
+    """The four finger states, or None when this frame has no usable hand (no hand, or a partial read)."""
+    f = getattr(frame, "fingers", None) or {}
+    return f if all(k in f for k in ("index", "middle", "ring", "pinky")) else None
+
 
 def is_pointing(frame) -> bool:
-    f = frame.fingers
-    return f["index"].extended and not (f["middle"].extended or f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and f["index"].extended and not (f["middle"].extended or f["ring"].extended or f["pinky"].extended)
 
 
 def is_index_curl(frame) -> bool:
     """Index bent, the other three curled: the pose a tap from pointing passes through."""
-    f = frame.fingers
-    return not (f["index"].extended or f["middle"].extended or f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and not (f["index"].extended or f["middle"].extended or f["ring"].extended or f["pinky"].extended)
 
 
 def is_two_finger(frame) -> bool:
-    f = frame.fingers
-    return f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
 
 
 def is_open_palm(frame) -> bool:
@@ -63,12 +71,14 @@ class ActionCfg:
     curl_max_s: float = 0.5             # ... reached within this long of leaving the pointing pose (a sag is not a tap)
     pre_curl_s: float = 0.12            # ... clicks where the pointer was this long before the curl began
     curl_pinch_guard: float = 0.30      # thumb this close to the index tip may be a pinch closing: wait one frame
+    peace_spread: float = 1.8           # hand signals on: index+middle tips this many knuckle gaps apart = peace, not scroll
 
 
 class HandsEngine:
     def __init__(self, mouse, cfg: ActionCfg | None = None, clock=time.monotonic, selector=None):
         self.mouse, self.cfg, self.clock, self.selector = mouse, cfg or ActionCfg(), clock, selector
         self.active = True
+        self.signals = False   # run.py turns this on with hand signals (spread index+middle stops scrolling)
         self.state = "waiting for hand"
         self.button_down = False
         self.selecting = False
@@ -226,8 +236,8 @@ class HandsEngine:
         pending, self._pending = self._pending, None
         if pending is not None and frame.pinch_active and not self.button_down and not at_edge:
             px, py, finger = pending                  # act where the pinch began (pointer was frozen there)
-            if finger == "middle":
-                if self.selector is not None and now >= self._no_pinch_until:
+            if finger == "middle" and self.selector is not None:   # selection off: a middle pinch clicks too
+                if now >= self._no_pinch_until:
                     self.selecting, self._down_t = True, now
                     self.selector.begin(px, py)
                     self.state = "selecting"
@@ -250,6 +260,9 @@ class HandsEngine:
         if frame.pinch_active:   # a pinch that did not press (lockout, middle without selector): do nothing
             return self.state
 
+        if is_two_finger(frame) and self.signals and tip_spread(frame) > c.peace_spread:
+            self.state = "peace · hold for listen"   # spread apart: a hand signal, never a scroll
+            return self.state
         if is_two_finger(frame):
             vy = frame.scroll_velocity[1]
             settled = self._last_up is None or now - self._last_up[0] > 0.3   # fingers spring apart after a pinch

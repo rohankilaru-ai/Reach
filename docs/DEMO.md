@@ -120,7 +120,7 @@ step 9.
 - **Fallback (it failed):** say "It reports failed rather than pretending", then show `browser-run.json` as above.
   Reach's receipt says `failed` when the harness exits with an error (`docs/evidence/intent.md`, live run 4).
 - **Do not claim:** that Drex blocks risky browser actions. The README says we have not shown that.
-- **Evidence:** `docs/evidence/browser-run.json`; `docs/STATUS.md` (browser task as an Intern tool: real click run).
+- **Evidence:** `docs/evidence/browser-run.json` (browser task as an Intern tool: real click run).
 
 ### 7. Verified note (2:05)
 

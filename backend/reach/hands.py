@@ -77,6 +77,17 @@ def phase_of(state: str) -> str | None:
     return None
 
 
+GESTURES = ("thumbs_up", "peace")
+
+
+def parse_gesture_line(line: str) -> str | None:
+    """hands_mode prints `GESTURE <name>` when a hand signal fires; returns <name> (a known one), else None."""
+    parts = line.strip().split()
+    if len(parts) == 2 and parts[0] == "GESTURE" and parts[1] in GESTURES:
+        return parts[1]
+    return None
+
+
 MIN_PHASE_GAP = 0.1   # at most ~10 phase updates a second
 
 
@@ -92,7 +103,11 @@ def _watch(proc: subprocess.Popen, log=None) -> None:
                     log.flush()
                 except (OSError, ValueError):
                     pass
-            st = parse_state_line(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
+            text = raw.decode(errors="replace") if isinstance(raw, bytes) else raw
+            if (g := parse_gesture_line(text)) and proc.pid not in _stopping:
+                _announce({"gesture": g})   # ipc sends it as `hands_gesture`
+                continue
+            st = parse_state_line(text)
             new = phase_of(st) if st else None
             now = time.monotonic()
             if new and new != phase and proc.pid not in _stopping:
@@ -162,6 +177,8 @@ def start(preview: bool = False) -> dict:
     run_dir().mkdir(parents=True, exist_ok=True)
     log = open(run_dir() / "hands.log", "ab")
     cmd = command() + ([] if preview else ["--no-preview"])
+    if os.environ.get("REACH_HAND_SELECT") != "1":
+        cmd.append("--no-select")  # pinch-drag region selection fired when nobody meant it; opt in with REACH_HAND_SELECT=1
     # Only the server (which set an emitter) reads the child's state lines; the one-shot CLI must not pipe, or the
     # child would die on a closed pipe once `reach hands on` returns.
     piped = _emit is not None
@@ -260,10 +277,10 @@ def forget(name: str) -> dict:
 
 
 def gesture_event(d: dict) -> str | None:
-    """A clean `hands_gesture` message for overlays, or None if malformed (only command/ask reach the overlay)."""
+    """A clean `hands_custom` message for overlays, or None if malformed (only command/ask reach the overlay)."""
     action = d.get("action")
     if (check_gesture(d.get("name"), action) is None and action["kind"] in ("command", "ask")):
-        return json.dumps({"type": "hands_gesture", "name": d["name"].strip(),
+        return json.dumps({"type": "hands_custom", "name": d["name"].strip(),
                            "action": {"kind": action["kind"], "value": action["value"]}})
     return None
 

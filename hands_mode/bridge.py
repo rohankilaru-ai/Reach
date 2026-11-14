@@ -122,7 +122,7 @@ class BridgeClient:
 
     def gesture(self, name: str, action: dict) -> bool:
         """A custom gesture fired (EXPERIMENTAL): the server relays it to the overlay, which runs the command/ask."""
-        return self._send({"type": "hands_gesture", "name": name, "action": action})
+        return self._send({"type": "hands_custom", "name": name, "action": action})
 
     def close(self) -> None:
         ws, self.ws = self.ws, None

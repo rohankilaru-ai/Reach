@@ -36,10 +36,12 @@ from pathlib import Path
 from finger_processing import FingerProcessor, load_config
 from finger_processing.processing import resolve_path
 
-from hands_mode.actions import ActionCfg, HandsEngine
 from hands_mode.bridge import BridgeClient
 from hands_mode.drex import DrexClient
 from hands_mode.gestures import GestureLayer
+from hands_mode.actions import ActionCfg, HandsEngine, is_pointing
+from hands_mode.signals import SignalWatcher
+from hands_mode.signals import enabled as signals_enabled
 from hands_mode.mouse import MacActionMouse, PrintMouse
 
 STALL_S, MAX_REOPENS = 1.0, 3   # no new camera frame for STALL_S: release, reopen the camera (at most 3 times)
@@ -115,6 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     engine = HandsEngine(mouse, ActionCfg(scroll_invert=args.scroll_invert), selector=selector)
     bridge = BridgeClient()
     gestures = GestureLayer(engine, mouse, bridge, drex=DrexClient())
+    watcher = SignalWatcher() if signals_enabled() else None   # REACH_HAND_SIGNALS=0 turns hand signals off
+    engine.signals = watcher is not None
 
     def on_signal(signum, _frame):
         engine.stop("stopped")
@@ -175,6 +179,14 @@ def main(argv: list[str] | None = None) -> int:
             status, paused = gestures.update(frame, time.monotonic())
             if frame is not None and not paused:
                 engine.update(frame)
+                try:   # a signal check must never take hands mode down: a bad frame just means no signal
+                    sig = watcher.update(frame, time.monotonic(),
+                                         busy=engine.button_down or engine.selecting or is_pointing(frame)
+                                         or engine.state.startswith("paused")) if watcher is not None and engine.active else None
+                except (KeyError, AttributeError, TypeError):
+                    sig = None
+                if sig:
+                    print(f"GESTURE {sig}", flush=True)   # the overlay acts on it; the engine never clicks
             if selector is not None and (status := selector.poll()):
                 print(f"[select] {status}", flush=True)
             state = status or engine.state

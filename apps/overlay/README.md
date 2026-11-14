@@ -182,7 +182,7 @@ bottom, Press keys… e.g. `cmd+shift+t`, Voice command = one of the router comm
 **Record**, which sends `hands_record {name, action {kind, value}}`. Perform the gesture twice when asked (about 10
 frames each); for two-hand gestures keep both hands in view. The status line shows the latest Hands mode status
 ("recording 'top' · example 1/2 · get ready 3", "saved gesture 'top'"). Top, bottom and keys are done by Hands mode
-itself; for `command` and `ask` gestures the server relays `hands_gesture` to the overlay: a command runs exactly
+itself; for `command` and `ask` gestures the server relays `hands_custom` to the overlay: a command runs exactly
 like the same router command heard by hands-free (stop/cancel/pause stop locally, others ask with a chip), an ask is
 sent as a typed ask with the current selection. The ✋ line shows "gesture: NAME" for about 2.5 s.
 

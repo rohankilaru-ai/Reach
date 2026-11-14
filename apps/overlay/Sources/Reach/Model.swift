@@ -29,6 +29,8 @@ final class OverlayModel: ObservableObject {
     var hands = HandsModeState()
     private var handsLineID = 0
     var onHandsChange: ((Bool) -> Void)?
+    /// A hand signal from hands mode ("thumbs_up" / "peace"); AppController maps it with `HandsMode.signal`.
+    var onHandsGesture: ((String) -> Void)?
     /// Developer toggle (menu bar): raw receipt lines, Drex decisions and cost in Details. Off by default.
     @Published var technicalDetails: Bool = UserDefaults.standard.bool(forKey: "technicalDetails") {
         didSet { UserDefaults.standard.set(technicalDetails, forKey: "technicalDetails") }
@@ -334,7 +336,7 @@ final class OverlayModel: ObservableObject {
             log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
             onAddressed?(r)
             return
-        case .handsGesture(let name, let action):
+        case .handsCustom(let name, let action):
             log("hand gesture \(name): \(action.summary)")
             gestureFlash = "gesture: \(name)"
             DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { [weak self] in
@@ -357,6 +359,10 @@ final class OverlayModel: ObservableObject {
             case .none: break
             }
             if handsOn != on { handsOn = on; onHandsChange?(on) }
+            return
+        case .handsGesture(let g):
+            log("hand signal \(g)")
+            onHandsGesture?(g)
             return
         case .unknown(let t): log("ignored message type \(t)")
         }

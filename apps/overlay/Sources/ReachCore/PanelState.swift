@@ -134,7 +134,7 @@ public struct PanelState: Equatable, Sendable {
             handSelection = sel.isEmpty ? nil : sel
         case .added(let name, let passages):
             note = "added \(name) (\(passages) passages)"
-        case .unknown, .sttResult, .ttsAudio, .addressed, .handsState, .handsGesture:
+        case .unknown, .sttResult, .ttsAudio, .addressed, .handsState, .handsGesture, .handsCustom:
             break
         }
     }

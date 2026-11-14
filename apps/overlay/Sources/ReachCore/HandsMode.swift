@@ -26,6 +26,32 @@ public enum HandsMode {
         }
     }
 
+    /// A hand signal (`hands_gesture`) -> what the overlay does, given whether dictation / a voice ask is on now.
+    public enum Signal: Equatable, Sendable {
+        case toggleDictation
+        case startListening
+        case stopListening
+    }
+
+    public static func signal(_ gesture: String, dictationOn: Bool, listening: Bool) -> Signal? {
+        switch gesture {
+        case "thumbs_up": return .toggleDictation
+        case "peace": return listening ? .stopListening : .startListening
+        default: return nil
+        }
+    }
+
+    /// The 1 s pill hint for a signal: glyph + words.
+    public static let signalHintSeconds: Double = 1
+
+    public static func signalHint(_ s: Signal, dictationOn: Bool) -> String {
+        switch s {
+        case .toggleDictation: return dictationOn ? "👍 Dictation off" : "👍 Dictation on"
+        case .startListening: return "✌️ Listening"
+        case .stopListening: return "✌️ Sent"
+        }
+    }
+
     /// What a toggle press (hotkey, menu item or spoken phrase) does.
     public enum Request: Equatable, Sendable {
         case send(on: Bool)

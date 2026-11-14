@@ -279,6 +279,13 @@ class TtsAudio(BaseModel):
     id: str | None = None
 
 
+class HandsGesture(BaseModel):
+    """A hand signal held in hands mode (`thumbs_up` toggles dictation, `peace` toggles listen-to-me)."""
+
+    type: Literal["hands_gesture"] = "hands_gesture"
+    gesture: Literal["thumbs_up", "peace"]
+
+
 Outbound = Annotated[
     Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg
     | Addressed | SttResult | TtsAudio,

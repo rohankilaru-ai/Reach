@@ -149,6 +149,60 @@ def test_watcher_broadcasts_phases_from_child_stdout(fake_child, monkeypatch):
     assert seen[-1]["reason"] == "open palm"
 
 
+def test_gesture_line_parsing():
+    assert hands.parse_gesture_line("GESTURE thumbs_up\n") == "thumbs_up"
+    assert hands.parse_gesture_line("GESTURE peace") == "peace"
+    assert hands.parse_gesture_line("GESTURE fist") is None
+    assert hands.parse_gesture_line("[hands] point to move") is None
+    assert hands.parse_gesture_line("GESTURE") is None
+    assert hands.parse_state_line("GESTURE peace") is None
+
+
+def test_watcher_broadcasts_gestures_from_child_stdout(fake_child, monkeypatch):
+    import threading
+
+    script = "print('[hands] point to move', flush=True)\nprint('GESTURE thumbs_up', flush=True)\n" \
+             "print('GESTURE peace', flush=True)\n"
+    monkeypatch.setattr(hands, "command", lambda: [__import__("sys").executable, "-c", script])
+    seen: list[dict] = []
+    done = threading.Event()
+
+    def emit(st):
+        seen.append(st)
+        if st.get("on") is False:
+            done.set()
+
+    hands.set_emitter(emit)
+    hands.start()
+    assert done.wait(10)
+    assert [s["gesture"] for s in seen if "gesture" in s] == ["thumbs_up", "peace"]
+
+
+def test_hands_gesture_contract():
+    from reach.contracts import HandsGesture
+
+    assert HandsGesture(gesture="peace").model_dump() == {"type": "hands_gesture", "gesture": "peace"}
+
+
+def test_ipc_emitter_sends_gestures_as_hands_gesture():
+    import json
+
+    srv = ipc.Server.__new__(ipc.Server)
+    sent: list[str] = []
+    srv.relay = type("R", (), {"broadcast": lambda self, m: sent.append(m)})()
+
+    import asyncio
+
+    async def go():
+        srv.loop = asyncio.get_running_loop()
+        srv._hands_emit({"gesture": "peace"})
+        srv._hands_emit({"on": True, "pid": 1})
+
+    asyncio.run(go())
+    assert [json.loads(m)["type"] for m in sent] == ["hands_gesture", "hands_state"]
+    assert json.loads(sent[0])["gesture"] == "peace"
+
+
 # ---------------------------------------------------------------- custom gestures (EXPERIMENTAL)
 
 import asyncio  # noqa: E402
@@ -179,7 +233,7 @@ def test_forget_removes_only_that_gesture(fake_child, tmp_path):
 
 def test_gesture_event_only_command_and_ask():
     assert json.loads(hands.gesture_event({"name": "g", "action": {"kind": "ask", "value": "summarise"}})) == {
-        "type": "hands_gesture", "name": "g", "action": {"kind": "ask", "value": "summarise"}}
+        "type": "hands_custom", "name": "g", "action": {"kind": "ask", "value": "summarise"}}
     assert hands.gesture_event({"name": "g", "action": {"kind": "top", "value": ""}}) is None
     assert hands.gesture_event({"name": "", "action": {"kind": "command", "value": "next"}}) is None
 
@@ -207,12 +261,12 @@ def test_ipc_record_forget_and_gesture_relay(monkeypatch, tmp_path):
                 break
             await asyncio.sleep(0.02)
         assert json.loads((rd / "gestures.json").read_text()) == {"gestures": []}
-        await cam.send(json.dumps({"type": "hands_gesture", "name": "wave",
+        await cam.send(json.dumps({"type": "hands_custom", "name": "wave",
                                    "action": {"kind": "command", "value": "next"}}))
-        m = await _next(ov, "hands_gesture")
-        assert m == {"type": "hands_gesture", "name": "wave", "action": {"kind": "command", "value": "next"}}
+        m = await _next(ov, "hands_custom")
+        assert m == {"type": "hands_custom", "name": "wave", "action": {"kind": "command", "value": "next"}}
         assert await _nothing(cam)                       # never echoed to the sender
-        await ov.send(json.dumps({"type": "hands_gesture", "name": "x", "action": {"kind": "ask", "value": "y"}}))
+        await ov.send(json.dumps({"type": "hands_custom", "name": "x", "action": {"kind": "ask", "value": "y"}}))
         await _next(ov, "error")                        # overlays cannot inject gestures
         for ws in (ov, cam):
             await ws.close()

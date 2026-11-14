@@ -85,6 +85,32 @@ class BrowserTask(Tool):
         return ToolOutput(status="ok" if s["done"] else "error", content=content)
 
 
+class BrowserInChromeArgs(BaseModel):
+    task: str = Field(description="What to do in the user's own Chrome, in plain words, as the outcome to reach")
+    start_url: str | None = Field(default=None, description="Optional page to start on (https://...)")
+
+
+class BrowserInChrome(Tool):
+    """Runs one task in the owner's own signed-in Chrome via the paired Drex extension. Judged by the guard."""
+
+    name: ClassVar[str] = "browser_in_chrome"
+    description: ClassVar[str] = (
+        "Carry out one task in the user's OWN Chrome, where they are signed in (YouTube, Gmail, any site they use), "
+        "through the paired Drex extension, then return what it found. Prefer it for signed-in sites and web searches. "
+        "It reports DONE only when the run finished; otherwise tell the user it was NOT done and why. A risky step "
+        "(pay, send, delete) always ends the run and hands control back."
+    )
+    Args: ClassVar[type[BaseModel]] = BrowserInChromeArgs
+    effects: ClassVar[frozenset[str]] = frozenset({"read", "write", "network"})
+
+    async def run(self, args: Any, ctx: ToolContext) -> ToolOutput:
+        from .tools import chrome_agent
+
+        s = await chrome_agent.run_task(args.task, args.start_url, abort=ctx.abort)
+        return ToolOutput(status="ok" if s["done"] else "error",
+                          content=chrome_agent.render(s, chrome_agent.pairing_code()))
+
+
 class ReachTools(Extension):
     name: ClassVar[str] = "reach"
 
@@ -98,15 +124,22 @@ class ReachTools(Extension):
         from .tools.guide import PointAt
         from .tools.vision import SeeRegion
 
+        from .tools.cloud_browser import CloudBrowser
         from .tools.clipboard import ClipboardCopy
         from .tools.email import EmailDraft
 
-        mac_tools: list[Tool] = [*chrome.tools(), TableToNote(), ClipboardCopy()]
+        mac_tools: list[Tool] = [*chrome.tools(), TableToNote(), ClipboardCopy(), CloudBrowser()]
         if os.environ.get("REACH_CHROME_ACTIONS") == "1":
             mac_tools.append(EmailDraft())  # opens a Gmail draft in Chrome; never sends
         from .tools import ax, finder
 
-        mac_tools += ax.tools() + finder.tools()  # finder_list always; Do mode tools only with REACH_DO_MODE=1
+        mac_tools += ax.tools() + finder.tools()
+        if os.environ.get("REACH_DO_MODE") == "1":
+            from .tools.click import ClickOnScreen
+
+            mac_tools.append(ClickOnScreen())  # finder_list always; Do mode tools only with REACH_DO_MODE=1
+        if os.environ.get("REACH_PAIRING_CODE", "").strip():
+            mac_tools.append(BrowserInChrome())  # the owner's own Chrome, only once paired with the extension
         # The bridge drops Intern's base pack (shell, write, edit); read comes back here, fenced by guard_policy.
         return mac_tools + [
             ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(), SeeScreen(),

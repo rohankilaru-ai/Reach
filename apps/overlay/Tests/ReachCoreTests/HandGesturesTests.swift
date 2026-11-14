@@ -30,12 +30,12 @@ import Testing
     @Test func decodesHandsStateAndGesture() throws {
         #expect(try ServerMessage.decode(#"{"type":"hands_state","on":true,"pid":12}"#) == .handsState(on: true, pid: 12, reason: nil))
         #expect(try ServerMessage.decode(#"{"type":"hands_state","on":false,"pid":null}"#) == .handsState(on: false, pid: nil, reason: nil))
-        let g = try ServerMessage.decode(#"{"type":"hands_gesture","name":"wave","action":{"kind":"command","value":"scroll_down"}}"#)
-        #expect(g == .handsGesture(name: "wave", action: GestureAction(kind: .command, value: "scroll_down")))
-        let a = try ServerMessage.decode(#"{"type":"hands_gesture","name":"q","action":{"kind":"ask","value":"summarise this"}}"#)
-        #expect(a == .handsGesture(name: "q", action: GestureAction(kind: .ask, value: "summarise this")))
-        #expect(try ServerMessage.decode(#"{"type":"hands_gesture","name":"x","action":{"kind":"bogus"}}"#)
-                == .unknown(type: "hands_gesture"))
+        let g = try ServerMessage.decode(#"{"type":"hands_custom","name":"wave","action":{"kind":"command","value":"scroll_down"}}"#)
+        #expect(g == .handsCustom(name: "wave", action: GestureAction(kind: .command, value: "scroll_down")))
+        let a = try ServerMessage.decode(#"{"type":"hands_custom","name":"q","action":{"kind":"ask","value":"summarise this"}}"#)
+        #expect(a == .handsCustom(name: "q", action: GestureAction(kind: .ask, value: "summarise this")))
+        #expect(try ServerMessage.decode(#"{"type":"hands_custom","name":"x","action":{"kind":"bogus"}}"#)
+                == .unknown(type: "hands_custom"))
     }
 
     @Test func loadsGesturesFile() {

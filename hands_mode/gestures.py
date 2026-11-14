@@ -14,7 +14,7 @@ error/timeout, the local distance decides alone with the tighter LOCAL_ACCEPT (s
 COOLDOWN_S, and the hand must leave the gate before the same pose fires again.
 
 Acting: top -> Cmd+Up, bottom -> Cmd+Down, keys -> a "cmd+shift+t" combo (Accessibility needed, like clicks);
-command / ask -> `hands_gesture` to the overlay through the Reach server.
+command / ask -> `hands_custom` to the overlay through the Reach server.
 """
 
 from __future__ import annotations

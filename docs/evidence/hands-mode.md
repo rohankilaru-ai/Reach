@@ -1,6 +1,6 @@
 # Hands mode: evidence
 
-Hands mode makes your hand the mouse. It builds on Kevin's `finger_processing` (MediaPipe, per-finger state,
+Hands mode makes your hand the mouse. It builds on the teammate's `finger_processing` (MediaPipe, per-finger state,
 One Euro smoothing, hand lock, pinch hysteresis, pinch freeze, calibration) and reuses `MacMouse` from
 `cursor_demo/run.py`. Start it with:
 
@@ -15,17 +15,17 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
 
 ## What was tested for real (no camera, no real mouse events)
 
-`uv run pytest -q` at the repo root: 74 passed (Kevin's 42 unchanged + 32 hands mode).
+`uv run pytest -q` at the repo root: 74 passed (the teammate's 42 unchanged + 32 hands mode).
 `cd backend && uv run pytest -q`: 332 passed (includes 4 new for `reach hands` / the `hands` message, using
 `sleep 30` as a harmless stand-in child). `cd apps/overlay && swift test`: 83 passed (includes `handsModeWire`).
 
 - **Direction.** `test_direction_hand_right_moves_cursor_right_and_up_is_up` feeds RAW (unmirrored) camera
-  landmarks through Kevin's real `MediaPipeTracker.detect` / `detect_all` (only the model is faked): the hand moving
+  landmarks through the teammate's real `MediaPipeTracker.detect` / `detect_all` (only the model is faked): the hand moving
   to the user's right (raw x falling) moves the cursor right on every step; raising it moves the cursor up.
-  Removing Kevin's `1 - x` flip makes both cases fail (mutation checked). Mirroring: Kevin's design flips the
+  Removing the teammate's `1 - x` flip makes both cases fail (mutation checked). Mirroring: the teammate's design flips the
   landmark x once in the tracker (MediaPipe sees the unmirrored image, no pixel copy); mapping and calibration use
   those mirrored landmarks and the preview flips its pixels once for display. This deliberately does NOT mirror the
-  image once at capture as was asked: that would restructure Kevin's tracker (and his handedness swap). The two
+  image once at capture as was asked: that would restructure the teammate's tracker (and his handedness swap). The two
   flips describe the same view and the tests above check that they agree.
   `test_hud_preview_is_mirrored_and_dot_matches` checks the preview is mirrored and the dot sits on the fingertip.
 - **Closest hand, locked.** `control_hand: closest` (additive; default stays `right`) with `tracker.num_hands: 2`:
@@ -36,7 +36,7 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
   middle. A point pose with the thumb resting on the curled middle finger is not a pinch (tested). Hands mode
   widens the exit threshold from 0.35 to 0.40 to keep drags from dropping. Only the wider hysteresis was carried over
   from the old worker: its ratio divides by a larger hand size (wrist to knuckle plus knuckle span, about 1.8x
-  Kevin's scale), so its 0.25 / 0.40 numbers are not directly comparable.
+  the teammate's scale), so its 0.25 / 0.40 numbers are not directly comparable.
 - **Actions** (pure engine, fake clock, recording mouse): a pinch presses where the cursor is (where you aimed),
   not where the curling index has dragged the pointer, and a drag follows the hand's motion since the press
   (synthetic test; real index-curl landing still needs the live check); index drift below 12 px stays a click; pinch-hold-move = down, dragged events, up; double click; a pinch must
@@ -91,7 +91,7 @@ capture -> cursor target  p50 11.2 ms  p95 18.1 ms
 ```
 
 Capture to computed cursor target p50 11 ms, p95 18 ms at 30 fps, well under the 50 ms target. The landmarker is
-almost all of it; Kevin's pipeline already has the easy wins (newest-frame-only capture thread, buffer 1, MJPG,
+almost all of it; the teammate's pipeline already has the easy wins (newest-frame-only capture thread, buffer 1, MJPG,
 idle gating of the landmarker, no pixel copy for mirroring). Camera exposure/transport time before `t_capture` is
 not included. The run may have had no hand in view, so `num_hands: 2` cost with two hands is not measured.
 
@@ -109,3 +109,22 @@ not included. The run may have had no hand in view, so `num_hands: 2` cost with 
   `perception/models/hand_landmarker.task` (already downloaded in the main checkout).
 - Scroll speed (gain lowered tenfold, untuned; up to 15 lines per event) and the HUD label width at 240 px are unverified.
 - `perception/` (the old pinch worker) is untouched for comparison.
+
+## Hand signals (thumbs-up, peace)
+
+- What: in hands mode, a thumbs-up (thumb out, four fingers curled) held 0.6 s toggles dictation; a peace sign
+  (index and middle up, tips more than 1.8 knuckle gaps apart (about 0.5 hand scale), ring and pinky curled) held 0.6 s starts a voice ask like
+  holding Option-Space, and a second peace sign ends it and sends. 1.5 s cooldown after either; never while pinching,
+  pointing, dragging or selecting; one signal per hold. A closed fist does nothing. Index and middle together stay the
+  scroll pose; spread apart they no longer scroll while signals are on.
+- How: `hands_mode/signals.py` (pure) -> `run.py` prints `GESTURE thumbs_up|peace` -> `backend/reach/hands.py`
+  parses it -> `hands_gesture` {gesture} to overlays -> `AppController.handSignal` (dictation controller / the
+  Option-Space hold path) with a 1 s pill hint. The engine itself never clicks on a signal.
+- Off: `REACH_HAND_SIGNALS=0` in `.reach/server.env` (the child inherits the server's environment).
+- Tested: synthetic finger-state sequences (`hands_mode/tests/test_signals.py`), GESTURE line parsing and the
+  watcher broadcast (`backend/tests/test_hands.py`), decode and mapping (`HandsModeTests.swift`).
+- Known: going straight from pointing into a thumbs-up within 0.5 s is also a curl click (the index curls sharply);
+  pass through the relaxed clutch pose, or wait 0.5 s, before a thumbs-up. Held (stale) frames and the takeover pause
+  never fire a signal.
+- Not tested live: real landmarks for thumbs-up (MediaPipe's thumb-extended ratio on a sideways thumb) and the 1.8
+  knuckle-gap spread threshold on real hands (unit tests use synthetic landmarks, not the real pipeline).

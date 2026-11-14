@@ -527,13 +527,12 @@ def test_middle_pinch_selects_and_never_presses():
     assert e.state == "selected" and kinds(m) == [] and m.log[-1] == ("move", 260, 180)
 
 
-def test_middle_pinch_without_selector_does_nothing():
+def test_middle_pinch_without_selector_clicks():
+    """Selection off (the default from `reach serve`): thumb to middle is just another click."""
     e, m, c = engine()
     pinch_down(e, c, finger="middle")
-    c.t += 0.1
-    e.update(F(pinch=True, finger="middle", at=(700, 700)))
     e.update(F(edge="up"))
-    assert kinds(m) == [] and not e.selecting
+    assert kinds(m) == ["down", "up"] and not e.selecting
 
 
 @pytest.mark.parametrize("loss", ["no_hand", "no_frames", "edge", "stop"])
