@@ -1,4 +1,4 @@
-# Status (updated 2026-11-14 11:40 PT)
+# Status (updated 2026-11-14 11:50 PT)
 
 | Slice | State | Evidence |
 | --- | --- | --- |
@@ -13,3 +13,13 @@ Facts found in S0
 - Drex Max id on the hosted API is `drex-max-v1.1` (`drex-max` resolves to it). It also reads images.
 - `INTERN_HOME` is `.intern-home/` (gitignored), with `.env` linked to the repo `.env` so only Intern reads it.
 - System 2 is `deepinfra/Qwen/Qwen3.8-27B` (DeepInfra is a partner tool).
+
+## Slice board (11:50 PT)
+| Slice | State |
+| --- | --- |
+| S1 Intern bridge, receipts, Drex log | merged (PR #1, #3) |
+| S3 NDI evidence tool, ground, shelf | merged (PR #2); real two-PDF gate passed |
+| B DeepInfra browser helper | merged; direct browser run passed (19 s, $0.0012) |
+| S2 overlay | building |
+| S4 browser task as Intern tool | building |
+| S5 verified completion, S6 pinch, S8a silent speech, router bench | not started |
