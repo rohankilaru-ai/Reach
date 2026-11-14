@@ -98,7 +98,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func startListening(_ id: Int) {
         // The key may have come up while macOS was asking for permission; then there is nothing to hear.
         guard ptt.accepts(partialFrom: id) else {
-            _ = ptt.cancel()
+            if ptt.session == id { _ = ptt.cancel() }
             model.voiceLine = "hold Control-Option-Space while you speak"
             return
         }
@@ -141,8 +141,16 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard ptt.finished(session: id) else { return }
         endListening()
         let heard = lastHeard ?? Heard(text: "", confidences: [], final: false)
-        let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "unreported"
-        log("voice heard \"\(heard.text)\" (final \(heard.final), confidence \(avg))")
+        guard heard.final else {
+            // Only a final transcript carries confidences; never send a partial.
+            speech.cancel()
+            log("voice: no final transcript within 2 s (last partial \"\(heard.text)\"); not sent")
+            model.draft = ""
+            model.voiceLine = "didn't catch that"
+            return
+        }
+        let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "none"
+        log("voice heard \"\(heard.text)\" (confidence \(avg))")
         switch VoiceGate.judge(text: heard.text, confidences: heard.confidences) {
         case .send(let text):
             model.voiceLine = "heard: \(text)"

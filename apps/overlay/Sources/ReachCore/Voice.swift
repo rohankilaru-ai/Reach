@@ -9,20 +9,17 @@ public enum VoiceGate {
         case reject(String)   // why, shown in the panel
     }
 
-    /// `confidences` are the per-segment values of the final transcription. An empty list or one where every
-    /// value is exactly 0 means the recognizer did not report confidence; that is treated as "unreported" and
-    /// non-empty text passes (logged by the caller), rather than rejecting every utterance.
+    /// `confidences` are the per-segment values of the FINAL transcription (partials report 0). Empty text,
+    /// no segments, or a mean below 0.4 is rejected.
     public static func judge(text: String, confidences: [Float]) -> Verdict {
         let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !t.isEmpty else { return .reject("didn't catch that") }
-        guard let avg = average(confidences) else { return .send(t) }
-        return avg >= minConfidence ? .send(t) : .reject("didn't catch that")
+        guard !t.isEmpty, let avg = average(confidences), avg >= minConfidence else { return .reject("didn't catch that") }
+        return .send(t)
     }
 
-    /// Mean confidence, or nil when unreported (no segments, or all exactly 0).
+    /// Mean segment confidence, nil when there are no segments.
     public static func average(_ c: [Float]) -> Float? {
-        guard !c.isEmpty, c.contains(where: { $0 != 0 }) else { return nil }
-        return c.reduce(0, +) / Float(c.count)
+        c.isEmpty ? nil : c.reduce(0, +) / Float(c.count)
     }
 }
 

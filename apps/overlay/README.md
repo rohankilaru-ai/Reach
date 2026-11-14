@@ -9,8 +9,8 @@ Native macOS panel for Reach (SwiftPM, AppKit + SwiftUI, macOS 14+). It speaks o
 - **Control-Option-Space (hold)** talks: key down starts listening, the live partial transcript fills the text
   field, key up stops and sends the final transcript as an ordinary `ask` (the same path as typing). A
   `heard: …` line stays under the field so mistakes are obvious. An empty transcript, or one whose average segment
-  confidence is below 0.4, is not sent and the panel says `didn't catch that`. If the recognizer reports no
-  confidence at all (every segment 0), non-empty text is sent and the log says `confidence unreported`.
+  confidence is below 0.4, is not sent and the panel says `didn't catch that`; so is a partial when no final
+  transcript arrives within 2 s of key up (the log says so).
   Recognition runs on this Mac (`requiresOnDeviceRecognition`); only if on-device speech is unavailable does it
   fall back to Apple's server, and the panel says so while listening. Audio is held in memory, never saved.
 - **Esc** cancels listening, aborts a running ask, and hides the panel when idle.
@@ -37,10 +37,10 @@ apps/overlay/.build/release/Reach --replay --reach-dir .reach --selftest "what i
 Voice, without a microphone (run through the bundle so macOS reads its usage strings):
 
 ```sh
-say -o .reach/voice-test.aiff "what is twelve times thirty four"
-open -n -W --stdout /dev/stdout apps/overlay/build/Reach.app --args --replay --reach-dir $PWD/.reach \
+mkdir -p .reach && say -o .reach/voice-test.aiff "what is twelve times thirty four"
+open -n -W --stdout /tmp/reach-voice.log apps/overlay/build/Reach.app --args --replay --reach-dir $PWD/.reach \
   --voice-selftest $PWD/.reach/voice-test.aiff --selftest-submit
-rm .reach/voice-test.aiff
+cat /tmp/reach-voice.log; rm .reach/voice-test.aiff
 ```
 
 `--voice-selftest <audio-file>` transcribes the file on device with `SFSpeechURLRecognitionRequest`, prints the

@@ -16,10 +16,10 @@ import Testing
         #expect(VoiceGate.judge(text: "yes", confidences: [0.39]) == .reject("didn't catch that"))
     }
 
-    @Test func unreportedConfidencePassesNonEmptyText() {
+    @Test func zeroOrMissingConfidenceIsRejected() {
         #expect(VoiceGate.average([]) == nil)
-        #expect(VoiceGate.average([0, 0, 0]) == nil)
-        #expect(VoiceGate.judge(text: "hello", confidences: [0, 0]) == .send("hello"))
+        #expect(VoiceGate.judge(text: "hello", confidences: []) == .reject("didn't catch that"))
+        #expect(VoiceGate.judge(text: "hello", confidences: [0, 0]) == .reject("didn't catch that"))
         #expect(VoiceGate.judge(text: "", confidences: [0, 0]) == .reject("didn't catch that"))
     }
 }

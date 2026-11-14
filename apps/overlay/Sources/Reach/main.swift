@@ -80,7 +80,7 @@ if args.contains("--replay") {
                 exit(1)
             case .success(let heard):
                 log("transcript: \(heard.text)")
-                let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "unreported"
+                let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "none"
                 log("confidences: \(heard.confidences.map { String(format: "%.2f", $0) }.joined(separator: " ")) (avg \(avg))")
                 switch VoiceGate.judge(text: heard.text, confidences: heard.confidences) {
                 case .reject(let why):
