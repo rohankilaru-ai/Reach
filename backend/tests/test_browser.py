@@ -155,11 +155,12 @@ def test_browser_outcome_and_write_outcome_coexist():
     assert r.tools == ["browser_task", "note_append"]
 
 
-def test_browser_window_is_visible_by_default(monkeypatch, tmp_path):
+def test_browser_window_is_hidden_by_default(monkeypatch, tmp_path):
     from reach.tools import browser
 
+    # The visible window lost runs in a live test ('page.evaluate ... state'), so it is opt-in: REACH_BROWSER_HEADED=1.
     monkeypatch.delenv("REACH_BROWSER_HEADED", raising=False)
-    assert "--headed" in browser.command("t", "https://example.com", tmp_path)
-    monkeypatch.setenv("REACH_BROWSER_HEADED", "0")
     assert "--headed" not in browser.command("t", "https://example.com", tmp_path)
+    monkeypatch.setenv("REACH_BROWSER_HEADED", "1")
+    assert "--headed" in browser.command("t", "https://example.com", tmp_path)
     assert "--allow-risky" not in browser.command("t", "https://example.com", tmp_path)
