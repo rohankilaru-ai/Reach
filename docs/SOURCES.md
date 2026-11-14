@@ -1,6 +1,6 @@
 # Verified upstream facts (2026-11-14)
 
-Checked against the real repos and public docs, not the AI-written spec. If the spec disagrees, this file wins.
+Checked against the real repos and public docs on 2026-11-14.
 
 ## nace-ai/intern (Apache-2.0, v0.30.1, commit 819c8de)
 - Python >=3.12. Install: `uv tool install "intern-agent[acp] @ git+https://github.com/nace-ai/intern@v0.30.1"`.
