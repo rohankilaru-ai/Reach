@@ -96,8 +96,9 @@ class Server:
                 elif isinstance(msg, Select):
                     pass  # S2 consumes this; accepted and ignored for now
         finally:
-            for task in mine:  # a client that goes away takes its tasks with it
-                task.abort()
+            for task in mine:  # a client that goes away takes its running tasks with it
+                if task.id in self.tasks:
+                    task.abort()
             if running:
                 await asyncio.wait(running, timeout=15)
             out.put_nowait(None)

@@ -39,7 +39,10 @@ class Task:
     def abort(self) -> None:
         self.aborted = True
         if self.session is not None:
-            self.session.abort()
+            try:
+                self.session.abort()
+            except Exception:  # SessionIdle: the run already ended
+                pass
 
 
 class InternBridge:
