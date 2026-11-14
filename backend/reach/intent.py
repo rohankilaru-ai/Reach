@@ -67,10 +67,11 @@ THRESHOLDS: dict[str, float] = {
 TOOL_FAMILY: dict[str, str] = {
     "document_question": "use evidence_search on the user's documents and cite passage ids",
     "browser_task": (
-        "for a web SEARCH use chrome_open_url with https://www.google.com/search?q=<url-encoded query> in the user's "
-        "own Chrome (their signed-in browser is not bot-checked), then see_screen to read the results; use "
-        "browser_task for navigating or filling forms on ordinary sites (search engines show it a CAPTCHA); for email "
-        "use email_draft, which opens a Gmail draft and never sends"
+        "for web research or an action on PUBLIC pages use browser_cloud (Nace's hosted browser with Drex Max: fast, "
+        "sandboxed; give a start_url; it cannot use the user's logins and Nace refuses banking, payment, identity, "
+        "large social and government sites); for the user's own signed-in pages use chrome_open_url then see_screen "
+        "and click_on_screen; browser_task is the slower local fallback; for email use email_draft, which opens a "
+        "Gmail draft and never sends"
     ),
     "write_to_notes": (
         "use note_append (or shelf_to_note for evidence ids); to copy text so the user can paste it use "
