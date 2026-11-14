@@ -29,15 +29,20 @@ def tip_spread(frame) -> float:
     return math.hypot(lm[8][0] - lm[12][0], lm[8][1] - lm[12][1]) / knuckles
 
 
+def _all(frame, names):
+    f = getattr(frame, "fingers", None) or {}
+    return f if all(n in f for n in names) else None
+
+
 def is_thumbs_up(frame) -> bool:
-    f = frame.fingers
-    return f["thumb"].extended and not any(f[n].extended for n in ("index", "middle", "ring", "pinky"))
+    f = _all(frame, ("thumb", "index", "middle", "ring", "pinky"))
+    return bool(f) and f["thumb"].extended and not any(f[n].extended for n in ("index", "middle", "ring", "pinky"))
 
 
 def is_peace(frame, spread: float = 1.8) -> bool:
     """Index and middle up and apart, ring and pinky curled. Together (the scroll pose) is not a peace sign."""
-    f = frame.fingers
-    return (f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
+    f = _all(frame, ("index", "middle", "ring", "pinky"))
+    return (bool(f) and f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
             and tip_spread(frame) > spread)
 
 

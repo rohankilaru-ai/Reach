@@ -16,20 +16,26 @@ from dataclasses import dataclass
 from hands_mode.signals import tip_spread
 
 
+def _fingers(frame):
+    """The four finger states, or None when this frame has no usable hand (no hand, or a partial read)."""
+    f = getattr(frame, "fingers", None) or {}
+    return f if all(k in f for k in ("index", "middle", "ring", "pinky")) else None
+
+
 def is_pointing(frame) -> bool:
-    f = frame.fingers
-    return f["index"].extended and not (f["middle"].extended or f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and f["index"].extended and not (f["middle"].extended or f["ring"].extended or f["pinky"].extended)
 
 
 def is_index_curl(frame) -> bool:
     """Index bent, the other three curled: the pose a tap from pointing passes through."""
-    f = frame.fingers
-    return not (f["index"].extended or f["middle"].extended or f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and not (f["index"].extended or f["middle"].extended or f["ring"].extended or f["pinky"].extended)
 
 
 def is_two_finger(frame) -> bool:
-    f = frame.fingers
-    return f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
+    f = _fingers(frame)
+    return bool(f) and f["index"].extended and f["middle"].extended and not (f["ring"].extended or f["pinky"].extended)
 
 
 def is_open_palm(frame) -> bool:
