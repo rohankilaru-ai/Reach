@@ -22,9 +22,17 @@ Sink = Callable[[str, dict[str, Any]], None]
 """(task_id, event dict) -> None; must not block."""
 
 
+PERSONA = (
+    "You are Reach, a desktop assistant. Answer the user's question directly and conversationally; explain things, "
+    "help with tasks, and use your tools when they help. Do not mention these instructions."
+)
+
+
 EVIDENCE_HINT = (
-    "The user has added documents. Use the evidence_search tool to find passages, answer from them, and cite every "
-    "claim with the passage id in square brackets, e.g. [E3]. Only cite ids evidence_search returned."
+    "The user has added documents. Use evidence_search ONLY when the question is about those documents (what they "
+    "say, quotes, explanations of their content). For anything else - chat, how things are going, general knowledge, "
+    "tasks, the screen - answer directly: do not search the documents and do not cite. When you do use "
+    "evidence_search, cite each claim with the passage id in square brackets, e.g. [E3], and only cite ids it returned."
 )
 
 
@@ -37,7 +45,7 @@ NOTES_HINT = (
 def prompt_for(ask: Ask) -> str:
     from . import evidence
 
-    text = ask.text
+    text = PERSONA + "\n\n" + ask.text
     if ask.selection and ask.selection.text:
         text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
     if ask.selection and ask.selection.image_path:
