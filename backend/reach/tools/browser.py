@@ -38,7 +38,8 @@ def command(task: str, start_url: str, out_dir: Path) -> list[str]:
         os.environ.get("REACH_NODE", "node"), str(script_path()), "run", task, "--url", start_url,
         "--json", "--temp-profile", "--mode", os.environ.get("REACH_BROWSER_MODE", "loop"), "--model", model,
         "--max-cost", MAX_COST_USD, "--max-seconds", str(MAX_SECONDS), "--out", str(out_dir),
-    ]  # --allow-risky is never passed
+        *(["--headed"] if os.environ.get("REACH_BROWSER_HEADED", "1") != "0" else []),
+    ]  # --allow-risky is never passed; the browser window is visible by default so you can watch it work
 
 
 def summarize(result: dict[str, Any] | None, *, exit_code: int | None, aborted: bool = False) -> dict[str, Any]:
