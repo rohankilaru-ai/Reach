@@ -130,8 +130,8 @@ class Server:
                     cards = await asyncio.wait_for(
                         asyncio.to_thread(evidence_cards, task.id, receipt.final_text), timeout=150
                     )
-                except Exception:
-                    cards = []
+                except Exception:  # ground slow or down: level-1/2 cards still ship
+                    cards = evidence_cards(task.id, receipt.final_text, do_ground=False)
                 for card in cards:
                     log_evidence(card)
                     out.put_nowait(card.model_dump_json())

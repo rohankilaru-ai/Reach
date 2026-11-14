@@ -43,9 +43,11 @@ Raw `done.result` from the first live call (quote from the Transformer paper; id
 }
 ```
 
-- `page` is 1-based. `polygons` are page-normalized (0..1) corner lists, one polygon per line the match spans.
-- `cropped_image_url` (with `include_previews`) is an authenticated API URL to a PNG crop of the match; Reach does not
-  pass it to clients.
+- `page` is 1-based. `polygons` are page-normalized (0..1) corner lists (coordinates rounded above). In the gate run,
+  multi-line quotes came back as one taller box covering the whole match, not one polygon per line.
+- `match_method` was seen as `exact` and `normalized` (hyphenated line breaks); `confidence` was 1 in every match seen.
+- `cropped_image_url` (with `include_previews`) points at a PNG crop of the match on the API host (whether it needs the
+  bearer key is unverified); Reach does not pass it to clients.
 - **Citation level supported: 3** (quote + passage id, page, and a page-region bbox). Reach builds each card from the passage store
   (level 1, or 2 when the passage page is known), runs one ground job per source document for all quotes of the
   answer, and attaches the best match as `locator` (level 3). If ground fails or times out the card still ships.
