@@ -106,7 +106,11 @@ class ReachTools(Extension):
             mac_tools.append(EmailDraft())  # opens a Gmail draft in Chrome; never sends
         from .tools import ax, finder
 
-        mac_tools += ax.tools() + finder.tools()  # finder_list always; Do mode tools only with REACH_DO_MODE=1
+        mac_tools += ax.tools() + finder.tools()
+        if os.environ.get("REACH_DO_MODE") == "1":
+            from .tools.click import ClickOnScreen
+
+            mac_tools.append(ClickOnScreen())  # finder_list always; Do mode tools only with REACH_DO_MODE=1
         # The bridge drops Intern's base pack (shell, write, edit); read comes back here, fenced by guard_policy.
         return mac_tools + [
             ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(), SeeScreen(),

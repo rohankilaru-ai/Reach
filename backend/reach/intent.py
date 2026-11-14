@@ -86,7 +86,7 @@ TOOL_FAMILY: dict[str, str] = {
     "mac_control": (
         "use chrome_open_url / chrome_list_tabs / chrome_activate_tab / chrome_close_tab for Chrome tabs, finder_open "
         "and finder_list for folders and files, ax_describe then ax_press / ax_set_text to press a button or type in "
-        "another app (when those tools exist), clipboard_copy to copy text, email_draft for email; if no tool fits, "
+        "another app (when those tools exist), click_on_screen to click a link, result or button you can see (when it exists), clipboard_copy to copy text, email_draft for email; if no tool fits, "
         "say what you cannot do rather than pretend"
     ),
 }
