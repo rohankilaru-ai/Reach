@@ -44,5 +44,3 @@ else
   done
 fi
 npm ci && npm run build:release && node runner/bin/nace-browser.mjs install
-# the unpacked Chrome extension for your own Chrome (docs/EXTENSION.md): Loop mode, written to dist/
-DREX_MODE=loop npm run build

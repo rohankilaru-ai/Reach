@@ -6,8 +6,8 @@ helper model Reach uses (Qwen3-VL-235B-A22B-Instruct on DeepInfra) inside your o
 
 ## Build it
 
-`scripts/setup-browser.sh` applies the three patches and, as its last step, builds the extension in Loop mode
-(the harness README calls Loop mode the more reliable one). To rebuild by hand:
+`scripts/setup-browser.sh` applies the three patches. Then build the extension in Loop mode (the harness README
+calls Loop mode the more reliable one):
 
 ```
 cd vendor/drex-browser-harness
