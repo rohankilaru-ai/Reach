@@ -107,6 +107,21 @@ struct PanelView: View {
             } else {
                 Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
             }
+            if model.handsFree {
+                // hands-free: a tiny pulsing dot with an ear glyph; dims for a moment when speech was ignored
+                HStack(spacing: 3) {
+                    Circle().fill(Palette.accent).frame(width: 5, height: 5)
+                        .opacity(breathe ? 1 : 0.45)
+                    Image(systemName: "ear").font(.system(size: 9, weight: .semibold)).foregroundStyle(.white.opacity(0.75))
+                }
+                .opacity(model.handsFreeFlicker ? 0.3 : 1)
+                .animation(.easeInOut(duration: 0.2), value: model.handsFreeFlicker)
+                .help(HandsFree.hint)
+            }
+            if let chip = model.handsFreeChip, model.handsFree {
+                Text(chip).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(.white.opacity(0.1)))
+            }
         }
         .padding(.horizontal, 16).padding(.vertical, 8)
         .background(Capsule().fill(.black.opacity(0.9)))

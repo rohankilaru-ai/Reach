@@ -117,7 +117,7 @@ public struct PanelState: Equatable, Sendable {
         case .evidence(let card):
             if let id = card.task_id, !isMine(id) { return }
             if !evidence.contains(where: { $0.stableID == card.stableID }) { evidence.append(card) }
-        case .pointer(let id, let x, let y, let label):
+        case .pointer(let id, let x, let y, let label, _):
             if let id, !isMine(id) { return }
             pointer = (x, y, label)
         case .error(let message, let id):
@@ -128,7 +128,7 @@ public struct PanelState: Equatable, Sendable {
             handSelection = sel.isEmpty ? nil : sel
         case .added(let name, let passages):
             note = "added \(name) (\(passages) passages)"
-        case .unknown, .sttResult, .ttsAudio:
+        case .unknown, .sttResult, .ttsAudio, .addressed:
             break
         }
     }

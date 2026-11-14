@@ -30,6 +30,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private let setup = SetupWindow()
     private var menuBar: MenuBarItem?
     private var pillMode = PillMode.load()
+    private var handsFree: HandsFreeController!
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -65,6 +66,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.onTtsAudio = { [weak self] path, err, id in self?.ttsArrived(path, err, id) }
         speaker.onSpeaking = { [weak self] on in
             self?.model.speaking = on
+            self?.handsFree?.speakingChanged(on)
             if !on { self?.lastActivity = Date() }   // the 8 s fold starts after the audio ends
         }
         ready.onCircle = { [weak self] loop, box in self?.circleDrawn(loop, box: box) }
@@ -74,6 +76,22 @@ final class AppController: NSObject, NSApplicationDelegate {
         Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option, name: "Option-Space (tap / hold)",
                                 onRelease: { [weak self] in self?.optionSpaceUp() }) { [weak self] in
             self?.optionSpaceDown()
+        }
+        // Hands-free: Option-Shift-Space toggles (always off at launch).
+        handsFree = HandsFreeController(model: model)
+        handsFree.pttBusy = { [weak self] in (self?.ptt.phase ?? .idle) != .idle }
+        handsFree.onAsk = { [weak self] text in self?.handsFreeAsk(text) }
+        handsFree.onPinchHold = { [weak self] down in
+            guard let self else { return }
+            if down { if self.ptt.phase == .idle { self.holdBegan() } } else if self.gesture.phase == .holding { self.holdEnded() }
+        }
+        handsFree.onChange = { [weak self] in
+            guard let self else { return }
+            self.menuBar?.setListening(self.handsFree.isOn)
+            if self.handsFree.isOn, !self.panel.isVisible { self.panel.orderFrontRegardless() }
+        }
+        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "Option-Shift-Space (hands-free)") {
+            [weak self] in self?.handsFree.flip()
         }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
         model.onPointer = { [weak self] x, y, label, byHand in self?.showPointer(x: x, y: y, label: label, byHand: byHand) }
@@ -89,6 +107,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         bar.onTogglePill = { [weak self] in self?.togglePillFromMenu() }
         bar.onPillMode = { [weak self] m in self?.setPillMode(m) }
         bar.onSetup = { [weak self] in self?.setup.open() }
+        bar.handsFreeOn = { [weak self] in self?.handsFree.isOn == true }
+        bar.onHandsFree = { [weak self] in self?.handsFree.flip() }
+        bar.onPauseHandsFree = { [weak self] in self?.handsFree.pauseFiveMinutes() }
         menuBar = bar
         // Open the checklist once per launch when a required permission is missing.
         Task { @MainActor in
@@ -254,6 +275,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let panel, panel.isVisible, Date().timeIntervalSince(lastActivity) > Self.collapseAfter else { return }
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
             || model.capturing || model.speaking || model.typing || panel.isKeyWindow || ptt.phase != .idle
+            || model.handsFree   // the listening indicator is always visible while hands-free is on
             || NSEvent.pressedMouseButtons != 0
         guard !PillVisibility.shouldShow(mode: pillMode, expanded: model.expanded, busy: busy) else { return }
         guard panel.frame.height < 64 else { return }   // wait for the fold animation to finish
@@ -469,6 +491,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
         case .circle, .none: break
         }
+    }
+
+    /// An addressed hands-free ask: the normal ask path, with a hand selection or circle only if fresh (60 s).
+    private func handsFreeAsk(_ text: String) {
+        if Date().timeIntervalSince(model.selectionAt) > HandsFree.selectionMaxAge, model.selection != nil {
+            model.setSelection(nil, note: nil)
+        }
+        expand(focus: false, why: "hands-free ask")
+        model.submit(text, selection: model.selection, fromVoice: true)
     }
 
     // MARK: hold to talk

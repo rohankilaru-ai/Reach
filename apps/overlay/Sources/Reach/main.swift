@@ -371,7 +371,55 @@ if args.contains("--replay") {
     }
 }
 
-if args.contains("--permissions-selftest") {
+/// Hands-free logic, headless: fake recognizer text and fake `addressed` replies. No mic, no network, no prompts.
+@MainActor func runHandsFreeSelftest() -> Int32 {
+    var ok = true
+    func check(_ name: String, _ pass: Bool, _ detail: String = "") {
+        log("handsfree selftest \(pass ? "PASS" : "FAIL") \(name)\(detail.isEmpty ? "" : ": \(detail)")")
+        ok = ok && pass
+    }
+    var seg = Segmenter()
+    _ = seg.feed("hey reach scroll", now: 0)
+    _ = seg.feed("hey reach scroll down", now: 0.4)
+    let early = seg.tick(now: 1.0)
+    let s1 = seg.tick(now: 1.4)
+    check("segment by pause", early == nil && s1?.ask == "scroll down" && s1?.wakeMatched == true, "\(s1?.ask ?? "nil")")
+    _ = seg.feed("okay", now: 2)
+    check("short side talk dropped", seg.tick(now: 3) == nil)
+    let s2 = seg.feed("can you pass the salt.", now: 4)
+    check("sentence end cuts", s2?.wakeMatched == false && s2?.ask == "can you pass the salt.")
+    var p = PendingUtterance()
+    p.sent(text: "Reach, what is this", ask: "what is this", at: 10)
+    let d1 = p.reply(AddressedReply(text: "Reach, what is this", pAddressed: 0.99, addressed: true), at: 10.3)
+    check("addressed -> ask", d1 == .ask("what is this", chip: nil))
+    p.sent(text: "can you pass the salt.", ask: "can you pass the salt.", at: 20)
+    let d2 = p.reply(AddressedReply(text: "can you pass the salt.", pAddressed: 0.1, addressed: false), at: 20.2)
+    check("not addressed -> ignore", d2 == .ignore && p.pending == nil)
+    p.sent(text: "what is this thing", ask: "what is this thing", at: 30)
+    check("timeout 1.5 s -> ignore", p.expire(at: 31.0) == nil && p.expire(at: 31.6) == .ignore)
+    p.sent(text: "Reach, stop", ask: "stop", at: 40)
+    let d3 = p.reply(AddressedReply(text: "Reach, stop", addressed: true, command: "stop"), at: 40.2)
+    check("stop -> local abort", d3 == .localStop(chip: "stop"))
+    check("stop listening is local", WakeWord.isStopListening("Reach, stop listening."))
+    var echo = EchoGate()
+    echo.speakingChanged(true, now: 50)
+    let a = echo.mayListen(now: 50.2)
+    echo.speakingChanged(false, now: 51)
+    check("echo pause + 0.5 s resume", !a && !echo.mayListen(now: 51.3) && echo.mayListen(now: 51.6))
+    var pinch = PinchSignal()
+    let pp = pinch.update(state: "pinch", now: 60), pr = pinch.update(state: "hover", now: 60.5)
+    check("pinch press/release", pp == .press && pr == .release)
+    var t = HandsFreeToggle()
+    check("starts off", !t.active(now: 0))
+    t.toggle(); t.pause(minutes: 5, now: 0)
+    check("pause 5 min", t.on && !t.active(now: 100) && t.active(now: 301))
+    log("handsfree selftest \(ok ? "PASS" : "FAIL")")
+    return ok ? 0 : 1
+}
+
+if args.contains("--handsfree-selftest") {
+    exit(MainActor.assumeIsolated { runHandsFreeSelftest() })
+} else if args.contains("--permissions-selftest") {
     MainActor.assumeIsolated { runPermissionsSelftest() }
     app.run()
 } else if let sentence = argValue("--cloud-voice-selftest") {
