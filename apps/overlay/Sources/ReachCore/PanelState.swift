@@ -12,6 +12,10 @@ public struct PanelState: Equatable, Sendable {
     public var answer = ""
     public var note: String?
     public var receipt: Receipt?
+    /// The verdict of the last receipt: Done, Needs you, Failed or Unverified (never Done for a failed write).
+    public var verdict: Verdict?
+    /// The tool running now (for the one-line progress); kept until the next tool or the end.
+    public var tool: String?
     public var evidence: [EvidenceCard] = []
     public var decisions: [DrexDecision] = []   // newest last, at most 3
     public var pointer: (x: Double, y: Double, label: String?)? {
@@ -43,6 +47,8 @@ public struct PanelState: Equatable, Sendable {
         answer = ""
         note = nil
         receipt = nil
+        verdict = nil
+        tool = nil
         evidence = []
         pointer = nil
     }
@@ -87,9 +93,9 @@ public struct PanelState: Equatable, Sendable {
                 decisions.append(DrexDecision(event: body))
                 if decisions.count > 3 { decisions.removeFirst(decisions.count - 3) }
             case "tool_call_start":
-                note = "using \(body["name"]?.string ?? "a tool")"
+                tool = body["name"]?.string ?? "a tool"
             case "tool_call_end", "turn_start":
-                note = nil
+                break
             default:
                 break
             }
@@ -99,10 +105,13 @@ public struct PanelState: Equatable, Sendable {
             guard isMine(r.task_id) else { return }
             receipt = r
             if let t = r.final_text, !t.isEmpty { answer = t }
-            switch r.status {
-            case "ok": phase = .done; note = nil
-            case "aborted": phase = .idle; note = "stopped (\(r.reason))"
-            default: phase = .failed; note = r.reason
+            let v = Verdict.of(r)
+            verdict = v
+            phase = v.phase
+            switch v {
+            case .done: note = nil
+            case .stopped(let why): note = "stopped (\(why))"
+            case .needsYou(let s), .failed(let s), .unverified(let s): note = s
             }
             taskID = nil
         case .evidence(let card):
@@ -132,7 +141,7 @@ public struct PanelState: Equatable, Sendable {
 
     public static func == (a: PanelState, b: PanelState) -> Bool {
         a.phase == b.phase && a.connected == b.connected && a.taskID == b.taskID && a.answer == b.answer
-            && a.note == b.note && a.receipt == b.receipt && a.evidence == b.evidence && a.decisions == b.decisions
+            && a.note == b.note && a.receipt == b.receipt && a.verdict == b.verdict && a.tool == b.tool && a.evidence == b.evidence && a.decisions == b.decisions
             && a.pointerStore == b.pointerStore && a.handSelection == b.handSelection
     }
 }

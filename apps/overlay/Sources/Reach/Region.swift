@@ -3,122 +3,6 @@ import ReachCore
 import ScreenCaptureKit
 import Vision
 
-// MARK: - circle (freehand lasso)
-
-/// A transparent full-screen layer per display that records one freehand loop with the user's own mouse, drawn live
-/// as a soft glowing line. On release the loop closes itself. Points come back in global Cocoa coordinates.
-@MainActor
-final class LassoPicker {
-    private var windows: [NSWindow] = []
-    private var done: ((LassoRecorder.Outcome) -> Void)?
-    var log: ((String) -> Void)?
-
-    func begin(_ completion: @escaping (LassoRecorder.Outcome) -> Void) {
-        cancel()
-        done = completion
-        for screen in NSScreen.screens {
-            let w = KeyableWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            w.level = .screenSaver
-            w.backgroundColor = NSColor.black.withAlphaComponent(0.10)
-            w.isOpaque = false
-            w.ignoresMouseEvents = false
-            w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            w.sharingType = .none   // never in Reach's own capture
-            let v = LassoView(frame: NSRect(origin: .zero, size: screen.frame.size))
-            v.origin = screen.frame.origin
-            v.onState = { [weak self] st in self?.log?("lasso: \(st.rawValue)") }
-            v.onFinish = { [weak self] outcome in self?.finish(outcome) }
-            w.contentView = v
-            w.makeKeyAndOrderFront(nil)
-            w.makeFirstResponder(v)
-            windows.append(w)
-        }
-        NSCursor.crosshair.push()
-        NSApp.activate(ignoringOtherApps: true)
-        log?("lasso: idle (drag a loop around something; Esc cancels)")
-    }
-
-    func cancel() { if done != nil { finish(.cancelled) } }
-
-    private func finish(_ outcome: LassoRecorder.Outcome) {
-        let ws = windows
-        windows = []
-        if !ws.isEmpty { NSCursor.pop() }
-        // let the closed loop linger a moment, then fade the layer out
-        let delay: Double = { if case .closed = outcome { return 0.25 }; return 0 }()
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
-            NSAnimationContext.runAnimationGroup({ ctx in
-                ctx.duration = 0.2
-                ws.forEach { $0.animator().alphaValue = 0 }
-            }, completionHandler: { MainActor.assumeIsolated { ws.forEach { $0.orderOut(nil) } } })
-        }
-        let cb = done
-        done = nil
-        cb?(outcome)
-    }
-}
-
-/// Borderless windows cannot become key by default, so Esc would never reach the lasso layer.
-final class KeyableWindow: NSWindow {
-    override var canBecomeKey: Bool { true }
-}
-
-final class LassoView: NSView {
-    var origin: CGPoint = .zero
-    var onFinish: ((LassoRecorder.Outcome) -> Void)?
-    var onState: ((LassoRecorder.State) -> Void)?
-    private var rec = LassoRecorder()
-    private var closed = false
-
-    override var acceptsFirstResponder: Bool { true }
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { rec.cancel(); onState?(.cancelled); onFinish?(.cancelled) }
-    }
-    private func global(_ e: NSEvent) -> CGPoint {
-        var p = convert(e.locationInWindow, from: nil)
-        // stay on this display: the capture is clipped to it, so the mask must be too
-        p.x = min(max(p.x, bounds.minX), bounds.maxX)
-        p.y = min(max(p.y, bounds.minY), bounds.maxY)
-        return CGPoint(x: p.x + origin.x, y: p.y + origin.y)
-    }
-    override func mouseDown(with event: NSEvent) {
-        closed = false
-        rec.begin(global(event)); onState?(.drawing); needsDisplay = true
-    }
-    override func mouseDragged(with event: NSEvent) { rec.add(global(event)); needsDisplay = true }
-    override func mouseUp(with event: NSEvent) {
-        rec.add(global(event))
-        let outcome = rec.end()
-        onState?(rec.state)
-        if case .closed = outcome { closed = true; needsDisplay = true }
-        onFinish?(outcome)
-    }
-    override func draw(_ dirtyRect: NSRect) {
-        let pts = rec.points.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
-        guard pts.count > 1 else { return }
-        let path = NSBezierPath()
-        path.move(to: pts[0])
-        pts.dropFirst().forEach { path.line(to: $0) }
-        if closed { path.close() }
-        path.lineCapStyle = .round
-        path.lineJoinStyle = .round
-        NSGraphicsContext.saveGraphicsState()
-        let glow = NSShadow()
-        glow.shadowColor = Palette.accentNS
-        glow.shadowBlurRadius = 10
-        glow.set()
-        Palette.accentNS.withAlphaComponent(0.9).setStroke()
-        path.lineWidth = 3
-        path.stroke()
-        NSGraphicsContext.restoreGraphicsState()
-        if closed {
-            Palette.accentNS.withAlphaComponent(0.08).setFill()
-            path.fill()
-        }
-    }
-}
-
 // MARK: - halo around the chosen region
 
 /// Reach's halo: a soft ring that breathes around the region while the question about it is live.
@@ -137,7 +21,7 @@ final class RegionHalo {
         let pad: CGFloat = 10
         let frame = rect.insetBy(dx: -pad, dy: -pad)
         let w = NSWindow(contentRect: frame, styleMask: .borderless, backing: .buffered, defer: false)
-        w.level = .floating
+        w.level = NSWindow.Level(rawValue: NSWindow.Level.floating.rawValue + 2)   // above the ready layer
         w.backgroundColor = .clear
         w.isOpaque = false
         w.ignoresMouseEvents = true
@@ -231,7 +115,9 @@ enum RegionCapture {
         config.width = Int(src.width * scale)
         config.height = Int(src.height * scale)
         config.showsCursor = false
-        let filter = SCContentFilter(display: display, excludingWindows: [])
+        // Leave out every Reach window (panel, ready layer, halo, lens), whatever is on screen at the time.
+        let mine = content.applications.filter { $0.processID == getpid() }
+        let filter = SCContentFilter(display: display, excludingApplications: mine, exceptingWindows: [])
         let image: CGImage
         do { image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config) }
         catch { throw CaptureError.failed(error.localizedDescription) }

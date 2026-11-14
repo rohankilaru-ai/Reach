@@ -20,16 +20,43 @@ final class OverlayModel: ObservableObject {
     @Published var expanded = true
     /// A circle capture + OCR is in flight; an ask typed meanwhile waits for it (it carries the text and image).
     @Published var capturing = false
-    private var askAfterCapture: String?
+    private var askAfterCapture: (String, Bool)?
     /// Bumped per capture; a finished capture whose generation is stale is dropped.
     private(set) var captureGen = 0
     var expandRequested: (() -> Void)?
-    var circleRequested: (() -> Void)?
+    /// The attached selection is the user's own circle (used by one ask, then dropped), not a hand selection.
+    @Published var selectionIsCircle = false
+    /// The last circle with a captured image: what the Zoom chip and the word "zoom" open.
+    @Published var zoomTarget: Selection?
+    /// Audio level 0...1 while listening, for the meter.
+    @Published var level: Float = 0
+    /// Height the answer area may take (set from the screen by the app controller).
+    @Published var answerMax: CGFloat = 360
+    /// The answer area's measured content height; publishing it makes the window refit after late layout changes.
+    @Published var measuredAnswer: CGFloat = 0
+    @Published var speaking = false
+    /// The panel was summoned to type (tap or a circle without words): the text field shows.
+    @Published var typing = false
+    /// Receipt, Drex decisions, tools and cost sit behind a collapsed "Details" disclosure. Remembered.
+    @Published var showDetails: Bool = UserDefaults.standard.bool(forKey: "showDetails") {
+        didSet { UserDefaults.standard.set(showDetails, forKey: "showDetails") }
+    }
+    /// The last ask, for "Try again".
+    private var lastAsk: (String, Selection?, Bool)?
+    /// Speak replies to voice asks automatically. Persisted.
+    @Published var speakReplies: Bool = (UserDefaults.standard.object(forKey: "speakReplies") as? Bool) ?? true {
+        didSet { UserDefaults.standard.set(speakReplies, forKey: "speakReplies") }
+    }
+    /// The running (or last) ask came from voice.
+    private(set) var lastAskFromVoice = false
+    var onZoom: ((Selection) -> Void)?
+    var onSpeak: ((String) -> Void)?
+    var onStopSpeaking: (() -> Void)?
 
     let files: RunFiles
     private let client = ReachClient()
     private var retry: Timer?
-    private var pendingAsk: String?
+    private var pendingAsk: (String, Bool)?
     var onPhase: ((Phase) -> Void)?
     /// (x, y, label, byHand). Hand pointers arrive at ~15 Hz and fade after 1 s without one.
     var onPointer: ((Double, Double, String?, Bool) -> Void)?
@@ -75,17 +102,23 @@ final class OverlayModel: ObservableObject {
         }
     }
 
-    func submit(_ text: String? = nil) {
+    func submit(_ text: String? = nil, selection explicit: Selection? = nil, fromVoice: Bool = false) {
         let text = (text ?? draft).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }
+        if ZoomCommand.isZoom(text) {   // local: never reaches the server
+            draft = ""
+            if let z = explicit ?? zoomTarget, z.image_path != nil { onZoom?(z) }
+            else { selectionNote = "circle something first, then say zoom" }
+            return
+        }
         guard state.connected else {
-            pendingAsk = text
+            pendingAsk = (text, fromVoice)
             log("not connected yet; ask queued")
             return
         }
         if let why = state.submitBlock(listening: listening, capturing: capturing) {
             if capturing, !listening, state.phase != .working {
-                askAfterCapture = text
+                askAfterCapture = (text, fromVoice)
                 draft = ""
                 log("ask waits for the circle capture")
             } else {
@@ -94,11 +127,42 @@ final class OverlayModel: ObservableObject {
             }
             return
         }
+        onStopSpeaking?()
+        let sel = explicit ?? selection
+        lastAskFromVoice = fromVoice
         log("state working")
         mutate { $0.submitted() }
-        log("ask: \(text)" + (selection != nil ? " (with selection)" : ""))
-        client.send(.ask(text: text, selection: selection))
+        log("ask\(fromVoice ? " (voice)" : ""): \(text)" + (sel != nil ? " (with selection\(sel?.path != nil ? ", circle" : ""))" : ""))
+        client.send(.ask(text: text, selection: sel))
+        sentAsks.append((text, sel))
+        lastAsk = (text, sel, fromVoice)
+        typing = false
         draft = ""
+        if selectionIsCircle || explicit?.path != nil {   // a circle belongs to one ask
+            if selectionIsCircle { selection = nil; selectionNote = nil; selectionIsCircle = false }
+        }
+    }
+
+    /// Asks sent in this run (text, selection): the hub selftest checks there is exactly one per gesture.
+    private(set) var sentAsks: [(String, Selection?)] = []
+
+    /// A circle drawn without words: attach it as a chip for the typed ask (local only; the ask carries it).
+    func attachCircle(_ sel: Selection, note: String) {
+        selection = sel
+        selectionIsCircle = true
+        selectionNote = note
+    }
+
+    /// Start of a hold: drop a circle chip from before (each hold starts clean).
+    func dropCircle() {
+        if selectionIsCircle { selection = nil; selectionNote = nil; selectionIsCircle = false }
+        zoomTarget = nil
+    }
+
+    func retryLast() {
+        guard let a = lastAsk else { return }
+        log("try again: \(a.0)")
+        submit(a.0, selection: a.1, fromVoice: a.2)
     }
 
     func abort() {
@@ -127,7 +191,7 @@ final class OverlayModel: ObservableObject {
         guard gen == captureGen else { log("stale capture \(gen) dropped (newest \(captureGen))"); return false }
         capturing = false
         setSelection(sel, note: note)
-        if let q = askAfterCapture { askAfterCapture = nil; submit(q) }
+        if let q = askAfterCapture { askAfterCapture = nil; submit(q.0, fromVoice: q.1) }
         return true
     }
 
@@ -135,6 +199,7 @@ final class OverlayModel: ObservableObject {
     func clearSelection() {
         selection = nil
         selectionNote = nil
+        selectionIsCircle = false
         mutate { $0.clearHandSelection() }
         client.send(.select(Selection()))
         log("selection cleared")
@@ -164,6 +229,7 @@ final class OverlayModel: ObservableObject {
             let chip = HandChip(sel)
             log("selection by hand: \"\(chip.line)\" thumbnail \(chip.thumbnailPath ?? "none")")
             selection = sel.isEmpty ? nil : sel
+            selectionIsCircle = false
             selectionNote = nil
         case .transcript(_, let role, let text): log("transcript \(role): \(text.prefix(120))")
         case .error(let m, _): log("server error: \(m)")
@@ -175,7 +241,14 @@ final class OverlayModel: ObservableObject {
         if after.phase != before { log("state \(after.phase.rawValue)") }
         mutate { $0.apply(msg) }
         if case .selection(let sel) = msg, !sel.isEmpty { onHandSelection?(sel) }
-        if case .ready = msg, let q = pendingAsk { pendingAsk = nil; submit(q) }
+        if case .ready = msg, let q = pendingAsk { pendingAsk = nil; submit(q.0, fromVoice: q.1) }
+        if case .receipt = msg, before == .working, state.phase != .working, let v = state.verdict {
+            log("verdict: \(v.title)")
+            if case .stopped = v {} else if SpokenText.autoSpeak(fromVoice: lastAskFromVoice, toggle: speakReplies),
+                                           !state.answer.isEmpty {
+                onSpeak?(state.answer)
+            }
+        }
     }
 
     private func mutate(_ f: (inout PanelState) -> Void) {

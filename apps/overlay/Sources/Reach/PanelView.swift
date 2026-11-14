@@ -16,161 +16,294 @@ enum Palette {
     }
 }
 
-/// A ring that breathes while Reach works and rests otherwise.
-struct Halo: View {
-    var phase: Phase
-    @State private var pulse = false
+extension Palette {
+    static func status(_ s: HubStatus) -> Color {
+        switch s {
+        case .idle: return Color.white.opacity(0.5)
+        case .listening: return accent
+        case .working: return Color(red: 0.55, green: 0.70, blue: 1.0)
+        case .done: return color(.done)
+        case .failed: return color(.failed)
+        case .needsYou: return color(.needsYou)
+        }
+    }
+}
+
+/// The status dot: colour says the state, a soft ripple while listening or working.
+struct StatusDot: View {
+    var status: HubStatus
+    var size: CGFloat = 8
+    @State private var ripple = false
 
     var body: some View {
         ZStack {
-            Circle().stroke(Palette.color(phase).opacity(0.25), lineWidth: 6)
-                .scaleEffect(pulse && phase == .working ? 1.35 : 1.0)
-                .opacity(pulse && phase == .working ? 0 : 1)
-            Circle().stroke(Palette.color(phase), lineWidth: 2.5)
-            Circle().fill(Palette.color(phase).opacity(0.35)).padding(5)
+            if status.pulses {
+                Circle().stroke(Palette.status(status).opacity(0.6), lineWidth: 1.5)
+                    .scaleEffect(ripple ? 2.4 : 1).opacity(ripple ? 0 : 0.9)
+            }
+            Circle().fill(Palette.status(status))
         }
-        .frame(width: 18, height: 18)
-        .onAppear { withAnimation(.easeOut(duration: 1.4).repeatForever(autoreverses: false)) { pulse = true } }
+        .frame(width: size, height: size)
+        .onAppear { withAnimation(.easeOut(duration: 1.2).repeatForever(autoreverses: false)) { ripple = true } }
+        .animation(.easeInOut(duration: 0.25), value: status)
     }
+}
+
+/// Five bars driven by the microphone level while the key is held.
+struct LevelMeter: View {
+    var level: Float
+    private let weights: [CGFloat] = [0.55, 0.85, 1.0, 0.8, 0.5]
+    var body: some View {
+        HStack(spacing: 2) {
+            ForEach(0..<5, id: \.self) { i in
+                Capsule().fill(Palette.accent)
+                    .frame(width: 3, height: 4 + 12 * CGFloat(level) * weights[i])
+            }
+        }
+        .frame(height: 16)
+        .animation(.spring(response: 0.18, dampingFraction: 0.6), value: level)
+    }
+}
+
+private struct ContentHeight: PreferenceKey {
+    static let defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = max(value, nextValue()) }
 }
 
 struct PanelView: View {
     @ObservedObject var model: OverlayModel
     @FocusState private var focused: Bool
-    @State private var hovering = false
+    @State private var breathe = false
+    @State private var contentHeight: CGFloat = 0
     var onSnap: () -> Void = {}
     var onDragEnd: () -> Void = {}
+    var onSpeak: () -> Void = {}
+    var onZoom: () -> Void = {}
+    var onAction: (PlainState.Action) -> Void = { _ in }
+
+    static let hint = "Hold Option-Space, circle what you mean, say what to do."
+
+    private var status: HubStatus { HubStatus.of(phase: model.state.phase, listening: model.listening) }
 
     var body: some View {
-        Group {
-            if model.expanded { expanded } else { pill }
-        }
-        .animation(.easeInOut(duration: 0.28), value: model.expanded)
-    }
-
-    /// The idle island: status dot + "Reach", the hotkey hint on hover. Drag it anywhere; double-click snaps it back.
-    private var pill: some View {
-        HStack(spacing: 8) {
-            Circle().fill(Palette.color(model.state.phase)).frame(width: 8, height: 8)
-            Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
-            if hovering {
-                Text("⌥Space").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.5))
-                    .transition(.opacity)
+        ZStack(alignment: .top) {
+            if model.expanded {
+                expanded.transition(.asymmetric(insertion: .scale(scale: 0.92, anchor: .top).combined(with: .opacity),
+                                                removal: .opacity))
+            } else {
+                pill.transition(.opacity)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 7)
-        .background(Capsule().fill(.black.opacity(0.88)))
-        .overlay(Capsule().stroke(.white.opacity(0.08)))
+        .animation(.spring(response: 0.34, dampingFraction: 0.78), value: model.expanded)
+        .environment(\.colorScheme, .dark)
+    }
+
+    /// The idle island: a compact dark glass capsule that breathes softly. Drag it; double-click snaps it back.
+    private var pill: some View {
+        HStack(spacing: 8) {
+            StatusDot(status: status)
+            if model.listening {
+                LevelMeter(level: model.level)
+            } else {
+                Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 8)
+        .background(Capsule().fill(.black.opacity(0.9)))
+        .overlay(Capsule().stroke(Palette.status(status).opacity(breathe && status == .idle ? 0.28 : 0.10), lineWidth: 1))
+        .scaleEffect(breathe && status == .idle ? 1.02 : 1)
+        .padding(4)   // room for the breath, so nothing is clipped by the window
+        .onAppear { withAnimation(.easeInOut(duration: 2.6).repeatForever(autoreverses: true)) { breathe = true } }
         .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } else { model.expandRequested?() } },
-                            onDragEnd: onDragEnd,
-                            onHover: { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }))
+                            onDragEnd: onDragEnd))
+        .help(Self.hint)
+    }
+
+    /// One plain sentence and at most one action for an end state that is not Done.
+    private var plain: PlainState? {
+        let s = model.state
+        if let v = s.verdict { return PlainState.of(verdict: v) }
+        if s.phase == .needsYou { return PlainState.of(note: s.note ?? "") }
+        if s.phase == .failed { return PlainState(sentence: "That didn't work.", action: .retry) }
+        return nil
+    }
+
+    private var title: String {
+        let s = model.state
+        if model.listening { return "Listening" }
+        if s.phase == .working { return ProgressLine.of(tool: s.tool) }
+        if let p = plain { return p.sentence }
+        if s.phase == .done { return "Done" }
+        return "Reach"
+    }
+
+    /// The text field shows when typing makes sense: nothing on screen yet, the panel was summoned to type, or a
+    /// draft or circle chip is waiting.
+    private var showsField: Bool {
+        let s = model.state
+        if model.listening || s.phase == .working { return false }
+        return (s.answer.isEmpty && plain == nil) || model.typing || !model.draft.isEmpty || model.selectionIsCircle
     }
 
     private var expanded: some View {
         let s = model.state
-        return VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 10) {
-                Halo(phase: s.phase)
-                Text(s.stateLine)
-                    .font(.system(size: 11, weight: .medium, design: .rounded))
-                    .foregroundStyle(Palette.color(s.phase))
-                    .lineLimit(1)
-                Spacer()
-                Text(s.connected ? "live" : "offline")
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.35))
-            }
-            // drag the header to move; double-click snaps back to the notch
-            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd))
-            .help("Drag to move · double-click to snap to the top")
-
-            TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
-                .textFieldStyle(.plain)
-                .font(.system(size: 15))
-                .foregroundStyle(.white)
-                .focused($focused)
-                .onSubmit { model.submit() }
-                .padding(.vertical, 8).padding(.horizontal, 10)
-                .background(RoundedRectangle(cornerRadius: 9).fill(.white.opacity(0.06)))
-
-            if let line = model.voiceLine {
-                Label(line, systemImage: model.listening ? "mic.fill" : "mic")
-                    .font(.system(size: 11, weight: model.listening ? .semibold : .regular))
-                    .foregroundStyle(model.listening ? Palette.accent : .white.opacity(0.6))
-                    .lineLimit(2)
-            }
-
+        return VStack(alignment: .leading, spacing: 8) {
+            // header: status dot, one line, speaker toggle. Drag to move; double-click to snap back.
             HStack(spacing: 8) {
-                Text("Tap Option-Space to type, hold to talk, or circle something.")
-                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
-                Spacer(minLength: 0)
-                Button { model.circleRequested?() } label: {
-                    Image(systemName: "lasso").font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(Palette.accent)
-                        .frame(width: 26, height: 22)
-                        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.accent.opacity(0.12)))
+                StatusDot(status: status, size: 10)
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold, design: .rounded))
+                    .foregroundStyle(status == .idle || status == .done ? .white.opacity(0.92) : Palette.status(status))
+                    .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+                    .contentTransition(.opacity)
+                Spacer(minLength: 8)
+                if model.listening {
+                    LevelMeter(level: model.level)
+                } else {
+                    Button { model.speakReplies.toggle(); if !model.speakReplies, model.speaking { model.onStopSpeaking?() } } label: {
+                        Image(systemName: model.speakReplies ? "speaker.wave.2.fill" : "speaker.slash")
+                            .font(.system(size: 11, weight: .semibold))
+                            .foregroundStyle(model.speakReplies ? Palette.accent.opacity(0.9) : .white.opacity(0.4))
+                            .frame(width: 24, height: 20)
+                    }
+                    .buttonStyle(.plain)
+                    .help(model.speakReplies ? "Replies to voice asks are spoken" : "Spoken replies off")
                 }
-                .buttonStyle(.plain)
-                .help("Circle something on screen (Esc cancels)")
             }
+            .contentShape(Rectangle())
+            .overlay(DragHandle(onClick: { n in if n >= 2 { onSnap() } }, onDragEnd: onDragEnd).padding(.trailing, 32))
+            .animation(.easeInOut(duration: 0.2), value: title)
 
-            if let chip = s.handChip {
-                HandChipView(chip: chip) { model.clearSelection() }
-            }
-
-            if let note = model.selectionNote {
-                Label(note, systemImage: "viewfinder")
-                    .font(.system(size: 11)).foregroundStyle(Palette.accent.opacity(0.9)).lineLimit(2)
-            }
-
-            if !s.answer.isEmpty {
-                ScrollView {
-                    Text(s.answer)
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.92))
-                        .textSelection(.enabled)
-                        .frame(maxWidth: .infinity, alignment: .leading)
+            if model.listening {
+                // listening: only the live words
+                if !model.draft.isEmpty {
+                    Text(model.draft).font(.system(size: 14)).foregroundStyle(.white.opacity(0.85))
+                        .lineLimit(3).fixedSize(horizontal: false, vertical: true)
                 }
-                .frame(maxHeight: 220)
-            }
-
-            if !s.evidence.isEmpty {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(s.evidence, id: \.stableID) { card in
-                        EvidenceRow(card: card)
+            } else {
+                if let p = plain, let label = p.actionLabel {
+                    if p.action == .circle {
+                        Text(label).font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    } else {
+                        Chip(icon: p.action == .retry || p.action == .startServer ? "arrow.clockwise" : "gearshape", text: label) { onAction(p.action) }
                     }
                 }
-            }
 
-            if let r = s.receipt {
-                Text(r.line)
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundStyle(.white.opacity(0.5))
-            }
+                if showsField {
+                    TextField("Ask Reach…", text: $model.draft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .focused($focused)
+                        .onSubmit { model.submit() }
+                        .padding(.vertical, 8).padding(.horizontal, 10)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.white.opacity(0.07)))
+                }
 
-            if !s.decisions.isEmpty {
-                VStack(alignment: .leading, spacing: 2) {
-                    ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in
-                        Text("◦ drex \(d.line)")
-                            .font(.system(size: 10, design: .monospaced))
-                            .foregroundStyle(Palette.accent.opacity(0.6))
-                            .lineLimit(1)
+                if let chip = s.handChip {
+                    HandChipView(chip: chip) { model.clearSelection() }
+                }
+
+                if model.selectionIsCircle || model.zoomTarget != nil {
+                    HStack(spacing: 8) {
+                        Label(model.selectionIsCircle ? "Circle attached" : "Circled", systemImage: "circle.dashed")
+                            .font(.system(size: 11)).foregroundStyle(Palette.accent.opacity(0.95)).lineLimit(1)
+                        Spacer(minLength: 0)
+                        if model.zoomTarget != nil {
+                            Chip(icon: "plus.magnifyingglass", text: "Zoom", action: onZoom).help("Magnify the circled area")
+                        }
+                        if model.selectionIsCircle {
+                            Button { model.clearSelection() } label: { Image(systemName: "xmark.circle.fill") }
+                                .buttonStyle(.plain).foregroundStyle(.white.opacity(0.5)).help("Drop the circle")
+                        }
                     }
+                }
+
+                if !s.answer.isEmpty || !s.evidence.isEmpty {
+                    // the answer (plain text), then at most two evidence cards: measured, never clipped, scrolls past the budget
+                    ScrollView(.vertical) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            if !s.answer.isEmpty {
+                                Text(PlainText.display(s.answer))
+                                    .font(.system(size: 13.5))
+                                    .lineSpacing(2)
+                                    .foregroundStyle(.white.opacity(0.94))
+                                    .textSelection(.enabled)
+                                    .fixedSize(horizontal: false, vertical: true)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            ForEach(s.evidence.prefix(2), id: \.stableID) { card in EvidenceRow(card: card) }
+                        }
+                        .padding(.trailing, 4)
+                        .background(GeometryReader { g in Color.clear.preference(key: ContentHeight.self, value: g.size.height) })
+                    }
+                    .frame(height: min(max(contentHeight, 20), model.answerMax))
+                    .onPreferenceChange(ContentHeight.self) { h in
+                        contentHeight = h
+                        if abs(model.measuredAnswer - h) > 0.5 { model.measuredAnswer = h }
+                    }
+                }
+
+                // footer: details disclosure (receipt, decisions) and Speak; the hint only when nothing else shows
+                if s.receipt != nil || (!s.answer.isEmpty && s.phase != .working) {
+                    HStack(spacing: 8) {
+                        if s.receipt != nil {
+                            Button { model.showDetails.toggle() } label: {
+                                Label("Details", systemImage: model.showDetails ? "chevron.down" : "chevron.right")
+                                    .font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.4))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        Spacer(minLength: 0)
+                        if !s.answer.isEmpty, s.phase != .working {
+                            Chip(icon: model.speaking ? "stop.fill" : "play.fill", text: model.speaking ? "Stop" : "Speak") {
+                                if model.speaking { model.onStopSpeaking?() } else { onSpeak() }
+                            }
+                        }
+                    }
+                    if model.showDetails, let r = s.receipt {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.line)
+                            if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
+                            if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
+                            ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                        }
+                        .font(.system(size: 10, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.42))
+                        .lineLimit(1).truncationMode(.middle)
+                        .transition(.opacity)
+                    }
+                } else if showsField {
+                    Text(Self.hint).font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
                 }
             }
         }
-        .padding(14)
-        .frame(width: 420)
-        .background(
-            ZStack {
-                VisualEffect()
-                Color.black.opacity(0.35)
-            }
-        )
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.08)))
+        .padding(16)
+        .frame(width: 440)
+        .background(ZStack { VisualEffect(); Color.black.opacity(0.42) })
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(Palette.status(status).opacity(0.22)))
+        .padding(4)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.listening)
+        .animation(.spring(response: 0.3, dampingFraction: 0.85), value: model.showDetails)
         .onAppear { focused = true }
-        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
+    }
+}
+
+struct Chip: View {
+    var icon: String
+    var text: String
+    var action: () -> Void
+    var body: some View {
+        Button(action: action) {
+            Label(text, systemImage: icon)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(Palette.accent)
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(Capsule().fill(Palette.accent.opacity(0.14)))
+                .overlay(Capsule().stroke(Palette.accent.opacity(0.35), lineWidth: 0.5))
+        }
+        .buttonStyle(.plain)
     }
 }
 
@@ -178,15 +311,16 @@ struct EvidenceRow: View {
     var card: EvidenceCard
     var body: some View {
         Button { openSource(card) } label: {
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 4) {
                 Text(card.quote.map { "“\($0)”" } ?? "(no quote)")
-                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.85)).lineLimit(3)
+                    .font(.system(size: 12)).foregroundStyle(.white.opacity(0.85)).lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
                 Text([card.id, card.title].compactMap { $0 }.joined(separator: " · "))
                     .font(.system(size: 10, design: .monospaced)).foregroundStyle(Palette.accent.opacity(0.8))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(8)
-            .background(RoundedRectangle(cornerRadius: 8).fill(.white.opacity(0.05)))
+            .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.white.opacity(0.06)))
         }
         .buttonStyle(.plain)
         .disabled(card.file == nil)
@@ -230,7 +364,7 @@ final class ReachPanel: NSPanel {
                    styleMask: [.borderless, .nonactivatingPanel, .fullSizeContentView],
                    backing: .buffered, defer: false)
         isFloatingPanel = true
-        level = .floating
+        level = .statusBar   // above the ready-to-circle layer
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         backgroundColor = .clear
         isOpaque = false

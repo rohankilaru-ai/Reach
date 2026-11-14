@@ -172,7 +172,139 @@ if args.contains("--replay") {
     return ok ? 0 : 1
 }
 
-if args.contains("--lasso-selftest") {
+
+/// The hub's gesture, verdicts, hover and zoom driven headlessly (no windows, no input events, no network). Each
+/// scenario feeds the same ReachCore machines the app runs and prints one PASS/FAIL line.
+@MainActor func runHubSelftest() -> Int32 {
+    var allOK = true
+    func line(_ name: String, _ ok: Bool, _ detail: String) {
+        allOK = allOK && ok
+        log("hub selftest \(ok ? "PASS" : "FAIL") \(name): \(detail)")
+    }
+    let circle = Selection(text: "f(x) = x^2 + 1", region: [600, 300, 180, 120], image_path: "/tmp/circle-1.png",
+                           path: [[600, 300], [780, 300], [780, 420], [600, 420]])
+    /// What the app does with a resolution: asks are encoded exactly as they would be sent.
+    func run(_ steps: (inout HubGesture, inout [HubGesture.Resolution]) -> Void) -> (asks: [String], other: [HubGesture.Resolution]) {
+        var g = HubGesture(); var out: [HubGesture.Resolution] = []
+        steps(&g, &out)
+        var asks: [String] = [], other: [HubGesture.Resolution] = []
+        for r in out {
+            if case .ask(let t, let sel) = r { asks.append((try? ClientMessage.ask(text: t, selection: sel).json()) ?? "?") }
+            else { other.append(r) }
+        }
+        return (asks, other)
+    }
+    func push(_ r: HubGesture.Resolution?, _ out: inout [HubGesture.Resolution]) { if let r { out.append(r) } }
+
+    var r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 1); push(g.circleCaptured(gen: 1, circle), &out)
+        g.released(); push(g.heard(.send("explain this")), &out)
+    }
+    line("hold -> circle -> release", r.asks.count == 1 && r.asks[0].contains("\"explain this\"") && r.asks[0].contains("\"path\"")
+         && r.asks[0].contains("circle-1.png") && r.asks[0].contains("x^2"), "\(r.asks.count) ask: \(r.asks.first ?? "none")")
+
+    r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 2); g.released(); push(g.heard(.send("what is this")), &out)
+        push(g.circleCaptured(gen: 2, circle), &out)
+    }
+    line("release before capture finishes", r.asks.count == 1 && r.asks[0].contains("\"path\""), "\(r.asks.count) ask, after the capture")
+
+    r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 3); push(g.circleCaptured(gen: 3, circle), &out)
+        g.released(); push(g.heard(.reject("didn't catch that")), &out)
+    }
+    line("circle without speech", r.asks.isEmpty && r.other == [.typeWithChip(circle)], "no ask; typing box opens with the circle chip")
+
+    r = run { g, out in _ = g.holdStarted(); g.released(); push(g.heard(.send("what time is it in Tokyo")), &out) }
+    line("speech without circle", r.asks.count == 1 && !r.asks[0].contains("selection"), "plain voice ask: \(r.asks.first ?? "none")")
+
+    r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 4); push(g.circleCaptured(gen: 4, circle), &out); g.released()
+        push(g.heard(.send("explain this")), &out)
+        _ = g.holdStarted(); g.released(); push(g.heard(.send("thanks, and the next step?")), &out)
+    }
+    line("next hold has no stale circle", r.asks.count == 2 && r.asks[0].contains("\"path\"") && !r.asks[1].contains("selection"),
+         "2 asks, only the first carries the circle")
+
+    r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 5); push(g.cancel(), &out)
+        push(g.circleCaptured(gen: 5, circle), &out); push(g.heard(.send("late words")), &out)
+    }
+    line("Esc cancels everything", r.asks.isEmpty && r.other == [.cancelled], "no ask; late capture and transcript ignored")
+
+    r = run { g, out in
+        _ = g.holdStarted(); g.circleDrawn(gen: 6); push(g.circleCaptured(gen: 6, circle), &out); g.released()
+        push(g.heard(.send("Zoom.")), &out)
+    }
+    let s1 = ZoomLens.scrolled(3.8, deltaY: 40), s2 = ZoomLens.pinched(2.1, magnification: -0.6)
+    line("zoom chip / spoken zoom", r.asks.isEmpty && r.other == [.zoom(circle)] && s1 == 4 && s2 == 2,
+         "lens opens locally, no ask; scale clamps to \(s1)x / \(s2)x")
+
+    // hover: mouse moves up to the notch, rests, then leaves
+    var hover = Hover.Tracker()
+    let anchor = CGPoint(x: 756, y: 939), pill = CGSize(width: 104, height: 36)
+    let hot = Hover.hotZone(anchor: anchor, pill: pill, screenTop: 982)
+    let panelFrame = CGRect(x: 536, y: 560, width: 440, height: 379)
+    var expanded = false, trace: [String] = []
+    let path: [(Double, CGPoint)] = [(0, CGPoint(x: 756, y: 500)), (0.1, CGPoint(x: 760, y: 970)), (0.3, CGPoint(x: 760, y: 970)),
+                                     (1.0, CGPoint(x: 700, y: 700)), (2.0, CGPoint(x: 100, y: 100)), (2.7, CGPoint(x: 100, y: 100))]
+    for (t, m) in path {
+        switch hover.update(mouse: m, now: t, expanded: expanded, hot: hot, panel: panelFrame, busy: false) {
+        case .expand: expanded = true; trace.append("expand@\(t)")
+        case .collapse: expanded = false; trace.append("collapse@\(t)")
+        case .none: break
+        }
+    }
+    line("hover expand / collapse", trace == ["expand@0.3", "collapse@2.7"], trace.joined(separator: " "))
+    hover.collapsed()   // e.g. Esc with the mouse parked at the notch: no instant reopen
+    let parked = (0..<10).map { hover.update(mouse: CGPoint(x: 760, y: 970), now: 3 + Double($0) * 0.1, expanded: false, hot: hot,
+                                             panel: panelFrame, busy: false) }
+    line("hover stays closed after Esc until the mouse leaves", !parked.contains(.expand), "no reopen while parked at the notch")
+
+    // receipts: the verdict is read from status, reason, write_outcome and outcome
+    func verdict(_ fields: String) -> (Verdict?, Phase) {
+        var st = PanelState(); st.apply(.ready(protocol: 1)); st.submitted(); st.apply(.accepted(taskID: "t"))
+        if let m = try? ServerMessage.decode(#"{"type":"receipt","task_id":"t","system1_asks":1,"tokens":9,"duration_ms":5,"# + fields + "}") {
+            st.apply(m)
+        }
+        return (st.verdict, st.phase)
+    }
+    let failed = verdict(#""status":"failed","reason":"note write failed","write_outcome":"failed","final_text":"Saved the note!""#)
+    line("failed write shows Failed", failed.1 == .failed && failed.0?.title.hasPrefix("Failed") == true, failed.0?.title ?? "none")
+    let unv = verdict(#""status":"ok","reason":"completed","write_outcome":"unverified""#)
+    line("unverified write is not Done", unv.1 == .failed && unv.0?.title.hasPrefix("Unverified") == true, unv.0?.title ?? "none")
+    let needs = verdict(#""status":"ok","reason":"needs_selection""#)
+    line("needs_selection asks for a circle", needs.1 == .needsYou && needs.0?.title == "Needs you: Circle the thing you mean",
+         needs.0?.title ?? "none")
+    let ok = verdict(#""status":"ok","reason":"completed","write_outcome":"verified""#)
+    line("verified write is Done", ok.1 == .done && ok.0?.title == "Done", ok.0?.title ?? "none")
+
+    let spoken = SpokenText.clean("**Rent** is due on the 1st [E3]. See [the lease](file:///l.pdf).")
+    line("spoken text", spoken == "Rent is due on the 1st. See the lease.", "\"\(spoken)\"")
+
+    // calm panel: one progress line, one sentence + one action, short pointer labels, lens never covers
+    let prog = ProgressLine.of(tool: "see_region")
+    line("progress is one line", prog == "Looking at your screen…" && ProgressLine.of(tool: "browser_task") == "Using the browser…", prog)
+    let plain = PlainState.of(verdict: .failed("the note write failed; the answer text claims success"))
+    line("failure is one sentence + one action", plain == PlainState(sentence: "The note wasn't saved.", action: .retry),
+         "\(plain?.sentence ?? "none") [\(plain?.actionLabel ?? "")]")
+    let shown = PlainText.display("**Rent** is due [E3].\n- pay online")
+    line("answer shows as plain text", shown == "Rent is due.\npay online", shown.replacingOccurrences(of: "\n", with: " / "))
+    let label = PointerLabel.short("Click the blue Save button in the lower right corner of the window") ?? ""
+    line("pointer label is short", label.count <= 30, "\"\(label)\"")
+    let lensO = LensPlacement.place(size: CGSize(width: 400, height: 300), avoid: [panelFrame, CGRect(x: 600, y: 300, width: 180, height: 120)],
+                                    near: CGRect(x: 600, y: 300, width: 180, height: 120), visible: CGRect(x: 0, y: 0, width: 1512, height: 945))
+    let lensR = CGRect(origin: lensO, size: CGSize(width: 400, height: 300))
+    line("lens covers neither panel nor circle", !lensR.intersects(panelFrame) && !lensR.intersects(CGRect(x: 600, y: 300, width: 180, height: 120)),
+         "lens at \(Int(lensO.x)),\(Int(lensO.y))")
+
+    log("hub selftest \(allOK ? "PASS" : "FAIL")")
+    return allOK ? 0 : 1
+}
+
+if args.contains("--hub-selftest") {
+    exit(MainActor.assumeIsolated { runHubSelftest() })
+} else if args.contains("--lasso-selftest") {
     exit(MainActor.assumeIsolated { runLassoSelftest() })
 } else if let prompt = argValue("--relay-selftest") {
     MainActor.assumeIsolated { runRelaySelftest(prompt) }

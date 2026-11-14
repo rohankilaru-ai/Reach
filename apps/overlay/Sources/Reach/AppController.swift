@@ -7,8 +7,13 @@ import SwiftUI
 final class AppController: NSObject, NSApplicationDelegate {
     let model: OverlayModel
     private var panel: ReachPanel!
-    private let lasso = LassoPicker()
+    private let ready = ReadyLayer()
     private let halo = RegionHalo()
+    private let lens = ZoomLensWindow()
+    private let speaker = Speaker()
+    private var gesture = HubGesture()
+    private var hover = Hover.Tracker()
+    private var hoverTimer: Timer?
     private var ghost: NSWindow?
     private var ghostLabel: String??
     private var ghostFade: DispatchWorkItem?
@@ -25,7 +30,15 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let host = NSHostingView(rootView: PanelView(model: model, onSnap: { [weak self] in self?.snapToTop() },
-                                                     onDragEnd: { [weak self] in self?.dragEnded() }))
+                                                     onDragEnd: { [weak self] in self?.dragEnded() },
+                                                     onSpeak: { [weak self] in
+                                                         guard let self else { return }
+                                                         self.speaker.speak(self.model.state.answer)
+                                                     },
+                                                     onZoom: { [weak self] in
+                                                         if let z = self?.model.zoomTarget { self?.openLens(z) }
+                                                     },
+                                                     onAction: { [weak self] a in self?.act(a) }))
         host.sizingOptions = [.intrinsicContentSize]  // fit() sizes the window, keeping its top edge
         self.host = host
         panel = ReachPanel(content: host)
@@ -36,21 +49,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.expandRequested = { [weak self] in self?.expand(focus: true, why: "click") }
         model.expanded = false
         place()
-        log("panel ready (tap Option-Space to type, hold it to talk, or circle something; Esc cancels)")
-        model.circleRequested = { [weak self] in self?.selectRegion() }
+        log("panel ready (hold Option-Space, circle what you mean, say what to do; tap to type; Esc cancels)")
+        model.onZoom = { [weak self] sel in self?.openLens(sel) }
+        model.onSpeak = { [weak self] text in self?.speaker.speak(text) }
+        model.onStopSpeaking = { [weak self] in self?.speaker.stop() }
+        speaker.onSpeaking = { [weak self] on in
+            self?.model.speaking = on
+            if !on { self?.lastActivity = Date() }   // the 8 s fold starts after the audio ends
+        }
+        ready.onCircle = { [weak self] loop, box in self?.circleDrawn(loop, box: box) }
+        ready.onTooSmall = { [weak self] in self?.model.selectionNote = "draw a bigger circle" }
 
-        // One key: tap opens/closes, press-and-hold (> 0.25 s) talks.
+        // One key: tap opens/closes the typing panel; hold talks and lets you circle at the same time.
         Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option, name: "Option-Space (tap / hold)",
                                 onRelease: { [weak self] in self?.optionSpaceUp() }) { [weak self] in
             self?.optionSpaceDown()
-        }
-        // The older combos still work, silently (not in the UI or README).
-        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "legacy circle combo") { [weak self] in
-            self?.selectRegion()
-        }
-        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.control | Keys.option, name: "legacy talk combo",
-                                onRelease: { [weak self] in self?.voiceRelease() }) { [weak self] in
-            self?.voicePress()
         }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
         model.onPointer = { [weak self] x, y, label, byHand in self?.showPointer(x: x, y: y, label: label, byHand: byHand) }
@@ -63,6 +76,29 @@ final class AppController: NSObject, NSApplicationDelegate {
         log("panel: pill at \(frameLine())")
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.collapseIfIdle() }
+        }
+        // Hover: move the mouse up to the top-centre to open; polled (no input monitoring permission needed).
+        hoverTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.hoverTick() }
+        }
+    }
+
+    private var pillSize = CGSize(width: 120, height: 32)
+
+    private func hoverTick() {
+        guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
+        if !model.expanded, panel.frame.height < 64 { pillSize = panel.frame.size }   // not mid-animation
+        let mouse = NSEvent.mouseLocation
+        let hot = Hover.hotZone(anchor: anchor, pill: pillSize, screenTop: screen.frame.maxY)
+        if Hover.keepZone(panel: panel.frame).contains(mouse), model.expanded { lastActivity = Date() }
+        let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
+            || model.capturing || model.speaking || lens.isOpen || model.capturing
+            || gesture.phase != .idle || NSEvent.pressedMouseButtons != 0 || panel.isKeyWindow
+        switch hover.update(mouse: mouse, now: ProcessInfo.processInfo.systemUptime, expanded: model.expanded, hot: hot,
+                            panel: panel.frame, busy: busy) {
+        case .expand: expand(focus: false, why: "hover", byHover: true)
+        case .collapse: collapse(why: "hover away")
+        case .none: break
         }
     }
 
@@ -80,13 +116,17 @@ final class AppController: NSObject, NSApplicationDelegate {
         host.layoutSubtreeIfNeeded()
         let s = host.intrinsicContentSize
         guard s.width > 0, s.height > 0 else { return }
+        if let vis = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame {
+            let m = PanelBudget.answerMax(visibleHeight: vis.height, spaceBelowAnchor: anchor.y - vis.minY, chrome: 190)
+            if abs(model.answerMax - m) > 1 { model.answerMax = m }
+        }
         let r = NSRect(origin: Placement.origin(anchor: anchor, size: s, visible: panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame),
                        size: s)
         guard r != panel.frame else { return }
         if animated {
             NSAnimationContext.runAnimationGroup { ctx in
-                ctx.duration = 0.28
-                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                ctx.duration = 0.34
+                ctx.timingFunction = CAMediaTimingFunction(controlPoints: 0.3, 1.25, 0.5, 1)   // a small spring overshoot
                 panel.animator().setFrame(r, display: true)
             }
         } else {
@@ -148,8 +188,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         log("panel: snapped to top")
     }
 
-    func expand(focus: Bool, why: String) {
+    func expand(focus: Bool, why: String, byHover: Bool = false) {
         lastActivity = Date()
+        if !byHover { hover.openedElsewhere() }
         if !panel.isVisible { panel.orderFrontRegardless() }
         if !model.expanded {
             model.expanded = true
@@ -164,6 +205,8 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func collapse(why: String) {
         halo.hide()
+        hover.collapsed()
+        model.typing = false
         guard model.expanded else { return }
         model.expanded = false
         DispatchQueue.main.async { [weak self] in
@@ -181,14 +224,30 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func toggle() {
-        if !panel.isVisible || !model.expanded { expand(focus: true, why: "hotkey") } else { collapse(why: "hotkey") }
+        // a hover-opened panel is not focused yet: the tap focuses the field instead of closing it
+        if !panel.isVisible || !model.expanded || !panel.isKeyWindow { model.typing = true; expand(focus: true, why: "hotkey") }
+        else { collapse(why: "hotkey") }
     }
 
     private func show() {
         expand(focus: true, why: "summon")
     }
 
-    private func escape() {
+    /// Esc cancels everything: the hold, the circle, listening, speech, the lens; aborts a running ask; folds when idle.
+    func escape() {
+        speaker.stop()
+        if lens.isOpen { lens.close(); return }
+        if gesture.phase != .idle {
+            _ = gesture.cancel()
+            ready.hide(); halo.hide()
+            _ = model.beginCapture()   // a late capture from this hold is now stale
+            model.capturing = false
+            voiceCancel()
+            model.dropCircle()
+            releaseHoldEsc()
+            log("hold cancelled")
+            return
+        }
         if ptt.phase != .idle { voiceCancel(); return }
         if model.state.phase == .working { model.abort() } else { collapse(why: "esc"); halo.hide() }
     }
@@ -201,16 +260,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         DispatchQueue.main.asyncAfter(deadline: .now() + TapOrHold.threshold) { [weak self] in
             guard let self else { return }
             if self.key.holdCheck(token: token, at: ProcessInfo.processInfo.systemUptime) == .startHold {
-                log("Option-Space held: listening")
-                self.voicePress()
+                self.holdBegan()
             }
         }
     }
 
     private func optionSpaceUp() {
         switch key.up(at: ProcessInfo.processInfo.systemUptime) {
-        case .tap: toggle()
-        case .endHold: voiceRelease()
+        case .tap: speaker.stop(); toggle()
+        case .endHold: holdEnded()
         default: break
         }
     }
@@ -227,12 +285,130 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
+    // MARK: one gesture: hold, circle, speak, release
+
+    func holdBegan() {
+        speaker.stop()   // never transcribe Reach's own voice
+        lens.close()
+        let h = gesture.holdStarted()
+        model.dropCircle()
+        log("hold \(h): listening, ready to circle")
+        ready.show()
+        panel.orderFrontRegardless()
+        if voiceEsc.isEmpty {
+            for mods in [0, Keys.option] {   // Option is still down during the hold
+                if let h = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: mods, name: "Esc (cancel hold)",
+                                                   { [weak self] in self?.escape() }) { voiceEsc.append(h) }
+            }
+        }
+        voicePress()
+    }
+
+    func holdEnded() {
+        gesture.released()
+        ready.hide()
+        log("hold released")
+        if ptt.phase == .listening { voiceRelease() }
+        // no voice session (mic or speech refused, or still asking): a circle still opens the typing box
+        if ptt.phase == .idle { releaseHoldEsc(); resolve(gesture.heard(.reject("nothing heard"))) }
+    }
+
+    private func circleDrawn(_ loop: [CGPoint], box: CGRect) {
+        guard gesture.phase != .idle else { return }
+        let gen = model.beginCapture()
+        gesture.circleDrawn(gen: gen)
+        halo.show(loop: loop)
+        let top = NSScreen.screens.first?.frame.maxY ?? box.maxY
+        let region = Lasso.region(box, primaryTop: top)
+        let path = Lasso.contractPath(loop, primaryTop: top)
+        log("circle: \(loop.count) points, box \(region.map { Int($0) })")
+        model.selectionNote = "circled · reading…"
+        let dir = model.files.capturesDir
+        Task { @MainActor in
+            var sel = Selection(region: region, path: path)
+            var note = "circled"
+            do {
+                let (image, url) = try await RegionCapture.captureLoop(loop, box: box, into: dir)
+                let text = await RegionCapture.recognizeText(image)
+                let words = text.split { $0 == " " || $0 == "\n" }.count
+                log("circle captured to \(url.path) (outside the loop masked), \(words) words read")
+                sel = Selection(text: text.isEmpty ? nil : text, region: region, image_path: url.path, path: path)
+                note = "circled · \(words) words read"
+            } catch let e as CaptureError {
+                log("capture: \(e)")
+                note = e.description
+                if case .permission = e { self.model.needsUser("allow Screen Recording for Reach") }
+            } catch {
+                log("capture error: \(error)")
+                note = "capture failed"
+            }
+            guard gen == self.model.captureGen else { return }
+            self.model.capturing = false
+            if sel.image_path != nil { self.model.zoomTarget = sel }
+            self.model.selectionNote = note
+            self.resolve(self.gesture.circleCaptured(gen: gen, sel))
+        }
+    }
+
+    /// Executes what a hold turned into.
+    private func resolve(_ r: HubGesture.Resolution?) {
+        guard let r else { return }
+        switch r {
+        case .ask(let text, let sel):
+            log("hold -> one ask\(sel != nil ? " with the circle" : "")")
+            model.voiceLine = "heard: \(text)"
+            model.submit(text, selection: sel, fromVoice: true)
+            if sel != nil { model.selectionNote = nil }
+        case .typeWithChip(let sel):
+            log("hold -> circle attached, typing")
+            model.attachCircle(sel, note: model.selectionNote ?? "circled")
+            model.typing = true
+            model.voiceLine = "circle attached: type what to do"
+            expand(focus: true, why: "circle without words")
+        case .zoom(let sel):
+            log("hold -> zoom")
+            model.voiceLine = nil
+            openLens(sel)
+        case .nothing(let why):
+            log("hold -> nothing (\(why))")
+            model.voiceLine = why
+        case .cancelled:
+            break
+        }
+    }
+
+    func openLens(_ sel: Selection) {
+        // never over the panel or the circled area
+        var avoid = [panel.frame]
+        var target = CGRect(x: panel.frame.midX, y: panel.frame.minY, width: 1, height: 1)
+        if let r = sel.region, r.count == 4 {
+            let top = NSScreen.screens.first?.frame.maxY ?? 0
+            target = CGRect(x: r[0], y: top - r[1] - r[3], width: r[2], height: r[3])
+            avoid.append(target)
+        }
+        let vis = (NSScreen.screens.first { $0.frame.intersects(target) } ?? NSScreen.main)?.visibleFrame ?? .zero
+        lens.open(sel) { size in LensPlacement.place(size: size, avoid: avoid, near: target, visible: vis) }
+    }
+
+    /// The one action an end state offers.
+    private func act(_ a: PlainState.Action) {
+        switch a {
+        case .retry: model.retryLast()
+        case .startServer: model.connect()
+        case .openScreenSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+        case .openMicSettings:
+            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        case .circle, .none: break
+        }
+    }
+
     // MARK: hold to talk
 
     /// Key down: ask for Microphone and Speech Recognition the first time, then listen while the key is held.
     func voicePress() {
         guard case .start(let id) = ptt.press() else { return }
-        show()
+        expand(focus: false, why: "hold")
         lastHeard = nil
         model.voiceLine = "starting microphone…"
         MicAuth.request { [weak self] ok in
@@ -258,10 +434,6 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.voiceLine = speech.onDevice ? "listening… (on this Mac)"
                                           : "listening… (on-device speech unavailable: using Apple's server)"
         log("voice listening (session \(id), on-device \(speech.onDevice))")
-        for mods in [0, Keys.control | Keys.option] {
-            if let h = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: mods, name: "Esc (cancel voice)",
-                                               { [weak self] in self?.voiceCancel() }) { voiceEsc.append(h) }
-        }
         speech.start(onResult: { [weak self] heard in
             guard let self, self.ptt.session == id else { return }
             self.lastHeard = heard
@@ -272,10 +444,14 @@ final class AppController: NSObject, NSApplicationDelegate {
             if self.ptt.phase == .finishing { self.complete(id); return }
             guard self.ptt.phase == .listening else { return }
             log("voice error: \(why)")
+            self.model.level = 0
             _ = self.ptt.cancel()
             self.speech.cancel()
             self.endListening()
             self.model.voiceLine = "voice: \(why)"
+        }, onLevel: { [weak self] v in
+            guard let self, self.model.listening else { return }
+            self.model.level = self.model.level * 0.5 + v * 0.5
         })
     }
 
@@ -298,18 +474,15 @@ final class AppController: NSObject, NSApplicationDelegate {
             log("voice: no final transcript within 2 s (last partial \"\(heard.text)\"); not sent")
             model.draft = ""
             model.voiceLine = "didn't catch that"
+            resolve(gesture.heard(.reject("didn't catch that")))
             return
         }
         let avg = VoiceGate.average(heard.confidences).map { String(format: "%.2f", $0) } ?? "none"
         log("voice heard \"\(heard.text)\" (confidence \(avg))")
-        switch VoiceGate.judge(text: heard.text, confidences: heard.confidences) {
-        case .send(let text):
-            model.voiceLine = "heard: \(text)"
-            model.submit(text)
-        case .reject(let why):
-            model.draft = ""
-            model.voiceLine = why
-        }
+        let verdict = VoiceGate.judge(text: heard.text, confidences: heard.confidences)
+        model.draft = ""
+        if case .reject(let why) = verdict { model.voiceLine = why }
+        resolve(gesture.heard(verdict))
     }
 
     func voiceCancel() {
@@ -322,7 +495,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     private func voiceBlocked(_ id: Int, _ why: String) {
-        log("voice blocked: \(why)")
+        log("voice blocked: \(why) (circling still works)")
         if ptt.session == id { _ = ptt.cancel() }
         model.voiceLine = why
         model.needsUser(why)
@@ -330,62 +503,18 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func endListening() {
         model.listening = false
+        model.level = 0
+        releaseHoldEsc()
+    }
+
+    private func releaseHoldEsc() {
         voiceEsc.forEach { Hotkeys.shared.unregister($0) }
         voiceEsc = []
     }
 
-    /// Circle selection: a freehand loop with the user's own mouse; only the inside of the loop is kept.
-    func selectRegion() {
-        panel.orderOut(nil)
-        lasso.log = { log($0) }
-        lasso.begin { [weak self] outcome in
-            guard let self else { return }
-            switch outcome {
-            case .cancelled:
-                self.panel.orderFrontRegardless()
-            case .tooSmall:
-                self.model.selectionNote = "draw a bigger circle"
-                self.expand(focus: false, why: "circle too small")
-            case .closed(let loop, let box):
-                self.halo.show(loop: loop)
-                // wait for the lasso layer to fade so it is not in the picture; the panel stays hidden until done
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { self.captureLoop(loop, box: box) }
-            }
-        }
-    }
-
-    /// Capture first (Reach's own panel is hidden, the lasso layer and halo are excluded), then show the panel.
-    /// Asks typed meanwhile wait for the result; a newer circle wins over an older one still being read.
-    private func captureLoop(_ loop: [CGPoint], box: NSRect) {
-        let top = NSScreen.screens.first?.frame.maxY ?? box.maxY
-        let region = Lasso.region(box, primaryTop: top)
-        let path = Lasso.contractPath(loop, primaryTop: top)
-        log("circle: \(loop.count) points, box \(region.map { Int($0) })")
-        let gen = model.beginCapture()
-        model.selectionNote = "circled · reading…"
-        let dir = model.files.capturesDir
-        Task { @MainActor in
-            defer { self.expand(focus: true, why: "circle") }
-            do {
-                let (image, url) = try await RegionCapture.captureLoop(loop, box: box, into: dir)
-                let text = await RegionCapture.recognizeText(image)
-                let words = text.split { $0 == " " || $0 == "\n" }.count
-                log("circle captured to \(url.path) (outside the loop masked), \(words) words read")
-                self.model.finishCapture(gen, Selection(text: text.isEmpty ? nil : text, region: region,
-                                                        image_path: url.path, path: path), note: "circled · \(words) words read")
-            } catch let e as CaptureError {
-                log("capture: \(e)")
-                self.model.finishCapture(gen, Selection(region: region, path: path), note: e.description)
-                if case .permission = e { self.model.needsUser("allow Screen Recording for Reach") }
-            } catch {
-                log("capture error: \(error)")
-                self.model.finishCapture(gen, Selection(region: region, path: path), note: "capture failed")
-            }
-        }
-    }
-
     /// One reusable ghost pointer. Task pointers rest 4 s; hand pointers (~15 Hz) fade calmly 1 s after the last one.
-    private func showPointer(x: Double, y: Double, label: String?, byHand: Bool) {
+    private func showPointer(x: Double, y: Double, label rawLabel: String?, byHand: Bool) {
+        let label = PointerLabel.short(rawLabel)   // at most 30 characters
         let top = NSScreen.screens.first?.frame.maxY ?? 0
         let size = NSSize(width: 160, height: 34)
         let origin = NSPoint(x: x - 9, y: top - y - 9)

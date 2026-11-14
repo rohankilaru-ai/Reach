@@ -98,10 +98,14 @@ public struct Receipt: Decodable, Equatable, Sendable {
     public var final_text: String?
     public var tools: [String]?
     public var ndi_calls: Int?
+    /// done | not_done | aborted, from the last browser task (nil when there was none).
+    public var outcome: String?
+    /// verified | unverified | failed, from readbacks of native writes (nil when nothing was written).
+    public var write_outcome: String?
 
     /// One compact line for the panel.
     public var line: String {
-        "\(reason) · Drex asks \(system1_asks) · \(tokens) tok · \(duration_ms) ms"
+        "\(reason)\(write_outcome.map { " · write \($0)" } ?? "") · Drex asks \(system1_asks) · \(tokens) tok · \(duration_ms) ms"
     }
 }
 
