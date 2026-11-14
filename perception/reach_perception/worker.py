@@ -8,12 +8,78 @@
 from __future__ import annotations
 
 import argparse
+import queue
 import statistics
 import sys
+import threading
 import time
 
 from .pinch import MIN_DRAG
-from .screen_map import CORNERS, ScreenMap, box_around, screen_size
+from .screen_map import CORNERS, ScreenMap, box_around, build_map, reset_calibration, screen_size
+
+MAX_FRAME_FAILURES = 90  # consecutive failed camera reads before the worker exits (about 3 s at 30 fps)
+FRAME_FAIL_MSG = "[worker] camera stopped delivering frames; exiting. Check that it is connected and not in use."
+
+
+class ReadWorker:
+    """Runs capture + OCR for selections on one background thread so the camera loop and preview never block.
+
+    `submit(rect)` is non-blocking; `poll()` returns finished results (rect, text, image path) without waiting.
+    `capture` and `recognise` are injected so tests need neither Screen Recording nor Vision.
+    """
+
+    def __init__(self, capture, recognise, max_pending: int = 4) -> None:
+        self._capture, self._recognise = capture, recognise
+        self._jobs: queue.Queue = queue.Queue(maxsize=max_pending)
+        self._done: queue.Queue = queue.Queue()
+        self.pending = 0
+        self._lock = threading.Lock()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+
+    @property
+    def busy(self) -> bool:
+        with self._lock:
+            return self.pending > 0
+
+    def submit(self, rect) -> bool:
+        with self._lock:
+            try:
+                self._jobs.put_nowait(rect)
+            except queue.Full:
+                return False
+            self.pending += 1
+            return True
+
+    def _loop(self) -> None:
+        while True:
+            rect = self._jobs.get()
+            if rect is None:
+                return
+            text, img = "", None
+            try:
+                img = self._capture(rect)
+                text = self._recognise(img) if img else ""
+            except Exception as exc:  # a failed read must not kill the thread
+                print(f"[worker] read failed: {exc}")
+            self._done.put((rect, text, img))
+
+    def poll(self) -> list:
+        out = []
+        while True:
+            try:
+                out.append(self._done.get_nowait())
+            except queue.Empty:
+                break
+        with self._lock:
+            self.pending -= len(out)
+        return out
+
+    def close(self) -> None:
+        try:
+            self._jobs.put_nowait(None)
+        except queue.Full:
+            pass
 
 
 def camera_check(seconds: float = 3.0) -> int:
@@ -71,6 +137,8 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     bridge.connect()
     print(f"[worker] screen {sw:.0f}x{sh:.0f} pt, mapping={'calibrated' if smap.calibrated else 'fixed'}, "
           f"bridge: {bridge.status}")
+    reader = None if no_ocr else ReadWorker(capture_region, ocr)
+    fails = 0
     calib: list | None = None  # corners collected during calibration
     last = "ready"
     ocr_label = "OCR off: pointer demo only" if no_ocr else "OCR on"
@@ -78,11 +146,17 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     try:
         while True:
             frame = cam.read()
-            if frame is None:
-                continue
-            eng.w, eng.h = frame.shape[1], frame.shape[0]
             t_ms = int((time.monotonic() - t0) * 1000)
-            lm = hands.detect(frame, t_ms)
+            if frame is None:
+                fails += 1
+                if fails >= MAX_FRAME_FAILURES:
+                    print(FRAME_FAIL_MSG)
+                    return 3
+                lm = None  # a missing frame is tracking loss, handled below like any no-hand frame
+            else:
+                fails = 0
+                eng.w, eng.h = frame.shape[1], frame.shape[0]
+                lm = hands.detect(frame, t_ms)
             for e in eng.update(t_ms, lm):
                 if e.kind == "pause":
                     last = "PAUSE (open palm, local)"
@@ -94,8 +168,12 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                     calib.append(e.data["end"])
                     last = f"calibration: got {CORNERS[len(calib) - 1]}"
                     if len(calib) == 4:
-                        smap = ScreenMap(sw, sh, calib)
-                        last = f"calibration saved to {smap.save(calib)}"
+                        smap, warn = build_map(sw, sh, calib)
+                        if warn:
+                            last = warn
+                            print(f"[worker] WARNING: {warn}")
+                        else:
+                            last = f"calibration saved to {smap.save(calib)}"
                         calib = None
                 elif e.kind == "select":
                     s, en = e.data["start"], e.data["end"]
@@ -103,23 +181,27 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                         rect = box_around(smap.to_screen(en), sw, sh)
                     else:
                         rect = smap.rect_to_screen(s, en)
-                    text, img = None, None
-                    if not no_ocr:
-                        img = capture_region(rect)
-                        text = ocr(img) if img else ""
-                        if not text:
-                            ocr_label = "no text read (Screen Recording permission?): pointer demo only"
-                        else:
-                            ocr_label = f"OCR: {len(text)} chars"
-                    sent = bridge.select(rect, text or None, str(img) if img else None)
-                    last = f"select {rect} {'sent' if sent else 'local only'}"
-                    print(f"[worker] {last}; {ocr_label}")
+                    if reader is not None and reader.submit(rect):
+                        ocr_label = "reading..."
+                        last = f"select {rect}: reading..."
+                    else:
+                        sent = bridge.select(rect, None, None)
+                        last = f"select {rect} {'sent' if sent else 'local only'}"
+                        print(f"[worker] {last}; {ocr_label}")
+            for rect, text, img in (reader.poll() if reader else []):
+                ocr_label = f"OCR: {len(text)} chars" if text else \
+                    "no text read (Screen Recording permission?): pointer demo only"
+                sent = bridge.select(rect, text or None, str(img) if img else None)
+                last = f"select {rect} {'sent' if sent else 'local only'}"
+                print(f"[worker] {last}; {ocr_label}")
             if eng.pointer:
                 sx, sy = smap.to_screen(eng.pointer)
                 bridge.pointer(round(sx), round(sy), eng.pinching, True)
             elif not eng.tracking:
                 bridge.pointer(None, None, False, False)
             if no_preview:
+                if frame is None:
+                    time.sleep(0.03)
                 continue
             ratio = f"{eng.ratio:.2f}" if eng.ratio is not None else "-"
             todo = f"CALIBRATE: reach to {CORNERS[len(calib)]} and pinch" if calib is not None else ""
@@ -128,16 +210,22 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                      f"{last} | {ocr_label}", f"bridge: {bridge.status} | q quit, c calibrate, r reset map"]
             if todo:
                 lines.insert(0, todo)
-            key = preview.show(preview.draw(frame, lm, eng, lines))
+            if frame is None:
+                key = preview.poll_key()
+            else:
+                key = preview.show(preview.draw(frame, lm, eng, lines))
             if key == ord("q"):
                 break
             if key == ord("c"):
                 calib = []
             if key == ord("r"):
-                smap = ScreenMap(sw, sh)
+                smap = reset_calibration(sw, sh)
+                last = "mapping reset; saved calibration deleted"
     except KeyboardInterrupt:
         pass
     finally:
+        if reader is not None:
+            reader.close()
         hands.close()
         cam.release()
         bridge.close()
