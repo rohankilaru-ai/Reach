@@ -16,6 +16,9 @@ final class OverlayModel: ObservableObject {
     /// Voice line under the text field: "listening…", "heard: …", "didn't catch that". Survives `submitted()`.
     @Published var voiceLine: String?
     @Published var listening = false
+    /// Pill (false) or full panel (true). The app controller owns when it changes.
+    @Published var expanded = true
+    var expandRequested: (() -> Void)?
 
     let files: RunFiles
     private let client = ReachClient()

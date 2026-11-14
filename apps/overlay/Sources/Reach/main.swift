@@ -144,6 +144,18 @@ if let prompt = argValue("--relay-selftest") {
 } else if let prompt = argValue("--selftest") {
     MainActor.assumeIsolated { runSelftest(prompt) }
     app.run()
+} else if args.contains("--panel-selftest") {
+    // Real windows, no input events: pill -> expanded -> pill, logging frames, then exit.
+    let delegate = MainActor.assumeIsolated { AppController(files: files) }
+    app.delegate = delegate
+    DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+        MainActor.assumeIsolated { delegate.expand(focus: false, why: "selftest") }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+        MainActor.assumeIsolated { delegate.collapse(why: "selftest") }
+    }
+    DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) { log("panel selftest done"); exit(0) }
+    app.run()
 } else {
     let delegate = MainActor.assumeIsolated { AppController(files: files) }
     app.delegate = delegate

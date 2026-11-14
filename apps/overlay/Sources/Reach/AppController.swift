@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import ReachCore
 import SwiftUI
 
@@ -23,11 +24,21 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let host = NSHostingView(rootView: PanelView(model: model))
-        host.sizingOptions = [.preferredContentSize]
+        let host = NSHostingView(rootView: PanelView(model: model, onSnap: { [weak self] in self?.snapToTop() }))
+        host.sizingOptions = [.intrinsicContentSize]  // fit() sizes the window, keeping its top edge
+        self.host = host
         panel = ReachPanel(content: host)
+        sizeWatch = model.objectWillChange.sink { [weak self] _ in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.fit(animated: false) } }
+        }
         panel.onEscape = { [weak self] in self?.escape() }
+        model.expandRequested = { [weak self] in self?.expand(focus: true, why: "click") }
+        model.expanded = false
+        fit(animated: false)
         place()
+        NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) {
+            [weak self] _ in MainActor.assumeIsolated { self?.savePosition() }
+        }
         log("panel ready (Option-Space toggles, Option-Shift-Space selects a region, hold Control-Option-Space to talk, Esc aborts)")
 
         Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option, name: "Option-Space") { [weak self] in
@@ -44,34 +55,146 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.onPointer = { [weak self] x, y, label, byHand in self?.showPointer(x: x, y: y, label: label, byHand: byHand) }
         model.onHandSelection = { [weak self] _ in
             // open without taking focus: the user's hand is on whatever they were reading
-            if self?.panel.isVisible == false { self?.panel.orderFrontRegardless() }
+            self?.expand(focus: false, why: "hand selection")
         }
         model.connect()
-        show()
+        panel.orderFrontRegardless()  // the idle pill; never takes focus on launch
+        log("panel: pill at \(frameLine())")
+        idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated { self?.collapseIfIdle() }
+        }
     }
 
+    // MARK: island placement, pill <-> panel
+
+    private var host: NSView?
+    private var sizeWatch: AnyCancellable?
+
+    /// Sizes the window to its SwiftUI content, keeping the top edge and centre (pill grows downward).
+    private func fit(animated: Bool) {
+        guard let host, let panel else { return }
+        host.layoutSubtreeIfNeeded()
+        let s = host.intrinsicContentSize
+        if ProcessInfo.processInfo.environment["REACH_DEBUG_FIT"] != nil { log("fit: content \(s) frame \(panel.frame.size)") }
+        guard s.width > 0, s.height > 0, s != panel.frame.size else { return }
+        let r = NSRect(origin: Placement.keepTop(old: panel.frame, newSize: s, visible: panel.screen?.visibleFrame), size: s)
+        placing = true
+        if animated {
+            NSAnimationContext.runAnimationGroup { ctx in
+                ctx.duration = 0.28
+                ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                panel.animator().setFrame(r, display: true)
+            }
+        } else {
+            panel.setFrame(r, display: true)
+        }
+        placing = false
+    }
+
+    private var idleTimer: Timer?
+    private var lastActivity = Date()
+    private var placing = false
+    static let collapseAfter: TimeInterval = 8
+
+    private func frameLine() -> String {
+        let f = panel.frame
+        return "x \(Int(f.minX)) y \(Int(f.minY)) w \(Int(f.width)) h \(Int(f.height))"
+    }
+
+    private static func displayID(_ s: NSScreen) -> String {
+        (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber).map { "\($0)" } ?? "main"
+    }
+
+    private func notchOrigin(_ s: NSScreen) -> NSPoint {
+        Placement.notchOrigin(screen: s.frame, visible: s.visibleFrame, safeTop: s.safeAreaInsets.top,
+                              auxLeft: s.auxiliaryTopLeftArea, auxRight: s.auxiliaryTopRightArea, size: panel.frame.size)
+    }
+
+    /// Saved spot on the current display if there is one, else hugging the notch at the top of the main screen.
     private func place() {
         guard let screen = NSScreen.main else { return }
-        let f = screen.visibleFrame
-        panel.setFrameTopLeftPoint(NSPoint(x: f.midX - 210, y: f.maxY - 80))
+        let saved = (UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:])
+            .compactMapValues { $0.count == 2 ? CGPoint(x: $0[0], y: $0[1]) : nil }
+        let displays = Dictionary(NSScreen.screens.map { (Self.displayID($0), $0.visibleFrame) }, uniquingKeysWith: { a, _ in a })
+        placing = true
+        defer { placing = false }
+        if let o = Placement.restore(saved: saved, display: Self.displayID(screen), displays: displays, size: panel.frame.size) {
+            panel.setFrameOrigin(o)
+        } else {
+            panel.setFrameOrigin(notchOrigin(screen))
+        }
+    }
+
+    private func savePosition() {
+        guard !placing, let screen = panel.screen else { return }
+        var saved = UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:]
+        saved[Self.displayID(screen)] = [panel.frame.minX, panel.frame.maxY]
+        UserDefaults.standard.set(saved, forKey: "panelTopLeft")
+    }
+
+    /// Double-click on the header or pill: back to the notch, and forget the saved spot on this display.
+    func snapToTop() {
+        guard let screen = panel.screen ?? NSScreen.main else { return }
+        var saved = UserDefaults.standard.dictionary(forKey: "panelTopLeft") as? [String: [Double]] ?? [:]
+        saved[Self.displayID(screen)] = nil
+        UserDefaults.standard.set(saved, forKey: "panelTopLeft")
+        placing = true
+        let o = notchOrigin(screen)
+        NSAnimationContext.runAnimationGroup { ctx in
+            ctx.duration = 0.25
+            panel.animator().setFrameOrigin(o)
+        }
+        placing = false
+        log("panel: snapped to top")
+    }
+
+    func expand(focus: Bool, why: String) {
+        lastActivity = Date()
+        if !panel.isVisible { panel.orderFrontRegardless() }
+        if !model.expanded {
+            model.expanded = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                self.fit(animated: true)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { log("panel: expanded (\(why)) at \(self.frameLine())") }
+            }
+        }
+        if focus { panel.makeKey() }
+    }
+
+    func collapse(why: String) {
+        guard model.expanded else { return }
+        model.expanded = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.fit(animated: true)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { log("panel: pill (\(why)) at \(self.frameLine())") }
+        }
+    }
+
+    /// Collapses after ~8 s idle; never while an ask runs, while listening, or with text in the field.
+    private func collapseIfIdle() {
+        let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty
+        if busy { lastActivity = Date(); return }
+        if model.expanded, Date().timeIntervalSince(lastActivity) > Self.collapseAfter { collapse(why: "idle") }
     }
 
     func toggle() {
-        if panel.isVisible { panel.orderOut(nil); halo.hide() } else { show() }
+        if !panel.isVisible || !model.expanded { expand(focus: true, why: "hotkey") } else { collapse(why: "hotkey") }
     }
 
     private func show() {
-        panel.orderFrontRegardless()
-        panel.makeKey()
+        expand(focus: true, why: "summon")
     }
 
     private func escape() {
         if ptt.phase != .idle { voiceCancel(); return }
-        if model.state.phase == .working { model.abort() } else { panel.orderOut(nil); halo.hide() }
+        if model.state.phase == .working { model.abort() } else { collapse(why: "esc"); halo.hide() }
     }
 
     /// While a task runs, Esc aborts from anywhere; the hotkey is released as soon as it ends.
     private func phaseChanged(_ phase: Phase) {
+        if phase != .idle { expand(focus: false, why: "answer \(phase.rawValue)") }
         if phase == .working, escHotkey == nil {
             escHotkey = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: 0, name: "Esc (abort)") { [weak self] in
                 self?.model.abort()

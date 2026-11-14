@@ -37,10 +37,38 @@ struct Halo: View {
 struct PanelView: View {
     @ObservedObject var model: OverlayModel
     @FocusState private var focused: Bool
+    @State private var hovering = false
+    var onSnap: () -> Void = {}
 
     var body: some View {
+        Group {
+            if model.expanded { expanded } else { pill }
+        }
+        .animation(.easeInOut(duration: 0.28), value: model.expanded)
+    }
+
+    /// The idle island: status dot + "Reach", the hotkey hint on hover. Drag it anywhere; double-click snaps it back.
+    private var pill: some View {
+        HStack(spacing: 8) {
+            Circle().fill(Palette.color(model.state.phase)).frame(width: 8, height: 8)
+            Text("Reach").font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundStyle(.white.opacity(0.9))
+            if hovering {
+                Text("⌥Space").font(.system(size: 10, design: .monospaced)).foregroundStyle(.white.opacity(0.5))
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 7)
+        .background(Capsule().fill(.black.opacity(0.88)))
+        .overlay(Capsule().stroke(.white.opacity(0.08)))
+        .contentShape(Capsule())
+        .onHover { h in withAnimation(.easeOut(duration: 0.15)) { hovering = h } }
+        .onTapGesture(count: 2) { onSnap() }
+        .onTapGesture { model.expandRequested?() }
+    }
+
+    private var expanded: some View {
         let s = model.state
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
                 Halo(phase: s.phase)
                 Text(s.stateLine)
@@ -52,6 +80,9 @@ struct PanelView: View {
                     .font(.system(size: 10, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.35))
             }
+            .contentShape(Rectangle())
+            .onTapGesture(count: 2) { onSnap() }  // drag the header to move; double-click snaps back to the notch
+            .help("Drag to move · double-click to snap to the top")
 
             TextField(model.listening ? "Listening…" : "Ask Reach…", text: $model.draft)
                 .textFieldStyle(.plain)
@@ -125,6 +156,7 @@ struct PanelView: View {
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(.white.opacity(0.08)))
         .onAppear { focused = true }
+        .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
     }
 }
 
@@ -192,6 +224,15 @@ final class ReachPanel: NSPanel {
         isMovableByWindowBackground = true
         hidesOnDeactivate = false
         contentView = content
+    }
+
+    /// Content-driven resizes (pill <-> panel) keep the top edge, so the island grows downward. Moves are untouched.
+    override func setFrame(_ frameRect: NSRect, display flag: Bool) {
+        var r = frameRect
+        if r.size != frame.size, r.origin == frame.origin, frame.size != .zero {
+            r.origin = Placement.keepTop(old: frame, newSize: r.size, visible: screen?.visibleFrame)
+        }
+        super.setFrame(r, display: flag)
     }
 
     override var canBecomeKey: Bool { true }
