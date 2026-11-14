@@ -1,0 +1,65 @@
+# Finger processing configuration. Relative paths are relative to this folder.
+
+camera:
+  index: 0
+  width: 640
+  height: 480
+  fps: 60                 # requested; the MacBook Air camera delivers 30 (the HUD shows real fps)
+  fourcc: MJPG
+  buffer_size: 1
+  exposure: null          # manual exposure value, or null for auto (often ignored on macOS)
+
+tracker:
+  model_path: hand_landmarker.task
+  min_detection_confidence: 0.5
+  min_presence_confidence: 0.5
+  min_tracking_confidence: 0.5
+  delegate: cpu           # cpu | gpu (measured about equal on this laptop)
+  swap_handedness: true   # unmirrored image goes in, so MediaPipe's left/right label is inverted
+
+hand_lock:                # one hand only
+  control_hand: right     # right | left | any
+  handedness_vote_frames: 5
+  handedness_vote_min: 3
+  hold_frames: 3          # frames to hold the last hand through a dropout
+  swap_jump: 0.30         # wrist jump (normalized) that means a different hand
+  swap_scale_ratio: 0.40  # hand-scale change in one frame that means a different hand
+
+features:
+  extend_angle_deg: 150   # middle-joint angle above which a finger counts as extended
+  thumb_extend_ratio: 0.55
+  pinch_enter: 0.25       # pinch_dist below this -> pinch down
+  pinch_exit: 0.35        # pinch_dist above this -> pinch up
+  pattern_hold_frames: 2  # curled/extended pattern must hold this long to fire a trigger
+
+pointer:
+  anchor: blend           # index_tip | index_mcp | blend
+  blend_tip_weight: 0.5
+  pinch_freeze_ms: 100    # hold the cursor still after a pinch edge
+
+smoothing:                # One Euro filter, applied to every fingertip and the pointer
+  min_cutoff: 1.0
+  beta: 0.5
+  d_cutoff: 1.0
+
+gating:
+  small_width: 160
+  small_height: 120
+  classify_motion: 0.04   # motion above this -> should_classify
+  idle_motion: 0.02       # below this with no hand -> idle landmarker rate
+  idle_after_s: 1.0
+  idle_landmarker_hz: 5
+
+calibration:
+  path: calibration.json
+  inset: 0.10
+  dwell_s: 0.8
+  still_speed: 0.05       # normalized units/s
+  default_region: [0.2, 0.2, 0.8, 0.8]   # x0, y0, x1, y1 used when not calibrated
+
+screen:
+  width: null             # null = detect
+  height: null
+
+window_size: 10           # frames kept in FingerProcessor.window()
+preview_hz: 20
