@@ -142,3 +142,14 @@ def test_fake_harness_json_is_read_from_stdout(tmp_path: Path, monkeypatch):
     script.write_text(f"print({json.dumps(json.dumps(SUCCEEDED))})")
     s = asyncio.run(browser.run_task("t", "https://x", cmd=[sys.executable, str(script)]))
     assert s["done"] and s["drex_calls"] == 3
+
+
+def test_browser_outcome_and_write_outcome_coexist():
+    b = ReceiptBuilder("t3")
+    b.feed(_end(browser.render(browser.summarize(SUCCEEDED, exit_code=0))))
+    b.feed({"type": "tool_call_end", "name": "note_append", "status": "ok",
+            "content": "outcome=verified destination=file chars=20"})
+    b.feed({"type": "run_end", "reason": "completed", "final_text": "saved", "usage": {}})
+    r = b.receipt()
+    assert r.status == "ok" and r.outcome == "done" and r.write_outcome == "verified"
+    assert r.tools == ["browser_task", "note_append"]
