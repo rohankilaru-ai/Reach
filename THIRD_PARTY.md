@@ -1,12 +1,13 @@
 # Third-party software and services
 
-Reach's own code is MIT (see `LICENSE`). Nothing below is vendored into this repository; each is installed or cloned by the setup steps (the one exception is the adapted silent-chat code and patch, noted in its row).
+Reach's own code is MIT (see `LICENSE`). Almost nothing below is vendored into this repository; each is installed or cloned by the setup steps. The exceptions, each noted in its row: the adapted silent-chat code and its patch under `perception/silent/`, and the unmodified MediaPipe hand landmarker model file `perception/models/hand_landmarker.task`. The `patches/` directory holds Reach's own patches to the Nace browser harness, not the harness itself.
 
 | Component | Source | Licence | How Reach uses it |
 | --- | --- | --- | --- |
 | Intern (`intern-agent` v0.30.1) | github.com/nace-ai/intern | Apache-2.0 | The agent harness. Every Reach task runs in an Intern Session; Reach adds tools and a policy hook through Intern's extension interface. |
 | Drex Max (`drex-max-v1.1`) | Nace console API | Nace terms | System 1: supervises and judges Intern's steps and tool calls; routes the 12 voice/typed commands. |
 | NDI via `nace-sdk` | Nace console API | Nace terms | Document parsing and quote grounding for evidence cards. |
+| Nace's hosted browser via `nace-sdk` (`browser_runs`) | Nace console API | Nace terms | The `browser_cloud` tool: Drex Max drives a sandboxed cloud browser on public pages; billed per run to the user's Nace credits. |
 | Nace browser harness | github.com/nace-ai/drex-browser-harness-pub at commit `9f09a8c` | MIT | Browser execution. Reach applies three patches, kept in `patches/` and applied by `scripts/setup-browser.sh`: (1) `browser-harness-deepinfra.patch` adds DeepInfra as a helper-model provider (22 lines); (2) `browser-harness-drex-alias.patch` accepts the dated model id `drex-max-v1.1` where the harness expected `drex-max` (one condition each in `src/drex.ts` and `src/keycheck.ts`); (3) `browser-harness-extension-deepinfra.patch`, applied on top of the other two, lets the Chrome extension take a DeepInfra key (`sk-di-`): host permission in `src/manifest.json`, `deepinfraKey` in settings, a DeepInfra key check, DeepInfra named in the side panel, and a type guard on the dated-model check so `npm run build` passes lint. See `docs/EXTENSION.md`. |
 | Qwen3-30B-A3B on DeepInfra (default System 2; Qwen3.8-27B also supported) | deepinfra.com | DeepInfra terms | System 2: planning and answers. |
 | Qwen3-VL-235B-A22B-Instruct on DeepInfra | deepinfra.com | DeepInfra terms | Reads screen regions (`see_region`) and is the browser harness's helper model. |
