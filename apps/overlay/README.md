@@ -73,8 +73,9 @@ stays once the run has ended (Speak only; the speaker toggle or Esc silences a r
 Try again; Try again shows only on failure. A run that needs you puts a small dot on the menu bar icon until the next
 ask. The mapping is pure logic in `TaskEnd.of(receipt, verdict:)` (ReachCore). The expanded card is never empty: with
 nothing to show it shows the "Ask Reach…" row (`PanelContent`). In Auto mode nothing is drawn when idle: a pill that
-kept key focus after a typed ask no longer counts as busy, and a `run_end` event ends a working state even when its
-receipt never arrives (for example a task started by another client).
+kept key focus after a typed ask no longer counts as busy. Acting tools are the backend's real names (`TaskEnd.actingTools`:
+ax_press, ax_set_text, browser_task, chrome_* except list, finder_open/reveal, note_append, shelf/table_to_note, point_at);
+reading tools (see_screen, evidence_search, open_source, …) keep a question in the answer panel.
 
 **Verdicts** come from the receipt's `status`, `reason`, `write_outcome` and `outcome`, never from the answer text:
 `Done`; `Needs you: Circle the thing you mean` for `needs_selection`; `Failed: the note write failed`;
@@ -117,7 +118,7 @@ scenario: hold -> circle -> release is one ask with transcript + selection, rele
 circle without speech, speech without circle, no stale circle on the next hold, Esc cancel, the zoom word, hover
 expand/collapse, failed / unverified / needs_selection / verified receipts, spoken-text cleaning, the quiet status
 (note saved -> pill Done, browser not done -> Couldn't finish + Retry, needs you -> amber + Retry, plain question ->
-answer panel, stopped -> nothing), the never-empty card, run_end clearing a stale working state, and Auto mode hiding
+answer panel, stopped -> nothing), the never-empty card, a receipt after run_end ending the working state, and Auto mode hiding
 the idle pill.
 
 ## Key-free check

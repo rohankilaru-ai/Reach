@@ -442,14 +442,18 @@ public enum TaskEnd: Equatable, Sendable {
     /// Stopped by the user: nothing to show.
     case quiet
 
-    /// Tool names that act on the world (as opposed to reading or searching for an answer).
-    static let actionMarks = ["browser", "chrome", "note", "write", "save", "do_", "do-", "open", "folder", "launch",
-                              "point", "guide", "step", "click", "type_", "fill"]
+    /// The backend's tools that act on the world (Do mode, browser, Chrome, Finder, notes, pointer steps). Reading
+    /// tools (see_screen, see_region, evidence_search, open_source, ax_describe, chrome_list_tabs, finder_list,
+    /// reach_now) do not count: a question that only reads ends in the answer panel.
+    public static let actingTools: Set<String> = [
+        "ax_press", "ax_set_text", "browser_task", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab",
+        "chrome_open_url", "finder_open", "finder_reveal", "note_append", "shelf_to_note", "table_to_note", "point_at",
+    ]
 
-    /// The run used an acting tool: a browser task, a note write, Do mode, Chrome, a folder open or pointer steps.
+    /// The run used an acting tool, or reported a browser outcome or a note write.
     public static func usedTool(_ r: Receipt) -> Bool {
         if r.outcome != nil || r.write_outcome != nil { return true }
-        return (r.tools ?? []).contains { t in let l = t.lowercased(); return actionMarks.contains { l.contains($0) } }
+        return (r.tools ?? []).contains { actingTools.contains($0) }
     }
 
     public static func of(_ r: Receipt, verdict: Verdict) -> TaskEnd {
@@ -471,12 +475,15 @@ public enum TaskEnd: Equatable, Sendable {
 
     /// A few words saying what got done, or nil.
     public static func doneWords(_ r: Receipt) -> String? {
-        if r.write_outcome == "verified" { return "Note saved" }
-        let tools = (r.tools ?? []).map { $0.lowercased() }
-        if r.outcome == "done" || tools.contains(where: { $0.contains("browser") || $0.contains("chrome") }) { return "Browser task done" }
-        if tools.contains(where: { $0.contains("folder") || $0.contains("open") }) { return "Opened" }
-        if tools.contains(where: { $0.contains("point") || $0.contains("guide") || $0.contains("step") }) { return "Steps shown" }
-        if tools.contains(where: { $0.contains("note") || $0.contains("write") || $0.contains("save") }) { return "Saved" }
+        let tools = Set(r.tools ?? [])
+        if r.write_outcome == "verified" || !tools.isDisjoint(with: ["note_append", "shelf_to_note", "table_to_note"]) {
+            return "Note saved"
+        }
+        if r.outcome == "done" || tools.contains("browser_task") { return "Browser task done" }
+        if tools.contains(where: { $0.hasPrefix("chrome_") }) { return "Chrome updated" }
+        if tools.contains("finder_open") || tools.contains("finder_reveal") { return "Opened" }
+        if tools.contains("ax_press") || tools.contains("ax_set_text") { return "Done in the app" }
+        if tools.contains("point_at") { return "Steps shown" }
         return nil
     }
 

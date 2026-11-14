@@ -313,7 +313,7 @@ if args.contains("--replay") {
         case .quiet: return "quiet"
         }
     }
-    let note = ended(#""status":"ok","reason":"completed","write_outcome":"verified","tools":["write_note"]"#)
+    let note = ended(#""status":"ok","reason":"completed","write_outcome":"verified","tools":["note_append"]"#)
     line("note saved -> pill Done, no Retry", note.0 == .compact(CompactResult(kind: .done, line: "Done · Note saved")), compactLine(note.0))
     let web = ended(#""status":"ok","reason":"completed","outcome":"not_done","tools":["browser_task"]"#)
     line("browser not done -> pill Couldn't finish + Retry", web.0 == .compact(CompactResult(kind: .failed, line: "Couldn't finish")),
@@ -321,7 +321,7 @@ if args.contains("--replay") {
     let need = ended(#""status":"ok","reason":"needs_selection","tools":["see_region"]"#)
     line("needs you -> amber pill + Retry", need.0 == .compact(CompactResult(kind: .needsYou, line: "Needs you: Circle the thing you mean")),
          compactLine(need.0))
-    let q = ended(#""status":"ok","reason":"completed","tools":["search_docs"],"final_text":"Rent is due on the 1st.""#)
+    let q = ended(#""status":"ok","reason":"completed","tools":["evidence_search","see_screen"],"final_text":"Rent is due on the 1st.""#)
     line("plain question -> answer panel, run ended", q.0 == .answerPanel && q.1.phase == .done && PlainState.of(verdict: .done) == nil,
          "\(compactLine(q.0)); phase \(q.1.phase.rawValue), no Try again next to Done")
     let stop = ended(#""status":"aborted","reason":"user","tools":["browser_task"]"#)
@@ -334,7 +334,8 @@ if args.contains("--replay") {
     var cli = PanelState(); cli.apply(.ready(protocol: 1)); cli.submitted(); cli.apply(.accepted(taskID: "cli-7"))
     cli.apply(.event(taskID: "cli-7", kind: "tool_call_start", body: .object(["name": .string("browser_task")])))
     cli.apply(.event(taskID: "cli-7", kind: "run_end", body: .object([:])))
-    line("run_end without receipt clears working", cli.phase == .idle && cli.tool == nil, "phase \(cli.phase.rawValue)")
+    if let m = try? ServerMessage.decode(#"{"type":"receipt","task_id":"cli-7","status":"ok","reason":"completed","outcome":"done","tools":["browser_task"],"system1_asks":1,"tokens":9,"duration_ms":5}"#) { cli.apply(m) }
+    line("receipt after run_end ends working", cli.phase == .done && cli.taskID == nil, "phase \(cli.phase.rawValue), no stale working")
     let auto = PillVisibility.shouldShow(mode: .auto, expanded: false, busy: false)
     line("Auto mode idle -> pill hidden", !auto, "nothing drawn when idle")
 
