@@ -65,6 +65,8 @@ final class OverlayModel: ObservableObject {
     let files: RunFiles
     private let client = ReachClient()
     private var retry: Timer?
+    private lazy var launcher = BackendLauncher(files: files)
+    private var reconnectFailures = 0
     private var pendingAsk: (String, Bool)?
     var onPhase: ((Phase) -> Void)?
     /// (x, y, label, byHand). Hand pointers arrive at ~15 Hz and fade after 1 s without one.
@@ -99,12 +101,14 @@ final class OverlayModel: ObservableObject {
     func connect(waitSeconds: Double = .infinity) {
         let deadline = Date().addingTimeInterval(waitSeconds)
         func attempt() {
-            if let info = files.read() {
+            if let info = files.read(), launcher.serverReachable() {
+                reconnectFailures = 0
                 client.connect(port: info.port, token: info.token)
                 return
             }
+            launcher.ensureRunning()   // nothing is listening: start the backend ourselves
             if Date() > deadline {
-                log("no server: \(files.runDir.path)/server.json not found")
+                log("no server reachable: \(files.runDir.path)/server.json")
                 mutate { $0.needsUser("start `reach serve`") }
                 return
             }
@@ -116,6 +120,8 @@ final class OverlayModel: ObservableObject {
 
     private func scheduleReconnect() {
         retry?.invalidate()
+        reconnectFailures += 1
+        if reconnectFailures >= 2 { launcher.ensureRunning() }
         retry = Timer.scheduledTimer(withTimeInterval: 2, repeats: false) { [weak self] _ in
             Task { @MainActor in self?.connect() }
         }

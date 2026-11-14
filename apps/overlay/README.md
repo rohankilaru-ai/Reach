@@ -166,3 +166,5 @@ to turn it off by voice. It always starts off at launch. While on, the pill show
 - Pinch: while hands-free is on, a held pinch from the hand worker counts as holding Option-Space (no wake word needed);
   releasing the pinch, or no pinch pointer for 0.6 s, ends it.
 - Check: `.build/debug/Reach --handsfree-selftest` (headless: fake segments and replies; no mic, network or prompts).
+## Backend auto-start
+When no backend is reachable the app starts `uv run reach serve` from the repo's `backend/` folder itself (at most once every 25 s) and logs to `.reach/serve.log`. Server options live in `.reach/server.env` as plain `REACH_*=value` lines (for example `REACH_DO_MODE=1`); keys are never read from it.
