@@ -272,25 +272,26 @@ class Matcher:
             self.window.clear()
             self._armed = True
         fired = None
-        for d in self._poll():
-            self.last = d
-            if d.accepted:
-                fired = d.label
-            elif d.error is not None and d.local_d < LOCAL_ACCEPT:   # Drex failed: the local match decides
-                fired = d.local_best
         if len(self.window) == WINDOW and self.gestures:
             dist = self.distances()
             best = min(dist, key=dist.get) if dist else None
             best_d = dist[best] if best else math.inf
             if best_d > GATE:
                 self._armed = True
-            elif self._armed and now - self._last_fire >= COOLDOWN_S and fired is None:
+            elif self._armed and now - self._last_fire >= COOLDOWN_S:
                 if not self.use_drex:
                     if best_d < LOCAL_ACCEPT:
                         fired = best
                         self.last = Decision(best, True, "local", local_best=best, local_d=best_d)
                 elif not self._busy and now - self._last_call >= DREX_MIN_INTERVAL_S:
                     self._ask([n for n, d in dist.items() if d <= GATE], best, best_d, now)
+        for d in self._poll():   # Drex decisions that arrived (this frame when run inline)
+            self.last = d
+            if d.accepted:
+                fired = d.label
+            elif d.error is not None and d.local_d < LOCAL_ACCEPT:   # Drex failed: the local match decides
+                fired = d.local_best
+                d.source = "local"
         if fired in self.gestures and self._armed and now - self._last_fire >= COOLDOWN_S:
             self._last_fire, self._armed = now, False
             return self.gestures[fired]

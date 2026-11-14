@@ -7,13 +7,18 @@ Reach's agent tools never do. This file only starts and stops that process; its 
 
 from __future__ import annotations
 
+import json
 import os
 import signal
 import subprocess
 import time
+import uuid
 from pathlib import Path
 
-from .paths import REPO_ROOT, run_dir
+from .paths import REPO_ROOT, reach_dir, run_dir
+
+GESTURE_KINDS = ("top", "bottom", "keys", "command", "ask")
+GESTURE_NAME_MAX = 40
 
 
 def pidfile() -> Path:
@@ -87,6 +92,72 @@ def stop(timeout: float = 3.0) -> dict:
 
 def set_on(on: bool) -> dict:
     return start() if on else stop()
+
+
+# ---------------------------------------------------------------- custom gestures (EXPERIMENTAL)
+# hands_mode/gestures.py owns the format; this side only asks for a recording and removes gestures.
+
+def gestures_path() -> Path:
+    return reach_dir() / "gestures.json"
+
+
+def request_path() -> Path:
+    return run_dir() / "hands_request.json"
+
+
+def check_gesture(name, action=None) -> str | None:
+    """None if fine, else why not."""
+    if not isinstance(name, str) or not name.strip() or len(name.strip()) > GESTURE_NAME_MAX:
+        return f"gesture name must be 1-{GESTURE_NAME_MAX} characters"
+    if action is None:
+        return None
+    if not isinstance(action, dict) or action.get("kind") not in GESTURE_KINDS:
+        return f"gesture action kind must be one of {', '.join(GESTURE_KINDS)}"
+    value = action.get("value", "")
+    if not isinstance(value, str) or (action["kind"] not in ("top", "bottom") and not value.strip()):
+        return "gesture action needs a value"
+    return None
+
+
+def _write_atomic(path: Path, obj) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(f".{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(obj))
+    os.replace(tmp, path)
+
+
+def request_record(name: str, action: dict) -> dict:
+    """Start hands mode if needed and ask it to record a gesture. Raises ValueError on a bad name/action."""
+    if why := check_gesture(name, action):
+        raise ValueError(why)
+    st = start()
+    _write_atomic(request_path(), {"op": "record", "id": uuid.uuid4().hex, "name": name.strip(),
+                                   "action": {"kind": action["kind"], "value": action.get("value", "")}})
+    return st
+
+
+def forget(name: str) -> dict:
+    """Remove the gesture called `name` from gestures.json (hands mode reloads it)."""
+    if why := check_gesture(name):
+        raise ValueError(why)
+    try:
+        data = json.loads(gestures_path().read_text())
+        gestures = data.get("gestures", []) if isinstance(data, dict) else []
+    except (OSError, ValueError):
+        gestures = []
+    kept = [g for g in gestures if not (isinstance(g, dict) and g.get("name") == name.strip())]
+    if len(kept) != len(gestures):
+        _write_atomic(gestures_path(), {"gestures": kept})
+    return status()
+
+
+def gesture_event(d: dict) -> str | None:
+    """A clean `hands_gesture` message for overlays, or None if malformed (only command/ask reach the overlay)."""
+    action = d.get("action")
+    if (check_gesture(d.get("name"), action) is None and action["kind"] in ("command", "ask")):
+        return json.dumps({"type": "hands_gesture", "name": d["name"].strip(),
+                           "action": {"kind": action["kind"], "value": action["value"]}})
+    return None
 
 
 def cmd_hands(args) -> int:

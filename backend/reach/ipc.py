@@ -39,6 +39,18 @@ def _hands_msg(raw: str | bytes) -> bool | None:
     return None
 
 
+HANDS_TYPES = ("hands_record", "hands_forget", "hands_gesture")
+
+
+def _hands_extra(raw: str | bytes) -> dict | None:
+    """hands_record / hands_forget / hands_gesture (custom gestures, EXPERIMENTAL) as a dict; else None."""
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return None
+    return d if isinstance(d, dict) and d.get("type") in HANDS_TYPES else None
+
+
 def log_evidence(card) -> None:
     p = reach_dir() / "logs" / "evidence.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -119,6 +131,26 @@ class Server:
                     from . import hands
 
                     st = await asyncio.to_thread(hands.set_on, hm)
+                    out.put_nowait(json.dumps({"type": "hands_state", **st}))
+                    continue
+                if isinstance(raw, str) and '"hands_' in raw and (hx := _hands_extra(raw)) is not None:
+                    from . import hands
+
+                    if hx["type"] == "hands_gesture":   # hands mode -> every overlay (never back to the sender)
+                        if role and role != "overlay" and (ev := hands.gesture_event(hx)):
+                            n = self.relay._broadcast(key, ev)
+                            log_line({"kind": "hands_gesture", "from": role, "name": hx["name"], "relayed_to": n})
+                        else:
+                            out.put_nowait(ErrorMsg(message="hands_gesture rejected").model_dump_json())
+                        continue
+                    try:
+                        if hx["type"] == "hands_record":
+                            st = await asyncio.to_thread(hands.request_record, hx.get("name"), hx.get("action"))
+                        else:
+                            st = await asyncio.to_thread(hands.forget, hx.get("name"))
+                    except ValueError as e:
+                        out.put_nowait(ErrorMsg(message=str(e)).model_dump_json())
+                        continue
                     out.put_nowait(json.dumps({"type": "hands_state", **st}))
                     continue
                 try:
