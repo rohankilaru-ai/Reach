@@ -130,6 +130,9 @@ class Receipt(BaseModel):
         default_factory=list,
         description="One entry per browser_task: outcome, status, kind, reason, final_url, cost_usd, drex_calls",
     )
+    intent: dict[str, Any] | None = Field(
+        default=None, description="Drex task understanding before Intern ran: kind, probs, hint_used, action"
+    )
 
 
 class Evidence(BaseModel):

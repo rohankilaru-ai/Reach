@@ -21,7 +21,7 @@ from .paths import drex_log, reach_dir, run_dir
 
 
 def _print_receipt(r: dict) -> None:
-    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls", "outcome", "browser", "write_outcome")
+    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls", "outcome", "browser", "write_outcome", "intent")
     print("\n--- receipt ---")
     print(json.dumps({k: r.get(k) for k in keys}, indent=2))
 
@@ -39,7 +39,12 @@ def _render(event: dict) -> None:
     elif kind == "tool_call_start":
         print(f"\n[tool {event['name']}]", flush=True)
     elif kind == "decision":
-        print(f"\n[drex {event.get('purpose')}]", file=sys.stderr, flush=True)
+        extra = ""
+        if event.get("purpose") == "intent":
+            from .ledger import format_log_line
+
+            extra = " " + format_log_line(event).split("decision", 1)[-1].strip() + f" action={event.get('action')}"
+        print(f"\n[drex {event.get('purpose')}]{extra}", file=sys.stderr, flush=True)
 
 
 def cmd_serve(args) -> int:
