@@ -67,6 +67,8 @@ public enum ClientMessage: Equatable, Sendable {
     case stt(audioPath: String, id: String)
     /// Cloud text-to-speech (answered by `ttsAudio`).
     case tts(text: String, id: String)
+    /// Hands-free: one segment heard while always listening (answered by `addressed`). Text only, never audio.
+    case utterance(text: String, wakeMatched: Bool)
 
     public func json() throws -> String {
         var obj: [String: JSONValue] = [:]
@@ -87,6 +89,9 @@ public enum ClientMessage: Equatable, Sendable {
             obj = ["type": .string("stt"), "audio_path": .string(path), "format": .string("wav"), "id": .string(id)]
         case .tts(let text, let id):
             obj = ["type": .string("tts"), "text": .string(text), "id": .string(id)]
+        case .utterance(let text, let wake):
+            obj = ["type": .string("utterance"), "text": .string(text), "source": .string("always_listening"),
+                   "wake_matched": .bool(wake)]
         }
         enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
@@ -176,7 +181,8 @@ public enum ServerMessage: Equatable, Sendable {
     case receipt(Receipt)
     case evidence(EvidenceCard)
     /// A nil task id is a hand pointer relayed from the camera worker.
-    case pointer(taskID: String?, x: Double, y: Double, label: String?)
+    /// `state` is the relayed hand state ("hover" | "pinch"), nil for task pointers.
+    case pointer(taskID: String?, x: Double, y: Double, label: String?, state: String? = nil)
     /// A selection made by hand (pinch), relayed by the server. It does not start an ask.
     case selection(Selection)
     case transcript(taskID: String, role: String, text: String)
@@ -184,6 +190,8 @@ public enum ServerMessage: Equatable, Sendable {
     case added(name: String, passages: Int)
     case sttResult(text: String, ms: Int, error: String?, id: String?)
     case ttsAudio(path: String, ms: Int, error: String?, id: String?)
+    /// Hands-free: is the utterance aimed at the assistant?
+    case addressed(AddressedReply)
     case unknown(type: String)
 
     public static func decode(_ text: String) throws -> ServerMessage {
@@ -205,7 +213,8 @@ public enum ServerMessage: Equatable, Sendable {
             return .evidence(try JSONDecoder().decode(EvidenceCard.self, from: data))
         case "pointer":
             guard let x = v["x"]?.number, let y = v["y"]?.number, x.isFinite, y.isFinite else { return .unknown(type: type) }
-            return .pointer(taskID: (tid?.isEmpty ?? true) ? nil : tid, x: x, y: y, label: v["label"]?.string)
+            return .pointer(taskID: (tid?.isEmpty ?? true) ? nil : tid, x: x, y: y, label: v["label"]?.string,
+                            state: v["state"]?.string)
         case "selection":
             guard let sel = v["selection"] else { return .unknown(type: type) }
             return .selection(try JSONDecoder().decode(Selection.self, from: JSONEncoder().encode(sel)))
@@ -221,6 +230,11 @@ public enum ServerMessage: Equatable, Sendable {
         case "tts_audio":
             return .ttsAudio(path: v["path"]?.string ?? "", ms: Int(v["ms"]?.number ?? 0), error: v["error"]?.string,
                              id: v["id"]?.string)
+        case "addressed":
+            var on = false
+            if case .bool(let b)? = v["addressed"] { on = b }
+            return .addressed(AddressedReply(text: v["text"]?.string ?? "", pAddressed: v["p_addressed"]?.number,
+                                             addressed: on, command: v["command"]?.string, reason: v["reason"]?.string))
         default:
             return .unknown(type: type)
         }

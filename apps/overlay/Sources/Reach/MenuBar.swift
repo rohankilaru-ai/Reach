@@ -11,6 +11,16 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var onTogglePill: () -> Void = {}
     var onPillMode: (PillMode) -> Void = { _ in }
     var onSetup: () -> Void = {}
+    var handsFreeOn: () -> Bool = { false }
+    var onHandsFree: () -> Void = {}
+    var onPauseHandsFree: () -> Void = {}
+
+    /// Menu bar icon: an ear while hands-free is listening.
+    func setListening(_ on: Bool) {
+        let img = NSImage(systemSymbolName: on ? "ear" : "circle.dashed", accessibilityDescription: on ? "Reach (listening)" : "Reach")
+        img?.isTemplate = true
+        item.button?.image = img
+    }
 
     init(model: OverlayModel) {
         self.model = model
@@ -40,6 +50,9 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
             self.model.speakReplies.toggle()
             if !self.model.speakReplies, self.model.speaking { self.model.onStopSpeaking?() }
         }
+        menu.addItem(.separator())
+        add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
+        if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
         menu.addItem(.separator())
         add("Set up Reach…") { [weak self] in self?.onSetup() }
         add("Quit Reach") { NSApp.terminate(nil) }

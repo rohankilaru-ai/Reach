@@ -146,5 +146,25 @@ stops playback and drops late audio. The overlay never holds a key; the backend 
 Headless check (needs `reach serve` running): `.build/debug/Reach --reach-dir <repo>/.reach --cloud-voice-selftest "Add 17 apples"`.
 Evidence: `docs/evidence/cloud-voice.md`.
 
+## Hands-free
+
+Option-Shift-Space (tap) or the menu bar item **Hands-free listening** turns it on or off; say "Reach, stop listening"
+to turn it off by voice. It always starts off at launch. While on, the pill shows a small pulsing dot with an ear
+(always visible, even in Auto pill mode), the menu bar icon becomes an ear, and **Pause for 5 minutes** is in the menu.
+
+- Listening is on-device only (`SFSpeechRecognizer`, `requiresOnDeviceRecognition`); if this Mac cannot recognize
+  on-device, hands-free refuses to start. No audio is saved; only text leaves the recognizer. The task restarts
+  about every 50 s, after each utterance, and on errors.
+- Utterances end after about 0.9 s without new words or at a sentence end. Fewer than 2 words is ignored unless it
+  starts with the wake phrase. The wake phrase is strict: "Reach" or "Hey Reach" at the start, stripped from the ask.
+- Each utterance is sent as `utterance {text, source: "always_listening", wake_matched}`; the backend answers
+  `addressed` (see `docs/evidence/addressed.md`). Addressed: a normal ask (with a hand selection or circle attached
+  in the last 60 s, spoken reply as for voice asks). Not addressed, unreachable, or no reply within 1.5 s: nothing
+  happens except a faint flicker of the dot; the text is dropped and never shown, logged or stored.
+- A router command shows as a quiet chip; `stop` / `cancel` / `pause` stop speech and abort a running ask locally.
+- While Reach speaks, listening pauses and resumes 0.5 s after it stops.
+- Pinch: while hands-free is on, a held pinch from the hand worker counts as holding Option-Space (no wake word needed);
+  releasing the pinch, or no pinch pointer for 0.6 s, ends it.
+- Check: `.build/debug/Reach --handsfree-selftest` (headless: fake segments and replies; no mic, network or prompts).
 ## Backend auto-start
 When no backend is reachable the app starts `uv run reach serve` from the repo's `backend/` folder itself (at most once every 25 s) and logs to `.reach/serve.log`. Server options live in `.reach/server.env` as plain `REACH_*=value` lines (for example `REACH_DO_MODE=1`); keys are never read from it.

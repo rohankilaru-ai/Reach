@@ -73,6 +73,16 @@ final class OverlayModel: ObservableObject {
     var onPointer: ((Double, Double, String?, Bool) -> Void)?
     /// A selection arrived from the camera worker (pinch); the panel opens without taking focus.
     var onHandSelection: ((Selection) -> Void)?
+    /// Hands-free: relayed hand state ("pinch" / "hover" / nil) with each hand pointer.
+    var onHandState: ((String?) -> Void)?
+    /// Hands-free: the server's `addressed` reply.
+    var onAddressed: ((AddressedReply) -> Void)?
+    /// Hands-free listening is on (the pill shows the listening dot); `handsFreeFlicker` is the faint "ignored" blink.
+    @Published var handsFree = false
+    @Published var handsFreeFlicker = false
+    @Published var handsFreeChip: String?
+    /// When the current selection was attached (hands-free asks use it only within 60 s).
+    var selectionAt = Date.distantPast
     private var lastHandPointer = Date.distantPast
 
     init(files: RunFiles) {
@@ -164,6 +174,7 @@ final class OverlayModel: ObservableObject {
     /// A circle drawn without words: attach it as a chip for the typed ask (local only; the ask carries it).
     func attachCircle(_ sel: Selection, note: String) {
         selection = sel
+        selectionAt = Date()
         selectionIsCircle = true
         selectionNote = note
     }
@@ -233,17 +244,18 @@ final class OverlayModel: ObservableObject {
             else if kind != "text_delta" { log("event \(kind)") }
         case .receipt(let r): log("receipt \(r.status): \(r.line)")
         case .evidence(let c): log("evidence \(c.title)")
-        case .pointer(let id, let x, let y, let label):
+        case .pointer(let id, let x, let y, let label, let handState):
             let byHand = id == nil
             if !byHand || Date().timeIntervalSince(lastHandPointer) > 1 {
                 log("pointer \(Int(x)),\(Int(y)) \(label ?? "")\(byHand ? " (hand)" : "")")
             }
-            if byHand { lastHandPointer = Date() }
+            if byHand { lastHandPointer = Date(); onHandState?(handState) }
             onPointer?(x, y, label, byHand)
         case .selection(let sel):
             let chip = HandChip(sel)
             log("selection by hand: \"\(chip.line)\" thumbnail \(chip.thumbnailPath ?? "none")")
             selection = sel.isEmpty ? nil : sel
+            selectionAt = Date()
             selectionIsCircle = false
             selectionNote = nil
         case .transcript(_, let role, let text): log("transcript \(role): \(text.prefix(120))")
@@ -256,6 +268,11 @@ final class OverlayModel: ObservableObject {
         case .ttsAudio(let path, let ms, let err, let id):
             log("tts \(id ?? "-"): \(err.map { "error \($0)" } ?? "audio ready") (\(ms) ms)")
             onTtsAudio?(path, err, id)
+            return
+        case .addressed(let r):
+            // never log the overheard text: only the probability and the flag
+            log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
+            onAddressed?(r)
             return
         case .unknown(let t): log("ignored message type \(t)")
         }

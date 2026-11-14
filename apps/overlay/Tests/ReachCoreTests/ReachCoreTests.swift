@@ -99,7 +99,7 @@ import Testing
         guard case .selection(let sel) = m else { Issue.record("not a selection"); return }
         #expect(sel.source == "pinch" && sel.region == [10, 20, 300, 40])
         let p = try ServerMessage.decode(#"{"type":"pointer","task_id":"","x":100.5,"y":200,"state":"pinch","source":"hand"}"#)
-        #expect(p == .pointer(taskID: nil, x: 100.5, y: 200, label: nil))
+        #expect(p == .pointer(taskID: nil, x: 100.5, y: 200, label: nil, state: "pinch"))
         let bad = try ServerMessage.decode(#"{"type":"pointer","task_id":"","y":2}"#)
         #expect(bad == .unknown(type: "pointer"))
     }
