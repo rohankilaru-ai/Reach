@@ -51,15 +51,15 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Overlay: top pill, hover to expand, one-gesture circle plus voice, zoom lens, permission checklist | experimental | unit and headless tests pass; gestures not yet verified by hand on every path |
 | Voice: hold Option-Space to talk; cloud Whisper transcription and Kokoro replies, Apple on-device as fallback | experimental | `docs/evidence/cloud-voice.md`: on clean test audio Apple's recogniser was more accurate and 4 to 8 times faster; microphone audio goes to DeepInfra when the cloud setting is on |
 | Hands-free listening: wake word "Reach", Drex decides whether speech is meant for Reach (Option-Shift-Space toggles) | experimental | `docs/evidence/addressed.md`: held-out precision 0.94, recall 0.79 on 40 hand-written utterances; always-on listening is off at launch, recognition runs on the Mac |
-| Hands mode: your hand is the mouse (point to move, pinch to click or drag, two fingers to scroll, open palm to stop); Option-Shift-H toggles it from the pill | experimental | `hands_mode/` on the teammate's finger tracking: 74 unit tests including a mirror-direction proof; closest-hand lock; releases a held click when the hand drops out of frame; not yet verified live by a person. It is the one module that sends mouse events |
-| Dictation: speak into any focused text box (Option-Shift-D) | experimental | types only into editable fields through Accessibility, never secure fields; on-device recognition, no model calls; 108 Swift tests and a headless self-test pass; not yet tried by hand |
+| Hands mode: your hand is the mouse (point to move, pinch to click or drag, two fingers to scroll, open palm to stop); Option-Shift-H toggles it from the pill | experimental | `hands_mode/` on the teammate's finger tracking: 109 unit tests (hands mode plus the finger tracker) including a mirror-direction proof; closest-hand lock; releases a held click when the hand drops out of frame; not yet verified live by a person. It is the one module that sends mouse events |
+| Dictation: speak into any focused text box (Option-Shift-D) | experimental | types only into editable fields, through Accessibility or a paste (Cmd-V) fallback, never into secure fields; on-device recognition, no model calls; 108 Swift tests and a headless self-test pass; not yet tried by hand |
 | Gmail drafts (`email_draft`) and clipboard copy (`clipboard_copy`) | implemented / experimental | the draft opens in your signed-in Chrome and is never sent; the clipboard write is read back (verified live) |
 | Do mode: press buttons, fill text fields, open folders in other apps through the Accessibility API (`REACH_DO_MODE=1`) | experimental | TextEdit test with read-back; `docs/evidence/do-mode.md`; off by default |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: Drex Max 87/90 (96.7%) vs Qwen 83/90 (one-label) and 82/90; intervals overlap, so a lead, not a proven win; 0 wrong commands vs 2 to 3 |
 | Hand pointer and pinch-to-select with MediaPipe | experimental | runs live on a Mac camera; pointer and pinch detected; selection quality not yet measured |
 | Hands mode: hand tracking (`finger_processing/`) driving the cursor (`hands_mode/`): point to move, pinch thumb to index to click or drag, curl the index to click, two fingers to scroll, pinch thumb to middle and draw a loop to select for the overlay | experimental | own tests; not an agent tool |
 | Silent speech: lip reading into the 12-command router (research-only weights, not shipped) | experimental | model runs (0.4 s per 1.5 s clip); no accuracy measured, no live mouthed run |
-| Control of other apps by mouse or keyboard events | planned (not done on purpose) | Reach uses scripting interfaces, files and the Accessibility API only |
+| Agent tools that send mouse or keyboard events | not done on purpose | Reach's agent tools use scripting interfaces, files and the Accessibility API. The exceptions are the opt-in hands mode (mouse events), `click_on_screen` in Do mode (one mouse click), and dictation's paste fallback (Cmd-V, Cmd-Z) |
 | Gaze, Adobe and Keenable | planned | |
 
 ## Quick start
@@ -82,7 +82,7 @@ open ../apps/overlay/build/Reach.app                  # the app starts the backe
 ```
 
 **Controls.** **Option-Space**: tap to type, hold to talk; while holding, circle what you mean with the mouse. **Option-Shift-Space**: hands-free listening on or off. **Option-Shift-H**: hands mode on or off (your hand moves the mouse; open palm also turns it off; needs Accessibility). **Esc** cancels. Move the mouse to the top-centre of the screen to show the pill. The "Set up Reach" window checks permissions and turns green when everything required is granted.
-Permissions: Screen Recording, Microphone and Speech Recognition are required; Accessibility (Do mode), Camera (hands) and Automation (Chrome, Finder, Notes, TextEdit) are optional. `swift scripts/request-permissions.swift` raises the prompts for the terminal.
+Permissions: Screen Recording, Microphone and Speech Recognition are required; Accessibility (Do mode, hands mode, dictation), Camera (hands) and Automation (Chrome, Finder, Notes, TextEdit) are optional. `swift scripts/request-permissions.swift` raises the prompts for the terminal.
 
 ## Privacy: what leaves your Mac
 
