@@ -399,3 +399,23 @@ def test_open_source_does_not_block_the_event_loop(monkeypatch, tmp_path):
 
     out, ticks = asyncio.run(go())
     assert out.content.startswith("Opened") and loop_threads == [False] and ticks >= 3
+
+
+def test_default_capture_must_be_fresh(tmp_path):
+    import os
+    import time
+
+    import pytest
+
+    from reach.tools import vision
+
+    caps = tmp_path / "captures"
+    caps.mkdir()
+    png = caps / "region-1.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    assert vision.resolve_image(None, tmp_path) == png.resolve()  # fresh: used
+    old = time.time() - 3600
+    os.utime(png, (old, old))
+    with pytest.raises(FileNotFoundError, match="circle"):
+        vision.resolve_image(None, tmp_path)  # stale: refused, never silently reused
+    assert vision.resolve_image(str(png), tmp_path) == png.resolve()  # an explicit path still works
