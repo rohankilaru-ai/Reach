@@ -1,22 +1,24 @@
 # Reach perception: hand pointer and pinch selection (EXPERIMENTAL)
 
-One process owns the camera, runs Google MediaPipe HandLandmarker (Tasks API, VIDEO mode) on each frame in memory,
-moves a Reach pointer with the index fingertip, and turns a pinch-drag into a screen-region selection.
-Its own uv project; nothing here is added to `backend/`.
+Hands come from `finger_processing/` at the repo root, the single camera + MediaPipe HandLandmarker pipeline (Tasks
+API, VIDEO mode, up to two hands). This worker consumes its stream: the primary hand (`hands.primary` in
+`finger_processing/config.yaml`, left by default) moves a Reach pointer with the index fingertip, and a pinch-drag
+becomes a screen-region selection. Its own uv project; nothing here is added to `backend/`.
 
 ## Setup
 ```
 cd perception
-uv sync                                   # Python 3.12, mediapipe==1.2.2 (PLAN.md S6 pin, shared with S8a)
-mkdir -p models && curl -L -o models/hand_landmarker.task \
+uv sync                                   # Python 3.12; installs ../finger_processing (editable), mediapipe 1.2.3
+curl -L -o ../finger_processing/hand_landmarker.task \
   https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
 ```
-The model URL is the "HandLandmarker (full)" bundle from Google's MediaPipe hand landmarker docs. `models/` is gitignored.
+The model URL is the "HandLandmarker (full)" bundle from Google's MediaPipe hand landmarker docs. It lives in
+`finger_processing/` (gitignored) and is shared by everything that reads hands.
 
 ## Run
 ```
 uv run python -m reach_perception.worker --selftest       # synthetic landmark fixtures, no camera, no keys
-uv run python -m reach_perception.worker --camera-check   # opens the camera 3 s: frame size, fps, p50 latency
+uv run python -m reach_perception.worker --camera-check   # opens the camera 3 s: frame size, fps, hands, latency
 uv run python -m reach_perception.worker                  # preview window; q quit, c calibrate, r reset mapping
 uv run pytest -q                                          # camera-free, key-free
 ```

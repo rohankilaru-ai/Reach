@@ -14,6 +14,7 @@ public struct PanelState: Equatable, Sendable {
     public var receipt: Receipt?
     public var evidence: [EvidenceCard] = []
     public var decisions: [DrexDecision] = []   // newest last, at most 3
+    public var gesture: GestureDecision?          // latest hand-gesture decision from the Drex log (EXPERIMENTAL)
     public var pointer: (x: Double, y: Double, label: String?)? {
         get { pointerStore.map { ($0.x, $0.y, $0.label) } }
         set { pointerStore = newValue.map { PointerSpot(x: $0.x, y: $0.y, label: $0.label) } }
@@ -42,6 +43,11 @@ public struct PanelState: Equatable, Sendable {
         receipt = nil
         evidence = []
         pointer = nil
+    }
+
+    /// Newest hand-gesture decision tailed from `.reach/logs/drex.jsonl`; independent of the current task.
+    public mutating func gestureDecided(_ g: GestureDecision) {
+        gesture = g
     }
 
     /// Something only the user can fix (no server, no token, a missing permission).
@@ -118,6 +124,6 @@ public struct PanelState: Equatable, Sendable {
     public static func == (a: PanelState, b: PanelState) -> Bool {
         a.phase == b.phase && a.connected == b.connected && a.taskID == b.taskID && a.answer == b.answer
             && a.note == b.note && a.receipt == b.receipt && a.evidence == b.evidence && a.decisions == b.decisions
-            && a.pointerStore == b.pointerStore
+            && a.pointerStore == b.pointerStore && a.gesture == b.gesture
     }
 }

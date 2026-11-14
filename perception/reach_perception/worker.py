@@ -1,5 +1,8 @@
 """Reach camera worker (EXPERIMENTAL): hand pointer + pinch-drag selection.
 
+Hands come from `finger_processing` (repo root), the single camera + MediaPipe pipeline. The primary hand
+(`hands.primary` in finger_processing/config.yaml, left by default) drives the pointer and pinch.
+
   python -m reach_perception.worker               # run with preview window (q quits, c calibrates, r resets map)
   python -m reach_perception.worker --selftest    # synthetic landmark fixtures, no camera
   python -m reach_perception.worker --camera-check  # open the camera 3 s, print frame size, fps, p50 latency
@@ -16,54 +19,62 @@ from .pinch import MIN_DRAG
 from .screen_map import CORNERS, ScreenMap, box_around, screen_size
 
 
-def camera_check(seconds: float = 3.0) -> int:
-    from .camera import PERMISSION_MSG, Camera
-    from .hands import Hands
+PERMISSION_MSG = (
+    "Could not read from the camera. macOS needs Camera permission for the app running this process "
+    "(your terminal, e.g. Terminal/iTerm/Ghostty, or Python): System Settings > Privacy & Security > Camera. "
+    "Grant it, quit and reopen the terminal, then rerun."
+)
 
-    cam = Camera()
+
+def open_hands():
+    """Start the shared hand pipeline (finger_processing: the one camera + MediaPipe owner), or None."""
+    from finger_processing import FingerProcessor
+
     try:
-        if not cam.ok():
-            print(PERMISSION_MSG)
-            return 2
-        hands = Hands()
-        lat, frames, with_hand, size = [], 0, 0, None
-        t0 = time.monotonic()
-        while time.monotonic() - t0 < seconds:
-            frame = cam.read()
-            if frame is None:
-                continue
-            size = frame.shape[1], frame.shape[0]
-            s = time.perf_counter()
-            lm = hands.detect(frame, int((time.monotonic() - t0) * 1000))
-            lat.append((time.perf_counter() - s) * 1000)
-            frames += 1
-            with_hand += lm is not None
-        dur = time.monotonic() - t0
-        hands.close()
-        print(f"frame size: {size[0]}x{size[1]}" if size else "frame size: none")
-        print(f"frames: {frames} in {dur:.1f}s ({frames / dur:.1f} fps processed)")
-        print(f"frames with a hand: {with_hand} ({with_hand / dur:.1f} fps detected-hand)")
-        if lat:
-            print(f"per-frame HandLandmarker latency: p50 {statistics.median(lat):.1f} ms, max {max(lat):.1f} ms")
-        return 0
+        return FingerProcessor().start()
+    except RuntimeError as e:
+        print(f"{e}\n{PERMISSION_MSG}")
+        return None
+
+
+def unmirrored(hand) -> list[tuple[float, float, float]] | None:
+    """GestureEngine takes MediaPipe's un-mirrored landmarks; finger_processing streams mirrored ones."""
+    if hand is None:
+        return None
+    return [(1.0 - x, y, z) for x, y, z in hand.landmarks]
+
+
+def camera_check(seconds: float = 3.0) -> int:
+    fp = open_hands()
+    if fp is None:
+        return 2
+    frames = []
+    fp.subscribe(frames.append)
+    try:
+        time.sleep(seconds)
     finally:
-        cam.release()
+        fp.stop()
+    w, h = fp.source.size
+    with_hand = sum(1 for f in frames if f.hands)
+    print(f"frame size: {w}x{h}")
+    print(f"frames: {len(frames)} in {seconds:.1f}s ({len(frames) / seconds:.1f} fps processed)")
+    print(f"frames with a hand: {with_hand} (left {sum(1 for f in frames if f.left)}, "
+          f"right {sum(1 for f in frames if f.right)})")
+    lm = fp.pipeline.timer.summary().get("landmarker")
+    if lm:
+        print(f"per-frame HandLandmarker latency: p50 {lm[0]:.1f} ms, p95 {lm[1]:.1f} ms")
+    return 0
 
 
 def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     from . import preview
     from .bridge_client import BridgeClient
-    from .camera import PERMISSION_MSG, Camera
     from .capture import capture_region, ocr
-    from .hands import Hands
     from .pinch import GestureEngine
 
-    cam = Camera()
-    if not cam.ok():
-        print(PERMISSION_MSG)
-        cam.release()
+    fp = open_hands()
+    if fp is None:
         return 2
-    hands = Hands()
     sw, sh = screen_size()
     smap = ScreenMap.load(sw, sh)
     eng = GestureEngine()
@@ -74,15 +85,18 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     calib: list | None = None  # corners collected during calibration
     last = "ready"
     ocr_label = "OCR off: pointer demo only" if no_ocr else "OCR on"
-    t0 = time.monotonic()
+    eng.w, eng.h = fp.source.size
+    last_id = -1
     try:
         while True:
-            frame = cam.read()
-            if frame is None:
+            hf = fp.wait_next(last_id, timeout=1.0)
+            if hf is None:
+                if fp.finished.is_set():
+                    break
                 continue
-            eng.w, eng.h = frame.shape[1], frame.shape[0]
-            t_ms = int((time.monotonic() - t0) * 1000)
-            lm = hands.detect(frame, t_ms)
+            last_id = hf.frame_id
+            t_ms = int(hf.t * 1000)
+            lm = unmirrored(hf.primary)  # the primary hand (left by default) drives pointer and pinch
             for e in eng.update(t_ms, lm):
                 if e.kind == "pause":
                     last = "PAUSE (open palm, local)"
@@ -128,7 +142,10 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
                      f"{last} | {ocr_label}", f"bridge: {bridge.status} | q quit, c calibrate, r reset map"]
             if todo:
                 lines.insert(0, todo)
-            key = preview.show(preview.draw(frame, lm, eng, lines))
+            raw = fp.latest_raw()
+            if raw is None:
+                continue
+            key = preview.show(preview.draw(raw.image, lm, eng, lines))
             if key == ord("q"):
                 break
             if key == ord("c"):
@@ -138,8 +155,7 @@ def run(no_preview: bool = False, no_ocr: bool = False) -> int:
     except KeyboardInterrupt:
         pass
     finally:
-        hands.close()
-        cam.release()
+        fp.stop()
         bridge.close()
         if not no_preview:
             preview.close()

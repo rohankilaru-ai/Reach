@@ -15,13 +15,15 @@ tracker:
   min_presence_confidence: 0.5
   min_tracking_confidence: 0.5
   delegate: cpu           # cpu | gpu (measured about equal on this laptop)
-  swap_handedness: true   # unmirrored image goes in, so MediaPipe's left/right label is inverted
+  swap_handedness: false  # true flips MediaPipe's left/right label (verified by hand 2026-11-14: false is correct)
 
-hand_lock:                # one hand only
-  control_hand: right     # right | left | any
+hands:
+  max_hands: 2            # 1 or 2 (2 keeps MediaPipe's palm detector running while < 2 hands are seen)
+  primary: left           # hand that drives the cursor and commands (frame.fingers, frame.pointer_screen, ...)
+  primary_fallback: false # true: use the other hand when the primary is out of view
   handedness_vote_frames: 5
-  handedness_vote_min: 3
-  hold_frames: 3          # frames to hold the last hand through a dropout
+  handedness_vote_min: 3  # a new hand needs 3 of 5 matching left/right labels to lock to a side
+  hold_frames: 3          # frames to hold a hand through a dropout
   swap_jump: 0.30         # wrist jump (normalized) that means a different hand
   swap_scale_ratio: 0.40  # hand-scale change in one frame that means a different hand
 
@@ -60,6 +62,24 @@ calibration:
 screen:
   width: null             # null = detect
   height: null
+
+commands:                 # hand-gesture commands: idle / point / click (finger_processing/commands.py)
+  decider: drex           # drex | heuristic. Drex decides from the streamed hand window; heuristic is the fallback
+  drex_model: drex-max-v1.1
+  max_rate_hz: 5          # Drex calls/s at most, plus one immediately when the finger pattern changes
+  timeout_s: 0.8          # per call; on timeout/error the heuristic decides
+  stale_s: 1.5            # no fresh Drex decision this long -> heuristic drives the mode
+  window_frames: 10       # primary-hand frames per call (~330 ms)
+  p_min: 0.70
+  margin_min: 0.20
+  point_hold_ms: 120      # hold the pointing pose this long before an index curl counts as a click
+  click_curl_deg: 135     # index must bend below this angle to click (idle pointing flickers ~145-150). The status line shows each curl's min angle
+  click_curl_frames: 1    # ... for this many consecutive frames
+  click_curl_max_ms: 500  # ... within this long of leaving the pointing pose (a slow sag is not a click)
+  drex_click_confirm_s: 1.0  # Drex click needs such a local curl within this many seconds
+  click_cooldown_ms: 400
+  pre_curl_ms: 120        # click where the cursor was this long before the curl started
+  log_decisions: true     # Drex decisions -> .reach/logs/drex.jsonl (shown by `reach log`)
 
 window_size: 10           # frames kept in FingerProcessor.window()
 preview_hz: 20

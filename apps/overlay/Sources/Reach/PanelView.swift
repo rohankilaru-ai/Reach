@@ -99,6 +99,13 @@ struct PanelView: View {
                     .foregroundStyle(.white.opacity(0.5))
             }
 
+            if let g = s.gesture {
+                Text("✋ \(g.line)")
+                    .font(.system(size: 10, design: .monospaced))
+                    .foregroundStyle(g.ok && g.accepted ? Palette.accent.opacity(0.9) : .white.opacity(0.5))
+                    .lineLimit(1)
+            }
+
             if !s.decisions.isEmpty {
                 VStack(alignment: .leading, spacing: 2) {
                     ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in
