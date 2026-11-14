@@ -22,6 +22,11 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var ptt = PushToTalk()
     private var voiceEsc: [UInt32] = []
     private var lastHeard: Heard?
+    /// Cloud STT for the current hold: request id, recording, start, and the result once it arrives.
+    private var stt: (id: String, file: URL, t0: Date, text: String?, err: String?, done: Bool)?
+    /// Cloud TTS request whose audio may still play (nil after Esc, a new hold, or the on-device fallback).
+    private var ttsID: String?
+    private var ttsSeq = 0
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -33,7 +38,7 @@ final class AppController: NSObject, NSApplicationDelegate {
                                                      onDragEnd: { [weak self] in self?.dragEnded() },
                                                      onSpeak: { [weak self] in
                                                          guard let self else { return }
-                                                         self.speaker.speak(self.model.state.answer)
+                                                         self.say(self.model.state.answer)
                                                      },
                                                      onZoom: { [weak self] in
                                                          if let z = self?.model.zoomTarget { self?.openLens(z) }
@@ -51,8 +56,10 @@ final class AppController: NSObject, NSApplicationDelegate {
         place()
         log("panel ready (hold Option-Space, circle what you mean, say what to do; tap to type; Esc cancels)")
         model.onZoom = { [weak self] sel in self?.openLens(sel) }
-        model.onSpeak = { [weak self] text in self?.speaker.speak(text) }
-        model.onStopSpeaking = { [weak self] in self?.speaker.stop() }
+        model.onSpeak = { [weak self] text in self?.say(text) }
+        model.onStopSpeaking = { [weak self] in self?.ttsID = nil; self?.speaker.stop() }
+        model.onSttResult = { [weak self] text, err, id in self?.sttArrived(text, err, id) }
+        model.onTtsAudio = { [weak self] path, err, id in self?.ttsArrived(path, err, id) }
         speaker.onSpeaking = { [weak self] on in
             self?.model.speaking = on
             if !on { self?.lastActivity = Date() }   // the 8 s fold starts after the audio ends
@@ -235,6 +242,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     /// Esc cancels everything: the hold, the circle, listening, speech, the lens; aborts a running ask; folds when idle.
     func escape() {
+        ttsID = nil
         speaker.stop()
         if lens.isOpen { lens.close(); return }
         if gesture.phase != .idle {
@@ -267,7 +275,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     private func optionSpaceUp() {
         switch key.up(at: ProcessInfo.processInfo.systemUptime) {
-        case .tap: speaker.stop(); toggle()
+        case .tap: ttsID = nil; speaker.stop(); toggle()
         case .endHold: holdEnded()
         default: break
         }
@@ -288,6 +296,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     // MARK: one gesture: hold, circle, speak, release
 
     func holdBegan() {
+        ttsID = nil
         speaker.stop()   // never transcribe Reach's own voice
         lens.close()
         let h = gesture.holdStarted()
@@ -431,6 +440,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         model.listening = true
         model.draft = ""
+        stt = nil
+        speech.recordTo = model.voiceMode == .cloud
+            ? model.reachDir.appendingPathComponent("audio/hold-\(UUID().uuidString.prefix(8)).wav") : nil
         model.voiceLine = speech.onDevice ? "listening… (on this Mac)"
                                           : "listening… (on-device speech unavailable: using Apple's server)"
         log("voice listening (session \(id), on-device \(speech.onDevice))")
@@ -461,13 +473,48 @@ final class AppController: NSObject, NSApplicationDelegate {
         if !model.listening { _ = ptt.cancel(); return }   // still waiting on a permission prompt
         model.voiceLine = "transcribing…"
         speech.finish()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.complete(id) }
+        if model.voiceMode == .cloud, let f = speech.recorded {
+            let sid = "stt-\(id)-\(UUID().uuidString.prefix(6))"
+            stt = (sid, f, Date(), nil, nil, false)
+            model.send(.stt(audioPath: f.path, id: sid))
+            DispatchQueue.main.asyncAfter(deadline: .now() + CloudVoice.sttWait) { [weak self] in self?.complete(id, force: true) }
+        } else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak self] in self?.complete(id) }
+        }
     }
 
-    private func complete(_ id: Int) {
+    private func sttArrived(_ text: String, _ err: String?, _ id: String?) {
+        guard let s = stt, s.id == id, !s.done else { return }
+        stt?.text = text; stt?.err = err; stt?.done = true
+        if lastHeard?.final == true { complete(ptt.session) }   // otherwise wait for Apple's final or the timeout
+    }
+
+    /// Ends the cloud STT for this hold and deletes the recording.
+    private func dropStt() {
+        if let f = stt?.file { try? FileManager.default.removeItem(at: f) }
+        stt = nil
+    }
+
+    private func complete(_ id: Int, force: Bool = false) {
+        // Cloud STT still in flight and time left: wait (the result or the 2.5 s timer calls back).
+        if let s = stt, !s.done, !force, Date().timeIntervalSince(s.t0) < CloudVoice.sttWait,
+           ptt.session == id, ptt.phase == .finishing { return }
         guard ptt.finished(session: id) else { return }
         endListening()
         let heard = lastHeard ?? Heard(text: "", confidences: [], final: false)
+        if let s = stt {
+            let pick = CloudVoice.pick(cloudText: s.done ? s.text : nil, cloudError: s.err,
+                                       elapsed: Date().timeIntervalSince(s.t0), appleText: heard.text)
+            dropStt()
+            if case .cloud(let text) = pick {
+                speech.cancel()
+                log("voice heard (cloud) \"\(text)\" (on-device had \"\(heard.text)\")")
+                model.draft = ""
+                resolve(gesture.heard(.send(text)))
+                return
+            }
+            log("voice: cloud transcript not used (\(s.err ?? (s.done ? "empty or no speech" : "timeout"))); on-device")
+        }
         guard heard.final else {
             // Only a final transcript carries confidences; never send a partial.
             speech.cancel()
@@ -488,10 +535,51 @@ final class AppController: NSObject, NSApplicationDelegate {
     func voiceCancel() {
         guard case .cancel = ptt.cancel() else { return }
         speech.cancel()
+        dropStt()
+        if let f = speech.recorded { try? FileManager.default.removeItem(at: f) }
         endListening()
         model.draft = ""
         model.voiceLine = "voice cancelled"
         log("voice cancelled")
+    }
+
+    // MARK: cloud voice replies
+
+    /// Speaks an answer: cloud TTS when the setting is cloud (on-device after 3 s or on error), else on-device.
+    func say(_ answer: String) {
+        ttsID = nil
+        speaker.stop()
+        let text = SpokenText.clean(answer, limit: 600)
+        guard !text.isEmpty else { return }
+        guard model.voiceMode == .cloud, model.state.connected else { speaker.speak(answer); return }
+        ttsSeq += 1
+        let id = "tts-\(ttsSeq)"
+        ttsID = id
+        ttsStart = Date()
+        model.send(.tts(text: text, id: id))
+        DispatchQueue.main.asyncAfter(deadline: .now() + CloudVoice.ttsWait) { [weak self] in
+            guard let self, self.ttsID == id else { return }
+            log("cloud voice: no audio within 3 s; speaking on-device")
+            self.ttsID = nil
+            self.speaker.speak(answer)
+        }
+    }
+    private var ttsStart = Date()
+
+    private func ttsArrived(_ path: String, _ err: String?, _ id: String?) {
+        let file = URL(fileURLWithPath: path)
+        let mine = CloudVoice.isAudioPath(path, reachDir: model.reachDir)
+        if CloudVoice.playCloud(path: path, error: err, id: id, current: ttsID, elapsed: Date().timeIntervalSince(ttsStart)), mine {
+            ttsID = nil
+            speaker.play(file: file)
+            return
+        }
+        if !path.isEmpty, mine { try? FileManager.default.removeItem(at: file) }   // stale or late: never kept
+        if id != nil, id == ttsID {   // failed: fall back now
+            ttsID = nil
+            log("cloud voice: \(err ?? "unusable audio"); speaking on-device")
+            speaker.speak(model.state.answer)
+        }
     }
 
     private func voiceBlocked(_ id: Int, _ why: String) {

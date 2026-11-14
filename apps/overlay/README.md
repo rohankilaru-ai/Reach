@@ -110,3 +110,13 @@ Voice needs **Microphone** and **Speech Recognition** for Reach. macOS asks on t
 Option-Space (never at launch); if either is refused the panel says which one to allow. The bundle is signed
 ad hoc without the hardened runtime, so no `com.apple.security.device.audio-input` entitlement is needed
 (`codesign -d --entitlements - apps/overlay/build/Reach.app` shows none); add it if the runtime is ever enabled.
+
+## Cloud voice (default) and on-device fallback
+`Voice` setting (UserDefaults `voiceMode`: `cloud` default, `on-device`). In cloud mode the hold-to-talk mic is also
+written as 16 kHz mono WAV under `.reach/audio/`; on release the overlay sends `stt` and uses Whisper large-v3-turbo's
+text if it is back within 2.5 s, is non-empty and Apple heard something; otherwise Apple's final transcript as before.
+The recording is deleted after use. Voice-ask replies ask the backend for `tts` (Kokoro-82M) and play the WAV with
+AVAudioPlayer (deleted after playback); on error or after 3 s, AVSpeechSynthesizer speaks instead. Esc or a new hold
+stops playback and drops late audio. The overlay never holds a key; the backend calls DeepInfra.
+Headless check (needs `reach serve` running): `.build/debug/Reach --reach-dir <repo>/.reach --cloud-voice-selftest "Add 17 apples"`.
+Evidence: `docs/evidence/cloud-voice.md`.

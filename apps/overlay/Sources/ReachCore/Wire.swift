@@ -63,6 +63,10 @@ public enum ClientMessage: Equatable, Sendable {
     case ask(text: String, selection: Selection?)
     case abort(taskID: String?)
     case select(Selection)
+    /// Cloud speech-to-text of a WAV under .reach/audio/ (answered by `sttResult`).
+    case stt(audioPath: String, id: String)
+    /// Cloud text-to-speech (answered by `ttsAudio`).
+    case tts(text: String, id: String)
 
     public func json() throws -> String {
         var obj: [String: JSONValue] = [:]
@@ -79,6 +83,10 @@ public enum ClientMessage: Equatable, Sendable {
             if let id { obj["task_id"] = .string(id) }
         case .select(let sel):
             obj = ["type": .string("select"), "selection": try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel))]
+        case .stt(let path, let id):
+            obj = ["type": .string("stt"), "audio_path": .string(path), "format": .string("wav"), "id": .string(id)]
+        case .tts(let text, let id):
+            obj = ["type": .string("tts"), "text": .string(text), "id": .string(id)]
         }
         enc.outputFormatting = [.sortedKeys]
         return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
@@ -174,6 +182,8 @@ public enum ServerMessage: Equatable, Sendable {
     case transcript(taskID: String, role: String, text: String)
     case error(message: String, taskID: String?)
     case added(name: String, passages: Int)
+    case sttResult(text: String, ms: Int, error: String?, id: String?)
+    case ttsAudio(path: String, ms: Int, error: String?, id: String?)
     case unknown(type: String)
 
     public static func decode(_ text: String) throws -> ServerMessage {
@@ -205,6 +215,12 @@ public enum ServerMessage: Equatable, Sendable {
             return .error(message: v["message"]?.string ?? "error", taskID: tid)
         case "added":
             return .added(name: v["name"]?.string ?? "", passages: Int(v["passages"]?.number ?? 0))
+        case "stt_result":
+            return .sttResult(text: v["text"]?.string ?? "", ms: Int(v["ms"]?.number ?? 0), error: v["error"]?.string,
+                              id: v["id"]?.string)
+        case "tts_audio":
+            return .ttsAudio(path: v["path"]?.string ?? "", ms: Int(v["ms"]?.number ?? 0), error: v["error"]?.string,
+                             id: v["id"]?.string)
         default:
             return .unknown(type: type)
         }

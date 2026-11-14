@@ -97,7 +97,29 @@ class Utterance(BaseModel):
     wake_matched: bool | None = None
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses | Utterance, Field(discriminator="type")]
+
+
+class SttIn(BaseModel):
+    """Cloud speech-to-text of a recording under .reach/audio/ (at most 60 s). Answered with `stt_result`."""
+
+    type: Literal["stt"] = "stt"
+    audio_path: str
+    format: str = "wav"
+    id: str | None = Field(default=None, max_length=64, description="Echoed in the result so late answers can be dropped")
+
+
+class TtsIn(BaseModel):
+    """Cloud text-to-speech. Text is cleaned (citations, markdown) and capped at 600 chars. Answered with `tts_audio`."""
+
+    type: Literal["tts"] = "tts"
+    text: str
+    voice: str | None = Field(default=None, max_length=64)
+    id: str | None = Field(default=None, max_length=64)
+
+
+Inbound = Annotated[
+    Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses | Utterance | SttIn | TtsIn, Field(discriminator="type")
+]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -237,8 +259,30 @@ class Addressed(BaseModel):
     latency_ms: int = 0
 
 
+class SttResult(BaseModel):
+    type: Literal["stt_result"] = "stt_result"
+    text: str = ""
+    ms: int = 0
+    language: str | None = None
+    error: str | None = None
+    id: str | None = None
+
+
+class TtsAudio(BaseModel):
+    """A WAV under .reach/audio/; the client plays it and deletes it. `error` set (and path empty) on failure."""
+
+    type: Literal["tts_audio"] = "tts_audio"
+    path: str = ""
+    format: str = "wav"
+    ms: int = 0
+    error: str | None = None
+    id: str | None = None
+
+
 Outbound = Annotated[
-    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg | Addressed, Field(discriminator="type")
+    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg
+    | Addressed | SttResult | TtsAudio,
+    Field(discriminator="type"),
 ]
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 

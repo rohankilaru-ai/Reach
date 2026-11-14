@@ -51,6 +51,15 @@ final class OverlayModel: ObservableObject {
     private(set) var lastAskFromVoice = false
     var onZoom: ((Selection) -> Void)?
     var onSpeak: ((String) -> Void)?
+    /// Cloud voice results (text, error, id) and (path, error, id).
+    var onSttResult: ((String, String?, String?) -> Void)?
+    var onTtsAudio: ((String, String?, String?) -> Void)?
+    /// Voice: cloud (Whisper + DeepInfra TTS) or on-device (Apple). Default cloud.
+    @Published var voiceMode: VoiceMode = VoiceMode.load() {
+        didSet { UserDefaults.standard.set(voiceMode.rawValue, forKey: VoiceMode.key) }
+    }
+    var reachDir: URL { files.reachDir }
+    func send(_ m: ClientMessage) { client.send(m) }
     var onStopSpeaking: (() -> Void)?
 
     let files: RunFiles
@@ -234,6 +243,14 @@ final class OverlayModel: ObservableObject {
         case .transcript(_, let role, let text): log("transcript \(role): \(text.prefix(120))")
         case .error(let m, _): log("server error: \(m)")
         case .added(let n, let p): log("added \(n) (\(p) passages)")
+        case .sttResult(let t, let ms, let err, let id):
+            log("stt \(id ?? "-"): \(err.map { "error \($0)" } ?? "\"\(t.prefix(80))\"") (\(ms) ms)")
+            onSttResult?(t, err, id)
+            return
+        case .ttsAudio(let path, let ms, let err, let id):
+            log("tts \(id ?? "-"): \(err.map { "error \($0)" } ?? "audio ready") (\(ms) ms)")
+            onTtsAudio?(path, err, id)
+            return
         case .unknown(let t): log("ignored message type \(t)")
         }
         var after = state
