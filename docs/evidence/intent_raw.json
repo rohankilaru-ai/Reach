@@ -1,0 +1,2002 @@
+[
+ {
+  "id": 1,
+  "latency_ms": 268,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "chat",
+    "confidence": 0.9857163646458733,
+    "probabilities": {
+     "chat": 0.9877568839821771,
+     "document_question": 0.0011458086496219833,
+     "browser_task": 0.0015028871672571429,
+     "write_to_notes": 0.00085404349546338,
+     "screen_question": 0.0010706773414171737,
+     "mac_control": 0.0008349532446399687,
+     "other": 0.006834746119423222
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0012681850058842254,
+    "confidence": 0.998731814994
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0010585972773339185,
+    "confidence": 0.998941402723
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0006018427936722663,
+    "confidence": 0.999398157206
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0008257259426356427,
+    "confidence": 0.999174274057
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.002552566437998008,
+    "confidence": 0.997447433562
+   }
+  },
+  "usage": {
+   "input_tokens": 737,
+   "output_tokens": 418
+  }
+ },
+ {
+  "id": 2,
+  "latency_ms": 299,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.995958164822904,
+    "probabilities": {
+     "chat": 0.0012943281718963396,
+     "document_question": 0.9965355698482036,
+     "browser_task": 0.0005607688969560314,
+     "write_to_notes": 0.00030458029701178516,
+     "screen_question": 0.00036495945475436024,
+     "mac_control": 0.00032595336494395177,
+     "other": 0.0006138399662339724
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.9990961984254166,
+    "confidence": 0.9990961984254166
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0008445889182168818,
+    "confidence": 0.999155411082
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0005498375478554095,
+    "confidence": 0.999450162452
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0005023233366945509,
+    "confidence": 0.999497676663
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.006424211667623707,
+    "confidence": 0.993575788332
+   }
+  },
+  "usage": {
+   "input_tokens": 742,
+   "output_tokens": 421
+  }
+ },
+ {
+  "id": 3,
+  "latency_ms": 287,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.9357861189110219,
+    "probabilities": {
+     "chat": 0.03182259576597766,
+     "document_question": 0.001762181198901823,
+     "browser_task": 0.9449595304951618,
+     "write_to_notes": 0.0012554012640145066,
+     "screen_question": 0.0012841052044991865,
+     "mac_control": 0.002018168799326662,
+     "other": 0.016898017272118333
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.00045891335433316256,
+    "confidence": 0.999541086646
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0005138024517817749,
+    "confidence": 0.999486197548
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.001485295815157061,
+    "confidence": 0.998514704185
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0387868845417607,
+    "confidence": 0.961213115458
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.04050810816175229,
+    "confidence": 0.959491891838
+   }
+  },
+  "usage": {
+   "input_tokens": 740,
+   "output_tokens": 413
+  }
+ },
+ {
+  "id": 4,
+  "latency_ms": 271,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "write_to_notes",
+    "confidence": 0.999008130975478,
+    "probabilities": {
+     "chat": 0.0002126932289385736,
+     "document_question": 0.00015499000859543313,
+     "browser_task": 0.00012086691605715897,
+     "write_to_notes": 0.9991498265504098,
+     "screen_question": 0.00010794887496700314,
+     "mac_control": 0.00010553587631813752,
+     "other": 0.0001481385447138341
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0004486601902401376,
+    "confidence": 0.99955133981
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.00040072720523081246,
+    "confidence": 0.999599272795
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.9991163826008528,
+    "confidence": 0.9991163826008528
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0009671618881726108,
+    "confidence": 0.999032838112
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0014197295755350348,
+    "confidence": 0.998580270424
+   }
+  },
+  "usage": {
+   "input_tokens": 740,
+   "output_tokens": 425
+  }
+ },
+ {
+  "id": 5,
+  "latency_ms": 269,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.27381642313611093,
+    "probabilities": {
+     "chat": 0.07414759971751271,
+     "document_question": 0.3608667090858038,
+     "browser_task": 0.01330272344137443,
+     "write_to_notes": 0.00514743310017262,
+     "screen_question": 0.15992050468625518,
+     "mac_control": 0.009058095852214688,
+     "other": 0.3775569341166665
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.003057033146788182,
+    "confidence": 0.996942966853
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.9322860171475558,
+    "confidence": 0.9322860171475558
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0019917036119183468,
+    "confidence": 0.998008296388
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0012681850058842254,
+    "confidence": 0.998731814994
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9350850860799874,
+    "confidence": 0.9350850860799874
+   }
+  },
+  "usage": {
+   "input_tokens": 735,
+   "output_tokens": 404
+  }
+ },
+ {
+  "id": 6,
+  "latency_ms": 270,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "mac_control",
+    "confidence": 0.9535674428003319,
+    "probabilities": {
+     "chat": 0.013090917811644329,
+     "document_question": 0.0060696415468907,
+     "browser_task": 0.0050654760449840635,
+     "write_to_notes": 0.0015634788398507403,
+     "screen_question": 0.0020507185208886334,
+     "mac_control": 0.9602006652574273,
+     "other": 0.011959101978314233
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.001297142322808518,
+    "confidence": 0.998702857677
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0009671618881726108,
+    "confidence": 0.999032838112
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.937776141116925,
+    "confidence": 0.937776141116925
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0012681850058842254,
+    "confidence": 0.998731814994
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.009406282435083542,
+    "confidence": 0.990593717565
+   }
+  },
+  "usage": {
+   "input_tokens": 735,
+   "output_tokens": 412
+  }
+ },
+ {
+  "id": 7,
+  "latency_ms": 267,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.3023071474688007,
+    "probabilities": {
+     "chat": 0.07545370907223098,
+     "document_question": 0.040066441244281596,
+     "browser_task": 0.40197755497325777,
+     "write_to_notes": 0.006419997450755808,
+     "screen_question": 0.010798050518070484,
+     "mac_control": 0.12981030858767975,
+     "other": 0.3354739381537236
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.006141968025699496,
+    "confidence": 0.993858031974
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.02733646011606716,
+    "confidence": 0.972663539884
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.046121236108695104,
+    "confidence": 0.953878763891
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9983743643039934,
+    "confidence": 0.9983743643039934
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0547634818369669,
+    "confidence": 0.945236518163
+   }
+  },
+  "usage": {
+   "input_tokens": 751,
+   "output_tokens": 404
+  }
+ },
+ {
+  "id": 8,
+  "latency_ms": 300,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "screen_question",
+    "confidence": 0.8709230397276067,
+    "probabilities": {
+     "chat": 0.08864568642375013,
+     "document_question": 0.0034970754132121556,
+     "browser_task": 0.0031233140224302004,
+     "write_to_notes": 0.0015497524971918122,
+     "screen_question": 0.8893626054808057,
+     "mac_control": 0.001696420896956604,
+     "other": 0.012125145265653389
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0012398721013374054,
+    "confidence": 0.998760127899
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.010520073242296871,
+    "confidence": 0.989479926758
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0010585976262101873,
+    "confidence": 0.998941402374
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0005138027426705402,
+    "confidence": 0.999486197257
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.03403450654922188,
+    "confidence": 0.965965493451
+   }
+  },
+  "usage": {
+   "input_tokens": 749,
+   "output_tokens": 416
+  }
+ },
+ {
+  "id": 9,
+  "latency_ms": 240,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "mac_control",
+    "confidence": 0.9861782537562269,
+    "probabilities": {
+     "chat": 0.0031702231662557078,
+     "document_question": 0.005212937878483388,
+     "browser_task": 0.0009143403610473462,
+     "write_to_notes": 0.0006368282399745652,
+     "screen_question": 0.0005079765620576986,
+     "mac_control": 0.9881527889339089,
+     "other": 0.001404904858272441
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0007210640277336745,
+    "confidence": 0.999278935972
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006296607540100687,
+    "confidence": 0.999370339246
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.7877095459060304,
+    "confidence": 0.7877095459060304
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9892419859448192,
+    "confidence": 0.9892419859448192
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.006281515454693381,
+    "confidence": 0.993718484545
+   }
+  },
+  "usage": {
+   "input_tokens": 734,
+   "output_tokens": 414
+  }
+ },
+ {
+  "id": 10,
+  "latency_ms": 332,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.8878579247740753,
+    "probabilities": {
+     "chat": 0.022181043628595284,
+     "document_question": 0.02428025777180012,
+     "browser_task": 0.9038782212349218,
+     "write_to_notes": 0.0027097035477000654,
+     "screen_question": 0.007002797515160192,
+     "mac_control": 0.00347470542250365,
+     "other": 0.03647327087931892
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0007892521355523027,
+    "confidence": 0.999210747864
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.008409413736195302,
+    "confidence": 0.991590586264
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0035792953423342275,
+    "confidence": 0.996420704658
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9982604874840385,
+    "confidence": 0.9982604874840385
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.18361793732073808,
+    "confidence": 0.816382062679
+   }
+  },
+  "usage": {
+   "input_tokens": 740,
+   "output_tokens": 409
+  }
+ },
+ {
+  "id": 11,
+  "latency_ms": 255,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.783916362530429,
+    "probabilities": {
+     "chat": 0.08889839599428964,
+     "document_question": 0.03598982458669692,
+     "browser_task": 0.020919503285714076,
+     "write_to_notes": 0.010147988650136901,
+     "screen_question": 0.010147988650136901,
+     "mac_control": 0.019110845235515053,
+     "other": 0.8147854535975105
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0018613489528680961,
+    "confidence": 0.998138651047
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.04230237111769501,
+    "confidence": 0.957697628882
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.02984636118492448,
+    "confidence": 0.970153638815
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.007187463075389598,
+    "confidence": 0.992812536925
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9852956404964077,
+    "confidence": 0.9852956404964077
+   }
+  },
+  "usage": {
+   "input_tokens": 734,
+   "output_tokens": 405
+  }
+ },
+ {
+  "id": 12,
+  "latency_ms": 233,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.5673123331505981,
+    "probabilities": {
+     "chat": 0.09003292442179839,
+     "document_question": 0.20316273726211231,
+     "browser_task": 0.011507387786369656,
+     "write_to_notes": 0.006688803191424045,
+     "screen_question": 0.04569470343916357,
+     "mac_control": 0.013788586912904969,
+     "other": 0.629124856986227
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.003744217668270983,
+    "confidence": 0.996255782332
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.935085106980769,
+    "confidence": 0.935085106980769
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.2881763193554783,
+    "confidence": 0.711823680645
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.03403452500045923,
+    "confidence": 0.965965475
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.957697628882305,
+    "confidence": 0.957697628882305
+   }
+  },
+  "usage": {
+   "input_tokens": 735,
+   "output_tokens": 398
+  }
+ },
+ {
+  "id": 13,
+  "latency_ms": 295,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.4766409060643915,
+    "probabilities": {
+     "chat": 0.07542247163623865,
+     "document_question": 0.16267011711242357,
+     "browser_task": 0.011292787026861588,
+     "write_to_notes": 0.14860596934525547,
+     "screen_question": 0.010552313884065282,
+     "mac_control": 0.04004985008281977,
+     "other": 0.5514064909123356
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.01075801405518085,
+    "confidence": 0.989241985945
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.00642421490631228,
+    "confidence": 0.993575785094
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.09837326028843449,
+    "confidence": 0.901626739712
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.011504240013418422,
+    "confidence": 0.988495759987
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9293754281382817,
+    "confidence": 0.9293754281382817
+   }
+  },
+  "usage": {
+   "input_tokens": 732,
+   "output_tokens": 402
+  }
+ },
+ {
+  "id": 14,
+  "latency_ms": 229,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.5905935731418775,
+    "probabilities": {
+     "chat": 0.2400561827225113,
+     "document_question": 0.0035024715441546016,
+     "browser_task": 0.6490802055501809,
+     "write_to_notes": 0.003128133659574663,
+     "screen_question": 0.004491287670832459,
+     "mac_control": 0.01488391377118101,
+     "other": 0.08485780508156508
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0005138029753815523,
+    "confidence": 0.999486197025
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0012681844245457834,
+    "confidence": 0.998731815575
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.00040072755433682365,
+    "confidence": 0.999599272446
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.00046940118198275985,
+    "confidence": 0.999530598818
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.05026678462078394,
+    "confidence": 0.949733215379
+   }
+  },
+  "usage": {
+   "input_tokens": 736,
+   "output_tokens": 414
+  }
+ },
+ {
+  "id": 15,
+  "latency_ms": 241,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.9835123169669018,
+    "probabilities": {
+     "chat": 0.0071371828556616385,
+     "document_question": 0.9858677002573444,
+     "browser_task": 0.0009544167765941081,
+     "write_to_notes": 0.0009122255398546434,
+     "screen_question": 0.001251849686994036,
+     "mac_control": 0.0005674496077832661,
+     "other": 0.0033091752757678887
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.9949830645394778,
+    "confidence": 0.9949830645394778
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.03878686663777083,
+    "confidence": 0.961213133362
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0015538853252035501,
+    "confidence": 0.998446114675
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0005375532313828746,
+    "confidence": 0.999462446769
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.031183708807643973,
+    "confidence": 0.968816291192
+   }
+  },
+  "usage": {
+   "input_tokens": 733,
+   "output_tokens": 416
+  }
+ },
+ {
+  "id": 16,
+  "latency_ms": 234,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "chat",
+    "confidence": 0.9874358479566079,
+    "probabilities": {
+     "chat": 0.9892307268199496,
+     "document_question": 0.0004645639144471626,
+     "browser_task": 0.0012280422224645298,
+     "write_to_notes": 0.0004440274651586325,
+     "screen_question": 0.0003877063416787652,
+     "mac_control": 0.0004056378816354236,
+     "other": 0.007839295354665876
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0009244472213876495,
+    "confidence": 0.999075552779
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006892111079899411,
+    "confidence": 0.999310788892
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0003579138840564086,
+    "confidence": 0.999642086116
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0003499163010436037,
+    "confidence": 0.999650083699
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0008836169338973462,
+    "confidence": 0.999116383066
+   }
+  },
+  "usage": {
+   "input_tokens": 737,
+   "output_tokens": 421
+  }
+ },
+ {
+  "id": 17,
+  "latency_ms": 257,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "chat",
+    "confidence": 0.988496592079455,
+    "probabilities": {
+     "chat": 0.9901399360681042,
+     "document_question": 0.0008561039425357652,
+     "browser_task": 0.0033235155925567124,
+     "write_to_notes": 0.0005089978368058907,
+     "screen_question": 0.0009371260892068689,
+     "mac_control": 0.0005962672365649426,
+     "other": 0.003638053234225587
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0011586672480758207,
+    "confidence": 0.998841332752
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006155947933980627,
+    "confidence": 0.999384405207
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0004192536353177196,
+    "confidence": 0.999580746365
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0004386357882026407,
+    "confidence": 0.999561364212
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0012121910556691321,
+    "confidence": 0.998787808944
+   }
+  },
+  "usage": {
+   "input_tokens": 737,
+   "output_tokens": 420
+  }
+ },
+ {
+  "id": 18,
+  "latency_ms": 267,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "chat",
+    "confidence": 0.9373971768425139,
+    "probabilities": {
+     "chat": 0.9463404372935834,
+     "document_question": 0.002067328551287251,
+     "browser_task": 0.036498645586639344,
+     "write_to_notes": 0.0016490395444176173,
+     "screen_question": 0.0016121789589176954,
+     "mac_control": 0.0015409104260611492,
+     "other": 0.010291459639093522
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.001388040067722944,
+    "confidence": 0.998611959932
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.001819818336566915,
+    "confidence": 0.998180181663
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0006296611030361076,
+    "confidence": 0.999370338897
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0008072827598112409,
+    "confidence": 0.99919271724
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.005872054236893987,
+    "confidence": 0.994127945763
+   }
+  },
+  "usage": {
+   "input_tokens": 739,
+   "output_tokens": 416
+  }
+ },
+ {
+  "id": 19,
+  "latency_ms": 277,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.9937326446396242,
+    "probabilities": {
+     "chat": 0.0017331818275938247,
+     "document_question": 0.9946279811196779,
+     "browser_task": 0.0007177083528920466,
+     "write_to_notes": 0.00040785102646261946,
+     "screen_question": 0.0006556566599896295,
+     "mac_control": 0.0008035947434180078,
+     "other": 0.0010540262699659743
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.999096198890657,
+    "confidence": 0.999096198890657
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0009455632598418398,
+    "confidence": 0.99905443674
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.000737538582297806,
+    "confidence": 0.999262461418
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.000491100558552373,
+    "confidence": 0.999508899441
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.008409413736195302,
+    "confidence": 0.991590586264
+   }
+  },
+  "usage": {
+   "input_tokens": 741,
+   "output_tokens": 417
+  }
+ },
+ {
+  "id": 20,
+  "latency_ms": 313,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.9945255806215514,
+    "probabilities": {
+     "chat": 0.0018560705077119467,
+     "document_question": 0.9953076405327584,
+     "browser_task": 0.0006864501740703606,
+     "write_to_notes": 0.0005475583109680183,
+     "screen_question": 0.00044675535899983503,
+     "mac_control": 0.0003329949740478824,
+     "other": 0.0008225301414435482
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.9995613639790688,
+    "confidence": 0.9995613639790688
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006296611030361076,
+    "confidence": 0.999370338897
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0007375389894508991,
+    "confidence": 0.999262461011
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0004589135579664671,
+    "confidence": 0.999541086442
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.04050810816175229,
+    "confidence": 0.959491891838
+   }
+  },
+  "usage": {
+   "input_tokens": 741,
+   "output_tokens": 419
+  }
+ },
+ {
+  "id": 21,
+  "latency_ms": 233,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.9958892470451307,
+    "probabilities": {
+     "chat": 0.0014491312118864103,
+     "document_question": 0.996476497467255,
+     "browser_task": 0.0005239676239004744,
+     "write_to_notes": 0.00030456225135994905,
+     "screen_question": 0.0004372820372425273,
+     "mac_control": 0.0002845917844552146,
+     "other": 0.0005239676239004744
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.9995613642117973,
+    "confidence": 0.9995613642117973
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0004386356136562547,
+    "confidence": 0.999561364386
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0003744615438653495,
+    "confidence": 0.999625538456
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0003196728997915752,
+    "confidence": 0.9996803271
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.001991704773752899,
+    "confidence": 0.998008295226
+   }
+  },
+  "usage": {
+   "input_tokens": 739,
+   "output_tokens": 419
+  }
+ },
+ {
+  "id": 22,
+  "latency_ms": 244,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.799864906899861,
+    "probabilities": {
+     "chat": 0.1555062509412354,
+     "document_question": 0.002428081548999152,
+     "browser_task": 0.8284556344855951,
+     "write_to_notes": 0.0021200989693855965,
+     "screen_question": 0.0022181542059214934,
+     "mac_control": 0.0034082469497970164,
+     "other": 0.0058635328990662115
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0016627429090513574,
+    "confidence": 0.998337257091
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0008445893253263808,
+    "confidence": 0.999155410675
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0008836173991471774,
+    "confidence": 0.999116382601
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.000491100558552373,
+    "confidence": 0.999508899441
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.007862331799664135,
+    "confidence": 0.9921376682
+   }
+  },
+  "usage": {
+   "input_tokens": 743,
+   "output_tokens": 416
+  }
+ },
+ {
+  "id": 23,
+  "latency_ms": 232,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.9548906387867667,
+    "probabilities": {
+     "chat": 0.013712561894299502,
+     "document_question": 0.01570455646775975,
+     "browser_task": 0.9613348332458002,
+     "write_to_notes": 0.0011667364124598601,
+     "screen_question": 0.0009959735380057292,
+     "mac_control": 0.0012771562229485622,
+     "other": 0.005808182218726385
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.002280375078111657,
+    "confidence": 0.997719624922
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.6929255517445341,
+    "confidence": 0.6929255517445341
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.025032164806325728,
+    "confidence": 0.974967835194
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9987318155754542,
+    "confidence": 0.9987318155754542
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.511301263830028,
+    "confidence": 0.511301263830028
+   }
+  },
+  "usage": {
+   "input_tokens": 739,
+   "output_tokens": 407
+  }
+ },
+ {
+  "id": 24,
+  "latency_ms": 236,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.8618046353043649,
+    "probabilities": {
+     "chat": 0.01725595512741999,
+     "document_question": 0.04881578504542901,
+     "browser_task": 0.8815468302608843,
+     "write_to_notes": 0.003881153804202598,
+     "screen_question": 0.003969891619608173,
+     "mac_control": 0.00895821152322366,
+     "other": 0.03557217261923229
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0006587640104349621,
+    "confidence": 0.99934123599
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.01075801405518085,
+    "confidence": 0.989241985945
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.008794932896488146,
+    "confidence": 0.991205067104
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9990961984254166,
+    "confidence": 0.9990961984254166
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.020068973900943216,
+    "confidence": 0.979931026099
+   }
+  },
+  "usage": {
+   "input_tokens": 743,
+   "output_tokens": 406
+  }
+ },
+ {
+  "id": 25,
+  "latency_ms": 272,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "write_to_notes",
+    "confidence": 0.9966467028618791,
+    "probabilities": {
+     "chat": 0.0009437378052856683,
+     "document_question": 0.000478978269510008,
+     "browser_task": 0.00031885601785296727,
+     "write_to_notes": 0.997125745310182,
+     "screen_question": 0.00026610413502045784,
+     "mac_control": 0.00026610413502045784,
+     "other": 0.0006004743271284328
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0007716240497872763,
+    "confidence": 0.99922837595
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0044831355423611274,
+    "confidence": 0.995516864458
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.9973296926407226,
+    "confidence": 0.9973296926407226
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.00285715514793984,
+    "confidence": 0.997142844852
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.00804065412578268,
+    "confidence": 0.991959345874
+   }
+  },
+  "usage": {
+   "input_tokens": 741,
+   "output_tokens": 418
+  }
+ },
+ {
+  "id": 26,
+  "latency_ms": 269,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "write_to_notes",
+    "confidence": 0.99877007057371,
+    "probabilities": {
+     "chat": 0.00036584195991739177,
+     "document_question": 0.00027268496400135843,
+     "browser_task": 0.00011814113556913328,
+     "write_to_notes": 0.9989457747774658,
+     "screen_question": 0.00012643136169240743,
+     "mac_control": 7.68885803883921e-05,
+     "other": 9.423722096552596e-05
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.00042883505521413575,
+    "confidence": 0.999571164945
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0034995684133355526,
+    "confidence": 0.996500431587
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.9986429451288806,
+    "confidence": 0.9986429451288806
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0024400022164545363,
+    "confidence": 0.997559997784
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.002922287934488769,
+    "confidence": 0.997077712066
+   }
+  },
+  "usage": {
+   "input_tokens": 747,
+   "output_tokens": 422
+  }
+ },
+ {
+  "id": 27,
+  "latency_ms": 243,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "write_to_notes",
+    "confidence": 0.9976117666672157,
+    "probabilities": {
+     "chat": 0.000628767712723705,
+     "document_question": 0.00029153013159394925,
+     "browser_task": 0.0002432990743552421,
+     "write_to_notes": 0.9979529428576136,
+     "screen_question": 0.00014142032955027082,
+     "mac_control": 0.00021729590766321566,
+     "other": 0.0005247439864999727
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0006440482555075637,
+    "confidence": 0.999355951744
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0005255439849094876,
+    "confidence": 0.999474456015
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.9990755527786124,
+    "confidence": 0.9990755527786124
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.002037149890052013,
+    "confidence": 0.99796285011
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.004285804287403555,
+    "confidence": 0.995714195713
+   }
+  },
+  "usage": {
+   "input_tokens": 741,
+   "output_tokens": 421
+  }
+ },
+ {
+  "id": 28,
+  "latency_ms": 252,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "screen_question",
+    "confidence": 0.6427404920109838,
+    "probabilities": {
+     "chat": 0.12446958211789304,
+     "document_question": 0.08669171524461568,
+     "browser_task": 0.016272589179293667,
+     "write_to_notes": 0.004800567373684905,
+     "screen_question": 0.6937775645808434,
+     "mac_control": 0.007893785619776788,
+     "other": 0.06609419588389256
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0014852966288539284,
+    "confidence": 0.998514703371
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.9538787425704535,
+    "confidence": 0.9538787425704535
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.001903826497667451,
+    "confidence": 0.998096173502
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0008257255355184705,
+    "confidence": 0.999174274464
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.38885483808190596,
+    "confidence": 0.611145161918
+   }
+  },
+  "usage": {
+   "input_tokens": 737,
+   "output_tokens": 408
+  }
+ },
+ {
+  "id": 29,
+  "latency_ms": 232,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "screen_question",
+    "confidence": 0.9933462291743667,
+    "probabilities": {
+     "chat": 0.0036533299654631824,
+     "document_question": 0.0005347753905449064,
+     "browser_task": 0.00041703736741222444,
+     "write_to_notes": 0.0002594179903002019,
+     "screen_question": 0.9942967678637429,
+     "mac_control": 0.00030389603199165705,
+     "other": 0.0005347753905449064
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0013570555686633447,
+    "confidence": 0.998642944431
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.004796215933822115,
+    "confidence": 0.995203784066
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0009455636087575519,
+    "confidence": 0.999054436391
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0006738154033973823,
+    "confidence": 0.999326184597
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.02856465354535305,
+    "confidence": 0.971435346455
+   }
+  },
+  "usage": {
+   "input_tokens": 740,
+   "output_tokens": 422
+  }
+ },
+ {
+  "id": 30,
+  "latency_ms": 296,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "screen_question",
+    "confidence": 0.1857581612340729,
+    "probabilities": {
+     "chat": 0.2637622339219454,
+     "document_question": 0.14005954472309276,
+     "browser_task": 0.02570241114132397,
+     "write_to_notes": 0.005651681647112806,
+     "screen_question": 0.3020784239149196,
+     "mac_control": 0.010643331264608242,
+     "other": 0.25210237338699715
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.06771398285244418,
+    "confidence": 0.932286017148
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.5562767121956773,
+    "confidence": 0.5562767121956773
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.00132676121723459,
+    "confidence": 0.998673238783
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0006155950842572061,
+    "confidence": 0.999384404916
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.5225909948348999,
+    "confidence": 0.5225909948348999
+   }
+  },
+  "usage": {
+   "input_tokens": 739,
+   "output_tokens": 402
+  }
+ },
+ {
+  "id": 31,
+  "latency_ms": 261,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "mac_control",
+    "confidence": 0.9679619421645126,
+    "probabilities": {
+     "chat": 0.005130564996122412,
+     "document_question": 0.0006707465191194435,
+     "browser_task": 0.016622389390445174,
+     "write_to_notes": 0.0006127553302116784,
+     "screen_question": 0.0006860826667676427,
+     "mac_control": 0.9725388075695823,
+     "other": 0.0037386535277513576
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0009892535799948068,
+    "confidence": 0.99901074642
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006155945607107478,
+    "confidence": 0.999384405439
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0017006947969001598,
+    "confidence": 0.998299305203
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0005255436940241392,
+    "confidence": 0.999474456306
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0029889034108522014,
+    "confidence": 0.997011096589
+   }
+  },
+  "usage": {
+   "input_tokens": 733,
+   "output_tokens": 421
+  }
+ },
+ {
+  "id": 32,
+  "latency_ms": 368,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "mac_control",
+    "confidence": 0.9922392952503183,
+    "probabilities": {
+     "chat": 0.0016922598721531954,
+     "document_question": 0.002429700923464537,
+     "browser_task": 0.000571755463242905,
+     "write_to_notes": 0.0003806175883358053,
+     "screen_question": 0.0003721097537008043,
+     "mac_control": 0.9933479673574157,
+     "other": 0.0012055890416870793
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.002988904571525913,
+    "confidence": 0.997011095428
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0012681850058842254,
+    "confidence": 0.998731814994
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.9790223076730952,
+    "confidence": 0.9790223076730952
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9987878089443308,
+    "confidence": 0.9987878089443308
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.03257899755670873,
+    "confidence": 0.967421002443
+   }
+  },
+  "usage": {
+   "input_tokens": 737,
+   "output_tokens": 412
+  }
+ },
+ {
+  "id": 33,
+  "latency_ms": 255,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "mac_control",
+    "confidence": 0.9909094276546621,
+    "probabilities": {
+     "chat": 0.0025391573736629016,
+     "document_question": 0.002319627901579774,
+     "browser_task": 0.0008016396654248919,
+     "write_to_notes": 0.000498659741111113,
+     "screen_question": 0.0004555468153983877,
+     "mac_control": 0.9922080808468532,
+     "other": 0.00117728765596977
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0007543888396496784,
+    "confidence": 0.99924561116
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0006738154033973823,
+    "confidence": 0.999326184597
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.8536227218266916,
+    "confidence": 0.8536227218266916
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0019472713126286434,
+    "confidence": 0.998052728687
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.0026703087525308416,
+    "confidence": 0.997329691247
+   }
+  },
+  "usage": {
+   "input_tokens": 739,
+   "output_tokens": 416
+  }
+ },
+ {
+  "id": 34,
+  "latency_ms": 255,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.932614849432368,
+    "probabilities": {
+     "chat": 0.0073000187051259205,
+     "document_question": 0.02648143791580454,
+     "browser_task": 0.9422412995134584,
+     "write_to_notes": 0.0017571112571301323,
+     "screen_question": 0.001309685941511118,
+     "mac_control": 0.0024664198374715505,
+     "other": 0.018444026829498326
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0014197301567852136,
+    "confidence": 0.998580269843
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0012121916370401464,
+    "confidence": 0.998787808363
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.009837047041179799,
+    "confidence": 0.990162952959
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.9973296898542157,
+    "confidence": 0.9973296898542157
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.04050810816175229,
+    "confidence": 0.959491891838
+   }
+  },
+  "usage": {
+   "input_tokens": 735,
+   "output_tokens": 412
+  }
+ },
+ {
+  "id": 35,
+  "latency_ms": 277,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.5560249484323444,
+    "probabilities": {
+     "chat": 0.26237814885438937,
+     "document_question": 0.07071190874897199,
+     "browser_task": 0.01554878105738812,
+     "write_to_notes": 0.011589492347385016,
+     "screen_question": 0.009244549761212903,
+     "mac_control": 0.011077163431500175,
+     "other": 0.6194499557991524
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.0006892107589846598,
+    "confidence": 0.999310789241
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.0020836290752932213,
+    "confidence": 0.997916370925
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.002922287934488769,
+    "confidence": 0.997077712066
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0009671614811130648,
+    "confidence": 0.999032838519
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.738830029964447,
+    "confidence": 0.738830029964447
+   }
+  },
+  "usage": {
+   "input_tokens": 732,
+   "output_tokens": 408
+  }
+ },
+ {
+  "id": 36,
+  "latency_ms": 240,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.5014072327918019,
+    "probabilities": {
+     "chat": 0.11765978781209725,
+     "document_question": 0.2215786631988584,
+     "browser_task": 0.017223071740030252,
+     "write_to_notes": 0.013130954796947333,
+     "screen_question": 0.03975310649101983,
+     "mac_control": 0.018019644996645316,
+     "other": 0.5726347709644016
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.007862340115666415,
+    "confidence": 0.992137659884
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.8697715608877736,
+    "confidence": 0.8697715608877736
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.18361799692538375,
+    "confidence": 0.816382003075
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0200689642074808,
+    "confidence": 0.979931035793
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9612131154582393,
+    "confidence": 0.9612131154582393
+   }
+  },
+  "usage": {
+   "input_tokens": 734,
+   "output_tokens": 400
+  }
+ },
+ {
+  "id": 37,
+  "latency_ms": 229,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "document_question",
+    "confidence": 0.2379564214713084,
+    "probabilities": {
+     "chat": 0.05192831927877068,
+     "document_question": 0.3468197898325501,
+     "browser_task": 0.017544755793850664,
+     "write_to_notes": 0.008510912808174793,
+     "screen_question": 0.009108139244411789,
+     "mac_control": 0.27664652595597566,
+     "other": 0.2894415570862664
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.006005502550660306,
+    "confidence": 0.993994497449
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.9760479094672523,
+    "confidence": 0.9760479094672523
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.5562767121956773,
+    "confidence": 0.5562767121956773
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.7800505045048818,
+    "confidence": 0.7800505045048818
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9165433986687436,
+    "confidence": 0.9165433986687436
+   }
+  },
+  "usage": {
+   "input_tokens": 735,
+   "output_tokens": 400
+  }
+ },
+ {
+  "id": 38,
+  "latency_ms": 269,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "browser_task",
+    "confidence": 0.3933142112190861,
+    "probabilities": {
+     "chat": 0.10795631521089394,
+     "document_question": 0.03816161397118304,
+     "browser_task": 0.47998360961635955,
+     "write_to_notes": 0.007494477736629938,
+     "screen_question": 0.18572757097791587,
+     "mac_control": 0.01100639280506057,
+     "other": 0.1696700196819571
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.002495651901983066,
+    "confidence": 0.997504348098
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.01836571774014392,
+    "confidence": 0.98163428226
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.0017395125159614582,
+    "confidence": 0.998260487484
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0031979702855224395,
+    "confidence": 0.996802029714
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.7118236806445217,
+    "confidence": 0.7118236806445217
+   }
+  },
+  "usage": {
+   "input_tokens": 734,
+   "output_tokens": 406
+  }
+ },
+ {
+  "id": 39,
+  "latency_ms": 257,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "other",
+    "confidence": 0.3423453805808382,
+    "probabilities": {
+     "chat": 0.19334760074176005,
+     "document_question": 0.1613600532545888,
+     "browser_task": 0.018840826819715325,
+     "write_to_notes": 0.006968101402199531,
+     "screen_question": 0.16882303152727018,
+     "mac_control": 0.014364345756604807,
+     "other": 0.4362960404978613
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.007862335495665165,
+    "confidence": 0.992137664504
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.026159625987701603,
+    "confidence": 0.973840374012
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.002610776950332002,
+    "confidence": 0.99738922305
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.0022803760073105027,
+    "confidence": 0.997719623993
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.9322860171475558,
+    "confidence": 0.9322860171475558
+   }
+  },
+  "usage": {
+   "input_tokens": 736,
+   "output_tokens": 406
+  }
+ },
+ {
+  "id": 40,
+  "latency_ms": 276,
+  "error": null,
+  "answers": {
+   "kind": {
+    "type": "choice",
+    "choice": "write_to_notes",
+    "confidence": 0.5354595871919464,
+    "probabilities": {
+     "chat": 0.05479940843506876,
+     "document_question": 0.18575476352178183,
+     "browser_task": 0.011007998282194115,
+     "write_to_notes": 0.6018225033073826,
+     "screen_question": 0.009396873537037735,
+     "mac_control": 0.00784224840792965,
+     "other": 0.1293762045086053
+    }
+   },
+   "needs_documents": {
+    "type": "noul",
+    "noul": 0.005247750744739841,
+    "confidence": 0.994752249255
+   },
+   "needs_screen_region": {
+    "type": "noul",
+    "noul": 0.8163820030746163,
+    "confidence": 0.8163820030746163
+   },
+   "writes_user_data": {
+    "type": "noul",
+    "noul": 0.7118236806445217,
+    "confidence": 0.7118236806445217
+   },
+   "risky_or_irreversible": {
+    "type": "noul",
+    "noul": 0.02097768320904908,
+    "confidence": 0.979022316791
+   },
+   "ambiguous": {
+    "type": "noul",
+    "noul": 0.8843802411343211,
+    "confidence": 0.8843802411343211
+   }
+  },
+  "usage": {
+   "input_tokens": 733,
+   "output_tokens": 401
+  }
+ }
+]

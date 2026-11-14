@@ -1,0 +1,40 @@
+{"id":1,"split":"dev","text":"how are you doing today?","kind":"chat","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":2,"split":"dev","text":"what does the contract say about the termination notice period?","docs":true,"kind":"document_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":3,"split":"dev","text":"find me the cheapest flight to Boston next Friday","kind":"browser_task","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":4,"split":"dev","text":"add 'call the dentist' to my notes","kind":"write_to_notes","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":5,"split":"dev","text":"what is this?","kind":"screen_question","risky":false,"needs_screen_region":true,"ambiguous":false}
+{"id":6,"split":"dev","text":"turn on dark mode","kind":"mac_control","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":7,"split":"dev","text":"send this email to my boss now","selection":"Hi Dana, the Q3 numbers are attached.","kind":"browser_task","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":8,"split":"dev","text":"explain this paragraph","selection":"Photosynthesis converts light energy into chemical energy stored in glucose.","kind":"screen_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":9,"split":"dev","text":"empty the trash","kind":"mac_control","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":10,"split":"dev","text":"buy the blue one in size 10","kind":"browser_task","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":11,"split":"dev","text":"do the thing","kind":"other","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":12,"split":"dev","text":"can you fix that","kind":"screen_question","risky":false,"needs_screen_region":true,"ambiguous":true}
+{"id":13,"split":"dev","text":"notes","kind":"other","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":14,"split":"dev","text":"what's the weather like","kind":"browser_task","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":15,"split":"dev","text":"summarize it","docs":true,"kind":"document_question","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":16,"split":"held_out","text":"tell me a joke about cats","kind":"chat","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":17,"split":"held_out","text":"why is the sky blue?","kind":"chat","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":18,"split":"held_out","text":"how do I make a good risotto","kind":"chat","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":19,"split":"held_out","text":"which chapter of my thesis PDF covers the methods?","docs":true,"kind":"document_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":20,"split":"held_out","text":"quote the paper's main result with the page number","docs":true,"kind":"document_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":21,"split":"held_out","text":"what did the lease say about pets?","docs":true,"kind":"document_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":22,"split":"held_out","text":"look up the opening hours of the Apple Store on Fifth Avenue","kind":"browser_task","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":23,"split":"held_out","text":"submit the job application form on that site","kind":"browser_task","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":24,"split":"held_out","text":"post this tweet for me","selection":"Shipping Reach today!","kind":"browser_task","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":25,"split":"held_out","text":"jot down that the meeting moved to 3pm","kind":"write_to_notes","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":26,"split":"held_out","text":"save this quote to my notes","selection":"The only way out is through.","kind":"write_to_notes","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":27,"split":"held_out","text":"put a reminder in my notes to renew my passport","kind":"write_to_notes","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":28,"split":"held_out","text":"what does that error mean?","kind":"screen_question","risky":false,"needs_screen_region":true,"ambiguous":false}
+{"id":29,"split":"held_out","text":"what's in this chart?","image":true,"kind":"screen_question","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":30,"split":"held_out","text":"who is the person in this photo?","kind":"screen_question","risky":false,"needs_screen_region":true,"ambiguous":false}
+{"id":31,"split":"held_out","text":"open Spotify","kind":"mac_control","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":32,"split":"held_out","text":"delete all my files in Downloads","kind":"mac_control","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":33,"split":"held_out","text":"set the volume to 30 percent","kind":"mac_control","risky":false,"needs_screen_region":false,"ambiguous":false}
+{"id":34,"split":"held_out","text":"pay my electricity bill","kind":"browser_task","risky":true,"needs_screen_region":false,"ambiguous":false}
+{"id":35,"split":"held_out","text":"hmm","kind":"other","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":36,"split":"held_out","text":"make it better","kind":"other","risky":false,"needs_screen_region":true,"ambiguous":true}
+{"id":37,"split":"held_out","text":"get rid of these","kind":"mac_control","risky":true,"needs_screen_region":true,"ambiguous":true}
+{"id":38,"split":"held_out","text":"check the price","kind":"browser_task","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":39,"split":"held_out","text":"what about the second one","kind":"other","risky":false,"needs_screen_region":false,"ambiguous":true}
+{"id":40,"split":"held_out","text":"remember this","kind":"write_to_notes","risky":false,"needs_screen_region":true,"ambiguous":true}

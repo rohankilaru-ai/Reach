@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
@@ -43,8 +44,9 @@ NOTES_HINT = (
 )
 
 
-def prompt_for(ask: Ask) -> str:
+def prompt_for(ask: Ask, intent: Any = None) -> str:
     from . import evidence
+    from . import intent as intent_mod
 
     text = PERSONA + "\n\n" + ask.text
     if ask.selection and ask.selection.text:
@@ -61,6 +63,9 @@ def prompt_for(ask: Ask) -> str:
             text += "\n\n" + pinned
     except Exception:  # the store is optional; an ask never fails on it
         pass
+    extra = intent_mod.prompt_addendum(intent)  # Drex task understanding: a hint or a required confirmation
+    if extra:
+        text += "\n\n" + extra
     return text
 
 
@@ -142,13 +147,27 @@ class InternBridge:
                     append_browser(drex_log(), task.id, task.builder.browser[-1])
             sink(task.id, data)
 
+        from . import intent as intent_mod
+
         error = None
+        it = None
         CURRENT_TASK.set(task.id)
         try:
+            t_intent = time.monotonic()
+            fut = intent_mod.start(task.ask)  # Drex understands the ask while the Intern session starts
             task.session = await self.bootstrap.session(emit)
+            it = await intent_mod.finish(fut, t_intent)
+            if it is not None:
+                emit_intent(task, it, sink)
             if task.aborted:
                 return task.builder.receipt(aborted=True)
-            await task.session.start(prompt_for(task.ask))
+            if it is not None and it.action == "needs_selection":
+                sink(task.id, {"type": "text_delta", "text": intent_mod.NEEDS_SELECTION_REPLY})
+                r = task.builder.receipt()
+                r.status, r.reason, r.final_text = "ok", "needs_selection", intent_mod.NEEDS_SELECTION_REPLY
+                r.intent = intent_mod.receipt_dict(it)
+                return r
+            await task.session.start(prompt_for(task.ask, it))
         except asyncio.CancelledError:
             task.abort()
             raise
@@ -160,7 +179,18 @@ class InternBridge:
                     await task.session.aclose()
                 except Exception:
                     pass
-        return task.builder.receipt(aborted=task.aborted, error=error)
+        r = task.builder.receipt(aborted=task.aborted, error=error)
+        r.intent = intent_mod.receipt_dict(it)
+        return r
+
+
+def emit_intent(task: Task, it: Any, sink: Sink) -> None:
+    """Log the intent decision to the Drex log, count it in the receipt and show it to the client."""
+    from . import intent as intent_mod
+
+    ev = intent_mod.log(it, task.ask.text, task.id)
+    task.builder.feed(ev)
+    sink(task.id, ev)
 
 
 class ReplayBridge:
