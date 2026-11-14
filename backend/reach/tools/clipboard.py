@@ -48,4 +48,4 @@ class ClipboardCopy(Tool):
 
         outcome, detail = await asyncio.to_thread(copy_text, args.text)
         first = f"outcome={outcome} destination=clipboard chars={len(args.text or '')}"
-        return ToolOutput(content=f"{first}\n{detail}", is_error=outcome == "failed")
+        return ToolOutput(status="error" if outcome == "failed" else "ok", content=f"{first}\n{detail}")
