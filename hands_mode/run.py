@@ -166,10 +166,13 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 last_id, last_frame_t = frame.frame_id, time.monotonic()
                 engine.update(frame)
-                if watcher is not None and engine.active and (
-                        sig := watcher.update(frame, time.monotonic(),
-                                              busy=engine.button_down or engine.selecting or is_pointing(frame)
-                                              or engine.state.startswith("paused"))):
+                try:   # a signal check must never take hands mode down: a bad frame just means no signal
+                    sig = watcher.update(frame, time.monotonic(),
+                                         busy=engine.button_down or engine.selecting or is_pointing(frame)
+                                         or engine.state.startswith("paused")) if watcher is not None and engine.active else None
+                except (KeyError, AttributeError, TypeError):
+                    sig = None
+                if sig:
                     print(f"GESTURE {sig}", flush=True)   # the overlay acts on it; the engine never clicks
             if selector is not None and (status := selector.poll()):
                 print(f"[select] {status}", flush=True)
