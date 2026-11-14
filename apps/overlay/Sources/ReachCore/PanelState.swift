@@ -1,0 +1,123 @@
+import Foundation
+
+public enum Phase: String, Equatable, Sendable {
+    case idle, working, needsYou = "needs you", done, failed
+}
+
+/// Everything the panel shows, advanced by `apply`. No UI, no I/O, so it is unit-testable.
+public struct PanelState: Equatable, Sendable {
+    public var phase: Phase = .idle
+    public var connected = false
+    public var taskID: String?
+    public var answer = ""
+    public var note: String?
+    public var receipt: Receipt?
+    public var evidence: [EvidenceCard] = []
+    public var decisions: [DrexDecision] = []   // newest last, at most 3
+    public var pointer: (x: Double, y: Double, label: String?)? {
+        get { pointerStore.map { ($0.x, $0.y, $0.label) } }
+        set { pointerStore = newValue.map { PointerSpot(x: $0.x, y: $0.y, label: $0.label) } }
+    }
+    private var pointerStore: PointerSpot?
+    private var awaitingAccept = false
+
+    public init() {}
+
+    struct PointerSpot: Equatable, Sendable { var x: Double; var y: Double; var label: String? }
+
+    public var stateLine: String {
+        var s = phase.rawValue
+        if let note, !note.isEmpty { s += " · \(note)" }
+        return s
+    }
+
+    // MARK: local inputs
+
+    public mutating func submitted() {
+        phase = .working
+        taskID = nil
+        awaitingAccept = true
+        answer = ""
+        note = nil
+        receipt = nil
+        evidence = []
+        pointer = nil
+    }
+
+    /// Something only the user can fix (no server, no token, a missing permission).
+    public mutating func needsUser(_ why: String) {
+        phase = .needsYou
+        note = why
+    }
+
+    public mutating func disconnected(_ why: String) {
+        connected = false
+        if phase == .working { phase = .failed; note = "connection lost: \(why)" }
+        else { phase = .needsYou; note = why }
+    }
+
+    // MARK: server inputs
+
+    public mutating func apply(_ msg: ServerMessage) {
+        switch msg {
+        case .ready:
+            connected = true
+            if phase == .needsYou { phase = .idle; note = nil }
+        case .accepted(let id):
+            if awaitingAccept { taskID = id; awaitingAccept = false }
+        case .event(let id, let kind, let body):
+            guard isMine(id) else { return }
+            switch kind {
+            case "text_delta":
+                answer += body["text"]?.string ?? ""
+            case "decision":
+                decisions.append(DrexDecision(event: body))
+                if decisions.count > 3 { decisions.removeFirst(decisions.count - 3) }
+            case "tool_call_start":
+                note = "using \(body["name"]?.string ?? "a tool")"
+            case "tool_call_end", "turn_start":
+                note = nil
+            default:
+                break
+            }
+        case .transcript(let id, let role, let text):
+            if role == "assistant", isMine(id), !text.isEmpty { answer = text }
+        case .receipt(let r):
+            guard isMine(r.task_id) else { return }
+            receipt = r
+            if let t = r.final_text, !t.isEmpty { answer = t }
+            switch r.status {
+            case "ok": phase = .done; note = nil
+            case "aborted": phase = .idle; note = "stopped (\(r.reason))"
+            default: phase = .failed; note = r.reason
+            }
+            taskID = nil
+        case .evidence(let card):
+            if let id = card.task_id, !isMine(id) { return }
+            if !evidence.contains(where: { $0.stableID == card.stableID }) { evidence.append(card) }
+        case .pointer(let id, let x, let y, let label):
+            if let id, !isMine(id) { return }
+            pointer = (x, y, label)
+        case .error(let message, let id):
+            if let id, !isMine(id) { return }
+            if phase == .working || id != nil { phase = .failed }
+            note = message
+        case .added(let name, let passages):
+            note = "added \(name) (\(passages) passages)"
+        case .unknown:
+            break
+        }
+    }
+
+    /// Events belong to the current task; before `accepted` arrives, accept any.
+    private func isMine(_ id: String) -> Bool {
+        guard let taskID else { return phase == .working }
+        return id == taskID
+    }
+
+    public static func == (a: PanelState, b: PanelState) -> Bool {
+        a.phase == b.phase && a.connected == b.connected && a.taskID == b.taskID && a.answer == b.answer
+            && a.note == b.note && a.receipt == b.receipt && a.evidence == b.evidence && a.decisions == b.decisions
+            && a.pointerStore == b.pointerStore
+    }
+}

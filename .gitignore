@@ -7,3 +7,7 @@ node_modules/
 .intern-home/
 vendor/
 .reach/
+
+# overlay build output
+apps/overlay/.build/
+apps/overlay/build/
