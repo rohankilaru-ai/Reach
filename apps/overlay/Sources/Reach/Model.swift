@@ -11,8 +11,26 @@ func log(_ s: String) {
 final class OverlayModel: ObservableObject {
     @Published private(set) var state = PanelState()
     @Published var draft = ""
-    /// Hands mode (your hand moves the real mouse), as last requested from the menu.
+    /// Hands mode (your hand moves the real mouse): the backend's TRUE state from `hands_state`.
     @Published var handsOn = false
+    /// A short pill line about hands mode ("Hands off", the one-time hint, or "needs you"); cleared by a timer.
+    @Published var handsLine: String?
+    var hands = HandsModeState()
+    private var handsLineID = 0
+    var onHandsChange: ((Bool) -> Void)?
+    /// Developer toggle (menu bar): raw receipt lines, Drex decisions and cost in Details. Off by default.
+    @Published var technicalDetails: Bool = UserDefaults.standard.bool(forKey: "technicalDetails") {
+        didSet { UserDefaults.standard.set(technicalDetails, forKey: "technicalDetails") }
+    }
+
+    func flashHands(_ line: String, seconds: Double) {
+        handsLineID += 1
+        let id = handsLineID
+        handsLine = line
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            if self?.handsLineID == id { self?.handsLine = nil }
+        }
+    }
     @Published var selection: Selection?
     @Published var selectionNote: String?
     /// Voice line under the text field: "listening…", "heard: …", "didn't catch that". Survives `submitted()`.
@@ -299,6 +317,15 @@ final class OverlayModel: ObservableObject {
             // never log the overheard text: only the probability and the flag
             log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
             onAddressed?(r)
+            return
+        case .handsState(let on, let pid, let reason):
+            log("hands mode \(on ? "on" : "off")\(pid.map { " (pid \($0))" } ?? "")\(reason.map { " \($0)" } ?? "")")
+            switch hands.apply(on: on, pid: pid, reason: reason) {
+            case .showHint: flashHands(HandsMode.hint, seconds: HandsMode.hintSeconds)
+            case .showOff: flashHands(HandsMode.offLabel, seconds: HandsMode.offSeconds)
+            case .none: break
+            }
+            if handsOn != on { handsOn = on; onHandsChange?(on) }
             return
         case .unknown(let t): log("ignored message type \(t)")
         }

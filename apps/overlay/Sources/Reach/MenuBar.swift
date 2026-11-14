@@ -14,6 +14,7 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var handsFreeOn: () -> Bool = { false }
     var onHandsFree: () -> Void = {}
     var onPauseHandsFree: () -> Void = {}
+    var onHandsMode: () -> Void = {}
 
     private var listening = false
     private var badge = false
@@ -73,11 +74,10 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
         if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
-        add("Hands mode", on: model.handsOn) { [weak self] in
-            guard let self else { return }
-            self.model.handsOn.toggle()
-            self.model.send(.hands(on: self.model.handsOn))
-        }
+        // the checkmark is the server's truth (`hands_state`), never the last request
+        add("Hands mode (⌥⇧H)", on: model.handsOn) { [weak self] in self?.onHandsMode() }
+        menu.addItem(.separator())
+        add("Show technical details", on: model.technicalDetails) { [weak self] in self?.model.technicalDetails.toggle() }
         menu.addItem(.separator())
         add("Set up Reach…") { [weak self] in self?.onSetup() }
         add("Quit Reach") { NSApp.terminate(nil) }

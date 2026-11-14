@@ -126,6 +126,17 @@ struct PanelView: View {
                 .animation(.easeInOut(duration: 0.2), value: model.handsFreeFlicker)
                 .help(HandsFree.hint)
             }
+            if model.handsOn || model.handsLine != nil {
+                // hands mode: a small hand with a calm pulse and "Hands on" (or a short hint / "Hands off")
+                HStack(spacing: 4) {
+                    Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(model.handsOn ? Palette.accent : .white.opacity(0.6))
+                        .opacity(model.handsOn && !breathe ? 0.55 : 1)
+                    Text(model.handsLine ?? HandsMode.onLabel).font(.system(size: 10, weight: .medium))
+                        .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
+                }
+                .help(HandsMode.hint)
+            }
             if let chip = model.handsFreeChip, model.handsFree {
                 Text(chip).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(.white.opacity(0.1)))
@@ -343,15 +354,24 @@ struct PanelView: View {
                         }
                     }
                     if model.showDetails, let r = s.receipt {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(r.line)
-                            if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
-                            if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
-                            ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                        // one friendly line; the raw receipt only behind the menu's "Show technical details"
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(ReceiptSummary.line(r))
+                                .font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
+                            if model.technicalDetails {
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.line)
+                                    if let tools = r.tools, !tools.isEmpty { Text("tools: " + tools.joined(separator: ", ")) }
+                                    if let c = r.est_cost_usd { Text(String(format: "est. cost $%.4f", c)) }
+                                    ForEach(Array(s.decisions.enumerated()), id: \.offset) { _, d in Text("drex \(d.line)") }
+                                }
+                                .font(.system(size: 10, design: .monospaced))
+                                .foregroundStyle(.white.opacity(0.42))
+                            }
                         }
-                        .font(.system(size: 10, design: .monospaced))
-                        .foregroundStyle(.white.opacity(0.42))
-                        .lineLimit(1).truncationMode(.middle)
+                        .lineLimit(1).truncationMode(.tail)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
                         .transition(.opacity)
                     }
                 } else if showsField {
