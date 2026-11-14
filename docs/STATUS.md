@@ -9,7 +9,7 @@
 | Browser task as an Intern tool (S4) | merged; real click run, guard decisions logged, abort verified |
 | Verified native note actions and screen vision (S5) | merged; real gates passed |
 | Voice: push-to-talk with on-device speech | merged; audio-file self-test passed, live mic untested |
-| 12-command router and benchmark | merged (v1); v2 in review |
+| 12-command router and benchmark | v1 merged; v2 (clean, harder, 90 held-out) results in `docs/evidence/bench_v2.md` |
 | Pinch worker (MediaPipe) | merged; synthetic tests only; integration with the overlay in review |
 | Top-anchored draggable panel | in progress |
 | Secret-path policy, honest failed-write status | in review |

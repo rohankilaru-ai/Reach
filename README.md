@@ -47,7 +47,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Screen region question (`see_region`) | implemented, accuracy varies | a labelled image was read correctly; a chess position was read but the model did not call checkmate |
 | Overlay: hotkeys, streamed answers, evidence cards, receipt line | implemented | `apps/overlay/README.md`; not every path tried by hand |
 | Voice: hold Control-Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
-| 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`; command line only |
+| 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: on 90 held-out hard utterances Drex Max got 87 right (96.7%), Qwen3.8-27B 83 (one-label) and 82 (12-way); the intervals overlap, so this is a lead, not a proven win. Drex made 0 wrong commands, Qwen 2 to 3. Median latency 265 ms vs 544 ms (one-label Qwen). Command line only |
 | Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
 | Lip reading / silent speech | planned | not built |
 | Controlling other apps by mouse or keyboard | planned (deliberately not done) | Reach only acts through apps' scripting interfaces and files |
@@ -92,7 +92,7 @@ Permissions macOS may ask for: Screen Recording (drag-select), Microphone and Sp
 - Intern's memory feature refuses the first `evidence_search` in each session; the model retries, costing one extra call per ask.
 - Cost figures are list-price estimates from token counts; Drex responses carry no price. Provider balances are the truth.
 - Vision models misread chess boards and similar dense images; treat `see_region` answers as a second opinion.
-- Nothing here was benchmarked against a frontier model. The router comparison is Drex Max against Qwen3.8-27B only, on hand-written data; see its caveats.
+- Nothing here was benchmarked against a frontier model. The router comparison is Drex Max against Qwen3.8-27B only, on 90 hand-written held-out utterances written by us, with simulated lip-reader noise; the confidence intervals overlap and two Qwen misses are judgement calls on items we labelled ourselves. See `docs/evidence/bench_v2.md`.
 
 ## Repository
 
