@@ -1,6 +1,6 @@
 # Hands mode: evidence
 
-Hands mode makes your hand the mouse. It builds on Kevin's `finger_processing` (MediaPipe, per-finger state,
+Hands mode makes your hand the mouse. It builds on the teammate's `finger_processing` (MediaPipe, per-finger state,
 One Euro smoothing, hand lock, pinch hysteresis, pinch freeze, calibration) and reuses `MacMouse` from
 `cursor_demo/run.py`. Start it with:
 
@@ -15,17 +15,17 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
 
 ## What was tested for real (no camera, no real mouse events)
 
-`uv run pytest -q` at the repo root: 74 passed (Kevin's 42 unchanged + 32 hands mode).
+`uv run pytest -q` at the repo root: 74 passed (the teammate's 42 unchanged + 32 hands mode).
 `cd backend && uv run pytest -q`: 332 passed (includes 4 new for `reach hands` / the `hands` message, using
 `sleep 30` as a harmless stand-in child). `cd apps/overlay && swift test`: 83 passed (includes `handsModeWire`).
 
 - **Direction.** `test_direction_hand_right_moves_cursor_right_and_up_is_up` feeds RAW (unmirrored) camera
-  landmarks through Kevin's real `MediaPipeTracker.detect` / `detect_all` (only the model is faked): the hand moving
+  landmarks through the teammate's real `MediaPipeTracker.detect` / `detect_all` (only the model is faked): the hand moving
   to the user's right (raw x falling) moves the cursor right on every step; raising it moves the cursor up.
-  Removing Kevin's `1 - x` flip makes both cases fail (mutation checked). Mirroring: Kevin's design flips the
+  Removing the teammate's `1 - x` flip makes both cases fail (mutation checked). Mirroring: the teammate's design flips the
   landmark x once in the tracker (MediaPipe sees the unmirrored image, no pixel copy); mapping and calibration use
   those mirrored landmarks and the preview flips its pixels once for display. This deliberately does NOT mirror the
-  image once at capture as was asked: that would restructure Kevin's tracker (and his handedness swap). The two
+  image once at capture as was asked: that would restructure the teammate's tracker (and his handedness swap). The two
   flips describe the same view and the tests above check that they agree.
   `test_hud_preview_is_mirrored_and_dot_matches` checks the preview is mirrored and the dot sits on the fingertip.
 - **Closest hand, locked.** `control_hand: closest` (additive; default stays `right`) with `tracker.num_hands: 2`:
@@ -36,7 +36,7 @@ and moving vertically = scroll; open palm held 1 s = leave hands mode.
   middle. A point pose with the thumb resting on the curled middle finger is not a pinch (tested). Hands mode
   widens the exit threshold from 0.35 to 0.40 to keep drags from dropping. Only the wider hysteresis was carried over
   from the old worker: its ratio divides by a larger hand size (wrist to knuckle plus knuckle span, about 1.8x
-  Kevin's scale), so its 0.25 / 0.40 numbers are not directly comparable.
+  the teammate's scale), so its 0.25 / 0.40 numbers are not directly comparable.
 - **Actions** (pure engine, fake clock, recording mouse): a pinch presses where the cursor is (where you aimed),
   not where the curling index has dragged the pointer, and a drag follows the hand's motion since the press
   (synthetic test; real index-curl landing still needs the live check); index drift below 12 px stays a click; pinch-hold-move = down, dragged events, up; double click; a pinch must
@@ -91,7 +91,7 @@ capture -> cursor target  p50 11.2 ms  p95 18.1 ms
 ```
 
 Capture to computed cursor target p50 11 ms, p95 18 ms at 30 fps, well under the 50 ms target. The landmarker is
-almost all of it; Kevin's pipeline already has the easy wins (newest-frame-only capture thread, buffer 1, MJPG,
+almost all of it; the teammate's pipeline already has the easy wins (newest-frame-only capture thread, buffer 1, MJPG,
 idle gating of the landmarker, no pixel copy for mirroring). Camera exposure/transport time before `t_capture` is
 not included. The run may have had no hand in view, so `num_hands: 2` cost with two hands is not measured.
 

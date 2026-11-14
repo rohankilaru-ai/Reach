@@ -1,6 +1,6 @@
 # Working on Reach (humans and agents)
 
-Read `docs/PLAN.md` (plan, historical), `docs/SOURCES.md` (verified upstream facts) and `docs/STATUS.md` (what is true now).
+Read `docs/SOURCES.md` (verified upstream facts) and the README status table (what is implemented, experimental or planned).
 
 Rules
 - Never commit secrets. Keys live in the repo-root `.env` (gitignored; names in `.env.example`). Do not print or paste keys.
@@ -20,7 +20,7 @@ uv run reach log
 uv run reach replay ../fixtures/events/ask.jsonl   # no keys needed
 ```
 
-Slice board: see the table in `docs/STATUS.md`. Pinch selection (S6) and silent speech (S8a) are the open experimental slices.
+Status: see the README status table. Pinch selection (S6) and silent speech (S8a) are the open experimental slices.
 
 ## Permissions
 `swift scripts/request-permissions.swift` raises every macOS permission prompt Reach can use (Screen Recording, Accessibility, Microphone, Camera, Speech Recognition, and Automation for Chrome, Finder, Notes and TextEdit) for the app you run it from, and reports what is still missing. Re-run it to check.
