@@ -175,10 +175,13 @@ class ReceiptBuilder:
         self.text: list[str] = []
         self.write_outcomes: list[str] = []
         self.browser: list[dict[str, Any]] = []
+        self.screen_captured = False
 
     def feed(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
         if kind == "tool_call_end":
+            if event.get("name") == "see_screen" and str(event.get("content", "")).startswith("screen_captured=true"):
+                self.screen_captured = True
             (self.refused if event.get("status") == "refused" else self.tools).append(event.get("name", "?"))
             if event.get("name") in WRITE_TOOLS:
                 o = parse_outcome(event.get("content", "")) if event.get("status") != "refused" else "failed"
@@ -247,4 +250,5 @@ class ReceiptBuilder:
             outcome=outcome,
             browser=self.browser,
             write_outcome=write_outcome,
+            screen_captured=self.screen_captured,
         )
