@@ -33,6 +33,7 @@ from ..paths import reach_dir
 OSASCRIPT_TIMEOUT_S = 10
 LOAD_WAIT_S = 6.0
 POLL_S = 0.5
+SETTLE_S = 2.0  # on the right site this long counts as opened, even if Chrome still says 'loading'
 US, RS = "\x1f", "\x1e"  # unit / record separators: titles can contain anything else
 PERMISSION_MSG = "needs you: allow Terminal to control Google Chrome in Privacy & Security > Automation"
 Outcome = Literal["verified", "unverified", "failed"]
@@ -275,14 +276,20 @@ def same_site(a: str, b: str) -> bool:
 
 def wait_loaded(tab_id: int, url: str, run: Runner, wait_s: float = LOAD_WAIT_S, sleep=time.sleep) -> tuple[Outcome, str]:
     """Poll the tab until it stops loading at the requested URL (trailing slash and host case ignored)."""
-    deadline = time.monotonic() + wait_s
+    start = time.monotonic()
+    deadline = start + wait_s
     st = None
     while True:
         st = tab_state(tab_id, run)
         if st is None:
             return "failed", "the new tab is gone"
-        if not st["loading"] and (norm_url(st["url"]) == norm_url(url) or same_site(st["url"], url)):
+        at_url = norm_url(st["url"]) == norm_url(url) or same_site(st["url"], url)
+        if at_url and not st["loading"]:
             return "verified", f"tab {tab_id} loaded {st['url']}"
+        # Single-page apps such as Gmail keep Chrome's `loading` flag on for many seconds after the page is usable:
+        # once the tab is on the right site for a couple of seconds, that is a successful open.
+        if at_url and time.monotonic() - start >= SETTLE_S:
+            return "verified", f"tab {tab_id} is open at {st['url']} (the page was still finishing loading)"
         if time.monotonic() >= deadline:
             break
         sleep(POLL_S)
