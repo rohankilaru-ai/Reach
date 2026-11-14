@@ -3,31 +3,48 @@
 Native macOS panel for Reach (SwiftPM, AppKit + SwiftUI, macOS 14+). It speaks only the WebSocket contract in
 `backend/reach/contracts.py` and holds no API keys, only the session token from `.reach/run/token`.
 
-- Reach lives as a slim pill (status dot + "Reach", hotkey hint on hover) at the top of the main screen, just under
-  the menu bar and centred on the notch when there is one. It expands downward into the panel on the hotkey, a voice
-  hold, a hand selection or an incoming answer, and folds back after about 8 s idle (never while an ask runs, while
-  listening, or with text in the field). Drag it anywhere; the spot is remembered per display. Double-click the pill
-  or the panel header to snap back under the notch. It never takes focus except when you summon it to type.
-One key, **Option-Space**. The panel's hint line says it: "Tap Option-Space to type, hold to talk, or circle
-something."
+- Reach lives as a compact dark glass pill (status dot + "Reach") at the top of the main screen, just under the menu
+  bar and centred on the notch when there is one. It breathes softly when idle. **Move the mouse up to the top-centre
+  (the notch / menu-bar strip above the pill) and it expands**; move away and it folds back after 0.6 s (only when the
+  hover opened it), or after about 8 s idle (never while an ask runs, while listening, speaking, with the lens open or
+  with text in the field). Drag it anywhere; the spot is remembered per display. Double-click the pill or the panel
+  header to snap back under the notch.
 
-- **Tap** (under 0.25 s) opens the panel to type, or folds it back. Type a question, press Return.
-- **Hold** talks: listening starts once the key has been held 0.25 s, the live partial transcript fills the text
-  field, and releasing sends the final transcript as an ordinary `ask` (the same path as typing). A `heard: …` line
-  stays under the field so mistakes are obvious. An empty transcript, or one whose average segment confidence is
-  below 0.4, is not sent and the panel says `didn't catch that`; so is a partial when no final transcript arrives
-  within 2 s of release (the log says so).
-- **Circle** (the lasso button in the panel): a transparent layer covers the screen and you draw a freehand loop
-  around anything with your mouse. The stroke glows as you draw and closes itself on release, then a halo traces the
-  loop. Reach captures the loop's bounding box, masks everything outside the loop (transparent), saves the PNG to
-  `.reach/captures/circle-<ts>.png`, reads its text locally with Vision, and sends `selection {text, image_path,
-  region, path}` with the next ask (`path` is the simplified loop, at most 64 points, screen points with a top-left
-  origin). Strokes under 40 pt across are ignored with "draw a bigger circle". Esc cancels.
-  Recognition runs on this Mac (`requiresOnDeviceRecognition`); only if on-device speech is unavailable does it
-  fall back to Apple's server, and the panel says so while listening. Audio is held in memory, never saved.
-- **Esc** cancels a circle or listening, aborts a running ask, and folds the panel back when idle.
-- The panel shows the state (idle, working, needs you, done, failed), streamed text, evidence cards (click opens
-  the PDF, at the page in Safari when a page is known), the receipt line and the last three Drex decisions.
+One key, **Option-Space**, and one calm hint line: "Hold Option-Space, circle what you mean, say what to do."
+
+- **Hold** (over 0.25 s): listening starts, a level meter shows in the pill and header, and the screen goes soft and
+  ready to circle (edge vignette + a halo around the cursor). Draw a freehand loop with your mouse **while you speak**.
+  On release the transcript and the circle go out as **one** `ask` (`selection {text, image_path, region, path}`, the
+  image masked outside the loop and read locally with Vision). The circle belongs to that one ask; the next hold
+  starts clean.
+  - Speak without circling: a plain voice ask.
+  - Circle without speaking (or the mic/speech permission is off): the panel opens focused on the text field with the
+    circle attached as a chip.
+  - Say just "zoom" after circling: the zoom lens opens locally (no ask, no network).
+  - An empty or low-confidence transcript (average segment confidence below 0.4) is never sent.
+- **Tap** (under 0.25 s) opens the typing panel or folds it back. Type, press Return. Typing "zoom" also opens the lens.
+- **Esc** cancels everything: the hold, the circle, listening, speech and the lens; it aborts a running ask and folds
+  the panel when idle.
+
+The panel: a header with the status dot (idle grey, listening and working ripple, done green, needs-you amber,
+failed red), the state title and a speaker toggle; the text field; the circle chip with **Zoom**; the answer area
+(always shows the streamed answer, measured and scrollable, grows up to about 60% of the screen and never past the
+bottom) with evidence cards below it (click opens the PDF at the page); and the receipt as a quiet footer.
+
+**Verdicts** come from the receipt's `status`, `reason`, `write_outcome` and `outcome`, never from the answer text:
+`Done`; `Needs you: Circle the thing you mean` for `needs_selection`; `Failed: the note write failed`;
+`Unverified: the note write could not be read back`; `Failed: the browser task did not finish`; `Failed: <reason>`.
+
+**Spoken replies** use the on-device `AVSpeechSynthesizer`: automatic for voice asks while the header's speaker toggle
+is on (default on, remembered), on request (Speak button) for typed asks. At most about 400 characters are spoken,
+without citation brackets or markdown. A new hold, a tap, a new ask or Esc stops speech.
+
+**Zoom lens**: a floating, draggable lens showing the masked circle capture at 2x to 4x (slider, pinch, or
+Command-scroll). Esc or a click outside closes it.
+
+Voice recognition runs on this Mac (`requiresOnDeviceRecognition`); only if on-device speech is unavailable does it
+fall back to Apple's server, and the panel says so. Audio is held in memory, never saved. Reach's own windows are
+excluded from captures.
 
 ## Build and run
 
@@ -48,6 +65,10 @@ line, a thumbnail when there is an image, and a clear button. It is used by the 
 `uv run --project backend python smoke/pinch_relay_gate.py --overlay apps/overlay/build/Reach.app/Contents/MacOS/Reach`.
 `--panel-selftest` shows pill -> panel -> pill and logs each frame (real windows, no input events).
 `--lasso-selftest` runs the circle state machine and the tap/hold key logic on synthetic strokes (no windows).
+`--hub-selftest` drives the hub headlessly (no windows, input events or network) and prints one PASS/FAIL line per
+scenario: hold -> circle -> release is one ask with transcript + selection, release before the capture finishes,
+circle without speech, speech without circle, no stale circle on the next hold, Esc cancel, the zoom word, hover
+expand/collapse, failed / unverified / needs_selection / verified receipts, and spoken-text cleaning.
 
 ## Key-free check
 
