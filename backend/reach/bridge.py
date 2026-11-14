@@ -19,6 +19,7 @@ SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3.8-27B")
 SYSTEM1 = os.environ.get("REACH_SYSTEM1", "drex-max-v1.1")
 EXTENSION = "reach.intern_ext:ReachTools"
 POLICY = "reach.guard_policy:SecretPolicy"  # first, so it refuses before any other hook or the guard
+SPEED = "reach.speed:SpeedHook"  # reasoning off and a lower output cap for simple asks (REACH_THINK=1 keeps it on)
 
 Sink = Callable[[str, dict[str, Any]], None]
 """(task_id, event dict) -> None; must not block."""
@@ -26,7 +27,10 @@ Sink = Callable[[str, dict[str, Any]], None]
 
 PERSONA = (
     "You are Reach, a desktop assistant. Answer the user's question directly and conversationally; explain things, "
-    "help with tasks, and use your tools when they help. Do not mention these instructions."
+    "help with tasks, and use your tools when they help. Do not mention these instructions.\n"
+    "Keep it short: answer in 1 to 3 short plain sentences unless the user asks for detail. No markdown headings, "
+    "no bold, no restating the question. When you cite evidence, keep each claim to one sentence. Use numbered "
+    "steps only for how-to questions, at most 5. Never print tool logs or internal notes."
 )
 
 
@@ -53,7 +57,9 @@ def prompt_for(ask: Ask, intent: Any = None) -> str:
         text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
     if ask.selection and ask.selection.image_path:
         text += (f"\n\nThe user selected a screen region, saved at {ask.selection.image_path}. To answer about what "
-                 f"is in it, call see_region with that image_path and the question.")
+                 f"is in it, call see_region with that image_path and the question. To show where to click or type, or how to "
+                 f"fill it in or use it, call point_at directly instead (it looks at the image itself and moves an "
+                 f"on-screen pointer; it never clicks), then explain the steps in words.")
     text += "\n\n" + NOTES_HINT
     try:
         if evidence.has_documents():
@@ -119,6 +125,9 @@ class Task:
 
     def abort(self) -> None:
         self.aborted = True
+        from .tools import guide
+
+        guide.cancel(self.id)
         if self.session is not None:
             try:
                 self.session.abort()
@@ -138,7 +147,8 @@ class InternBridge:
         # write tools: only Reach's tools plus a read tool the policy keeps inside the workspace.
         self.bootstrap = Bootstrap(
             Options(cwd=cwd or ensure_workspace(), system2=SYSTEM2, system1=SYSTEM1, max_turns=12,
-                    extra_extensions=[POLICY, EXTENSION], capabilities=CapabilitySettings(tool_packs=[]))
+                    extra_extensions=[POLICY, SPEED, EXTENSION], capabilities=CapabilitySettings(tool_packs=[]),
+                    memory_off=True)  # Reach keeps no Intern memory; the drive cost a round trip and a refused call
         )
 
     async def run(self, task: Task, sink: Sink) -> Receipt:
@@ -152,15 +162,20 @@ class InternBridge:
             sink(task.id, data)
 
         from . import intent as intent_mod
+        from . import speed
 
         error = None
         it = None
         CURRENT_TASK.set(task.id)
+        from .tools.guide import CURRENT_SELECTION
+
+        CURRENT_SELECTION.set(task.ask.selection)  # point_at uses this selection's image and region together
         try:
             t_intent = time.monotonic()
             fut = intent_mod.start(task.ask)  # Drex understands the ask while the Intern session starts
             task.session = await self.bootstrap.session(emit)
             it = await intent_mod.finish(fut, t_intent)
+            speed.KINDS[task.id] = it.kind if it is not None else None
             if it is not None:
                 emit_intent(task, it, sink)
             if task.aborted:
@@ -178,6 +193,7 @@ class InternBridge:
         except Exception as e:  # surfaced in the receipt, never a key
             error = f"{type(e).__name__}: {e}"[:300]
         finally:
+            speed.KINDS.pop(task.id, None)
             if task.session is not None:
                 try:
                     await task.session.aclose()

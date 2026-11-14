@@ -87,7 +87,17 @@ class Hypotheses(BaseModel):
     experimental: bool = True
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses, Field(discriminator="type")]
+class Utterance(BaseModel):
+    """Hands-free speech (always listening): the server asks Drex whether it is addressed to the assistant and answers
+    the sender with `addressed`. It never runs an agent task. Contract: docs/evidence/addressed.md."""
+
+    type: Literal["utterance"] = "utterance"
+    text: str = Field(max_length=500)
+    source: str = Field(default="always_listening", max_length=40)
+    wake_matched: bool | None = None
+
+
+Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc | PointerIn | Hypotheses | Utterance, Field(discriminator="type")]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -144,6 +154,9 @@ class Receipt(BaseModel):
     )
     intent: dict[str, Any] | None = Field(
         default=None, description="Drex task understanding before Intern ran: kind, probs, hint_used, action"
+    )
+    screen_captured: bool = Field(
+        default=False, description="Privacy: True when see_screen captured the screen for this task (sent only to the vision model)"
     )
 
 
@@ -211,8 +224,21 @@ class ErrorMsg(BaseModel):
     task_id: str | None = None
 
 
+class Addressed(BaseModel):
+    """Reply to `utterance`: whether the speech is addressed to the assistant. Unsure or timed out => addressed False."""
+
+    type: Literal["addressed"] = "addressed"
+    text: str
+    p_addressed: float | None = None
+    addressed: bool = False
+    command: str | None = None
+    reason: str = ""
+    wake_matched: bool = False
+    latency_ms: int = 0
+
+
 Outbound = Annotated[
-    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg, Field(discriminator="type")
+    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added | SelectionMsg | Addressed, Field(discriminator="type")
 ]
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 

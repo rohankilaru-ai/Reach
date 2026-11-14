@@ -2,8 +2,9 @@
 
 ONE Drex Max request per ask with several typed questions: `kind` (choice) plus five `noul` flags. The result:
   - adds a short, honest hint to the Intern prompt (likely task kind and the tool family that fits; never forced),
-  - short-circuits with a non-LLM reply asking the user to circle the thing when the request points at
-    'this/that' and nothing is selected (reason `needs_selection`, no Intern run),
+  - when the request is about the screen and nothing is selected, tells System 2 to look with see_screen
+    (action `see_screen`); only with REACH_AUTO_SCREEN=0 does it short-circuit with a non-LLM reply asking the user
+    to circle the thing (reason `needs_selection`, no Intern run),
   - adds a REQUIRED confirmation instruction when the request is risky or irreversible (Reach has no confirm UI
     yet, so the model replies with the question and does not act).
 Every call is logged to the Drex log as a `decision` with purpose `intent`. On any error, a missing key or a
@@ -62,7 +63,12 @@ TOOL_FAMILY: dict[str, str] = {
     "document_question": "use evidence_search on the user's documents and cite passage ids",
     "browser_task": "use browser_task",
     "write_to_notes": "use note_append (or shelf_to_note for evidence ids)",
-    "screen_question": "use see_region if a region image is given, otherwise the selected text",
+    "screen_question": (
+        "use see_region for 'what is this' about a circled region image (otherwise the selected text); with nothing "
+        "selected and a question about the screen, call see_screen; use point_at for 'where do I click / how do I "
+        "fill this in / show me how' (after a selection or see_screen), then answer in words: the pointer shows "
+        "where, the user clicks and types (never claim you did)"
+    ),
     "chat": "answer directly; no tool is needed",
     "mac_control": "Reach has no tool for controlling the Mac; say what you cannot do rather than pretend",
 }
@@ -70,6 +76,13 @@ TOOL_FAMILY: dict[str, str] = {
 NEEDS_SELECTION_REPLY = (
     "Which thing do you mean? Nothing is selected yet. Circle it on screen (or select the text) and ask again, "
     "and I'll take it from there."
+)
+
+SEE_SCREEN_HINT = (
+    "Hint: nothing is selected, but this looks like a question about what is on the user's screen (Drex "
+    "needs_screen_region p={p:.2f}, kind {kind}). Call see_screen with the user's question to look at the screen "
+    "(target 'window' if they mean the app in front), then answer from what it returns. If it says it needs "
+    "Screen Recording permission, tell the user exactly that."
 )
 
 CONFIRM_REQUIRED = (
@@ -89,7 +102,7 @@ class Intent:
     kind: str = "other"
     probs: dict[str, float] = field(default_factory=dict)  # kind probabilities + one p per flag
     flags: dict[str, float] = field(default_factory=dict)
-    action: str = "none"  # none | hint | needs_selection | confirm
+    action: str = "none"  # none | hint | see_screen | needs_selection | confirm
     hint_used: bool = False
     latency_ms: int = 0
     input_tokens: int = 0
@@ -110,6 +123,11 @@ class Intent:
 
 def enabled() -> bool:
     return os.environ.get("REACH_INTENT", "1") != "0"
+
+
+def auto_screen() -> bool:
+    """see_screen on (default): a screen question with no selection looks at the screen instead of asking to circle."""
+    return os.environ.get("REACH_AUTO_SCREEN", "1") != "0"
 
 
 def state_for(text: str, selection_summary: str | None, has_documents: bool, has_image: bool) -> str:
@@ -153,10 +171,14 @@ def decide(intent: Intent, has_selection: bool) -> Intent:
         intent.kind = top if p >= THRESHOLDS["kind"] else "other"
     else:
         intent.kind = "other"
-    if not has_selection and intent.flag("needs_screen_region") >= THRESHOLDS["needs_screen_region"]:
+    screen = not has_selection and (intent.flag("needs_screen_region") >= THRESHOLDS["needs_screen_region"]
+                                    or intent.kind == "screen_question")
+    if intent.flag("risky_or_irreversible") >= THRESHOLDS["risky_or_irreversible"]:
+        intent.action = "confirm"  # risky always wins: never act, ask first
+    elif screen and auto_screen():
+        intent.action = "see_screen"
+    elif not has_selection and intent.flag("needs_screen_region") >= THRESHOLDS["needs_screen_region"]:
         intent.action = "needs_selection"
-    elif intent.flag("risky_or_irreversible") >= THRESHOLDS["risky_or_irreversible"]:
-        intent.action = "confirm"
     elif intent.kind != "other" and kp.get(intent.kind, 0.0) >= THRESHOLDS["hint"]:
         intent.action = "hint"
     return intent
@@ -210,6 +232,9 @@ def prompt_addendum(intent: Intent | None) -> str:
         return ""
     if intent.action == "confirm":
         return CONFIRM_REQUIRED.format(p=intent.flag("risky_or_irreversible"))
+    if intent.action == "see_screen":
+        intent.hint_used = True
+        return SEE_SCREEN_HINT.format(p=intent.flag("needs_screen_region"), kind=intent.kind)
     h = hint_text(intent)
     if h:
         intent.hint_used = True

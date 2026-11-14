@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from .contracts import (
     Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, Hypotheses, PointerIn, Ready, Select, Transcript,
+    Utterance,
     inbound_adapter,
 )
 from .bridge import evidence_cards
@@ -70,6 +71,10 @@ class Server:
         self.relay = Relay()
         self.router = None  # S8a: commands.DrexRouter by default; tests inject a fake
         self._routed = 0
+        self.addressed_post = None  # addressed.py: commands.http_post by default; tests inject a fake Drex
+        from .tools import guide
+
+        guide.set_emitter(self.relay.broadcast)  # point_at's step pointers go to overlay clients
 
     async def handle(self, ws) -> None:
         try:
@@ -104,6 +109,9 @@ class Server:
                     out.put_nowait(ErrorMsg(message=f"bad message: {e.errors()[0]['msg']}").model_dump_json())
                     continue
                 if isinstance(msg, Ask):
+                    from .tools import guide
+
+                    guide.cancel()  # a new ask stops any guide pointers still pending
                     ask, sel_from = self.relay.attach(msg)
                     task = self.Task(ask)
                     task.selection_source = "pinch" if sel_from and sel_from.startswith("pinch") else None
@@ -123,6 +131,9 @@ class Server:
                         targets = list(mine.values())
                     for task in targets:
                         task.abort()
+                    from .tools import guide
+
+                    guide.cancel(msg.task_id)  # the guide outlives its ask's run, so cancel by id (or all)
                 elif isinstance(msg, (Select, PointerIn)):
                     fn = self.relay.select if isinstance(msg, Select) else self.relay.pointer
                     if err := fn(key, role, msg):
@@ -133,6 +144,10 @@ class Server:
                     t.add_done_callback(running.discard)
                 elif isinstance(msg, Hypotheses):
                     t = asyncio.create_task(self._route_hypotheses(key, msg, out))
+                    running.add(t)
+                    t.add_done_callback(running.discard)
+                elif isinstance(msg, Utterance):  # hands-free speech: is it addressed to the assistant? never acts
+                    t = asyncio.create_task(self._addressed(msg, out))
                     running.add(t)
                     t.add_done_callback(running.discard)
         finally:
@@ -234,6 +249,18 @@ class Server:
         out.put_nowait(result)
         self.relay._broadcast(sender, result)
 
+    async def _addressed(self, msg: Utterance, out: asyncio.Queue) -> None:
+        from . import addressed
+        from .contracts import Addressed
+
+        wake = bool(msg.wake_matched) or addressed.wake_matched(msg.text)
+        r = await addressed.check_async(msg.text, wake, **({"post": self.addressed_post} if self.addressed_post else {}))
+        try:
+            addressed.log(r)
+        except Exception:
+            pass
+        out.put_nowait(Addressed(**addressed.reply(r)).model_dump_json())
+
     async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
         from . import evidence
         from .tools import ndi
@@ -247,6 +274,12 @@ class Server:
             out.put_nowait(ErrorMsg(message=f"add failed: {type(e).__name__}").model_dump_json())
 
     async def serve(self, port: int = 0) -> None:
+        try:  # privacy: screen captures live at most an hour
+            from .tools.screen import prune_captures
+
+            prune_captures()
+        except Exception:
+            pass
         async with websockets.serve(self.handle, "127.0.0.1", port, max_size=8 * 2**20) as server:
             bound = server.sockets[0].getsockname()[1]
             write_run_files(bound, self.token)

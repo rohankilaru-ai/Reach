@@ -68,7 +68,8 @@ def test_kind_above_abstain_but_below_hint_threshold_gives_no_hint():
     assert it.kind == "chat" and it.action == "none"
 
 
-def test_needs_selection_only_when_nothing_selected():
+def test_needs_selection_only_when_nothing_selected(monkeypatch):
+    monkeypatch.setenv("REACH_AUTO_SCREEN", "0")  # the old circle-it short-circuit, kept behind the switch
     r = resp("screen_question", 0.5, needs_screen_region=0.95)
     assert intent.understand("what is this?", post=fake(r)).action == "needs_selection"
     assert intent.understand("what is this?", "a selected word", post=fake(r)).action != "needs_selection"
