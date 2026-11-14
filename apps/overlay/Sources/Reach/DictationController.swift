@@ -177,6 +177,8 @@ final class DictationController {
     private lazy var inserter = DictationInserter(focus: focus, pasteboard: SystemPasteboard(), keys: SystemKeys(),
                                                   later: { d, run in DispatchQueue.main.asyncAfter(deadline: .now() + d, execute: run) })
     var onChange: () -> Void = {}
+    /// Called right before dictation registers its own Esc.
+    var beforeEsc: (() -> Void)?
 
     private var now: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -218,6 +220,7 @@ final class DictationController {
         status.note = nil
         if on {
             status.flash = nil
+            beforeEsc?()   // whoever holds Esc lets go first, or this registration would fail
             escID = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: 0, name: "Esc (stop dictation)") {
                 [weak self] in self?.setOn(false, why: "esc")
             }

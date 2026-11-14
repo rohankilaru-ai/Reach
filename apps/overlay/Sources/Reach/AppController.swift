@@ -31,6 +31,12 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarItem?
     private var pillMode = PillMode.load()
     private var handsFree: HandsFreeController!
+    /// When the expanded panel folds (ReachCore `FoldClock`); uptime seconds.
+    private var fold = FoldClock(now: ProcessInfo.processInfo.systemUptime)
+    private var lastMouse: CGPoint?
+    private var foldEsc: UInt32?
+    private var eventMonitors: [Any] = []
+    private var uptime: Double { ProcessInfo.processInfo.systemUptime }
     private var dictation: DictationController!
 
     init(files: RunFiles) {
@@ -68,7 +74,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         speaker.onSpeaking = { [weak self] on in
             self?.model.speaking = on
             self?.handsFree?.speakingChanged(on)
-            if !on { self?.lastActivity = Date() }   // the 8 s fold starts after the audio ends
+            if !on { self?.lastActivity = Date(); self?.fold.speechFinished(now: ProcessInfo.processInfo.systemUptime) }   // the 8 s fold starts after the audio ends
         }
         ready.onCircle = { [weak self] loop, box in self?.circleDrawn(loop, box: box) }
         ready.onTooSmall = { [weak self] in self?.model.selectionNote = "draw a bigger circle" }
@@ -84,6 +90,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         // Dictation: Option-Shift-D, the menu item, or "Reach, start/stop dictating" (own on-device recognizer).
         dictation = DictationController(model: model)
         dictation.install()
+        dictation.beforeEsc = { [weak self] in self?.dropFoldEsc() }
         dictation.onChange = { [weak self] in
             guard let self else { return }
             if self.dictation.isOn, !self.panel.isVisible { self.panel.orderFrontRegardless() }
@@ -145,6 +152,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.collapseIfIdle() }
         }
+        installFoldMonitors()
         // Hover: move the mouse up to the top-centre to open; polled (no input monitoring permission needed).
         hoverTimer = Timer.scheduledTimer(withTimeInterval: 1.0 / 15, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.hoverTick() }
@@ -159,7 +167,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         let mouse = NSEvent.mouseLocation
         if !pillMode.hoverSummons, !model.expanded { return }
         let hot = Hover.hotZone(anchor: anchor, pill: pillSize, screenTop: screen.frame.maxY)
-        if Hover.keepZone(panel: panel.frame).contains(mouse), model.expanded { lastActivity = Date() }
+        // only a mouse moving over the panel itself keeps it; a cursor parked nearby (the tab bar) never does
+        if model.expanded, FoldClock.hoverCounts(mouse: mouse, last: lastMouse, panel: panel.frame) { touched() }
+        lastMouse = mouse
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
             || model.capturing || model.speaking || lens.isOpen || model.capturing
             || gesture.phase != .idle || NSEvent.pressedMouseButtons != 0 || panel.isKeyWindow
@@ -262,6 +272,7 @@ final class AppController: NSObject, NSApplicationDelegate {
 
     func expand(focus: Bool, why: String, byHover: Bool = false) {
         lastActivity = Date()
+        if model.expanded { fold.interaction(now: uptime) } else { fold.opened(now: uptime) }
         if !byHover { hover.openedElsewhere() }
         if !panel.isVisible { panel.orderFrontRegardless() }
         if !model.expanded {
@@ -273,12 +284,16 @@ final class AppController: NSObject, NSApplicationDelegate {
             }
         }
         if focus { panel.makeKey() }
+        syncFoldEsc()
     }
 
-    func collapse(why: String) {
+    /// `leave`: an idle, Esc or click-outside fold; in Auto / Hidden the pill leaves as soon as the fold finishes.
+    func collapse(why: String, leave: Bool = false) {
         halo.hide()
         hover.collapsed()
-        lastActivity = Date()   // Auto / Hidden: the folded pill stays about 8 s before it leaves
+        dropFoldEsc()
+        // Auto / Hidden: a folded pill otherwise stays about 8 s before it leaves
+        lastActivity = leave ? Date.distantPast : Date()
         model.typing = false
         model.compact = nil   // a result read in the panel does not come back in the pill
         guard model.expanded else { return }
@@ -290,12 +305,64 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Collapses after ~8 s idle; never while an ask runs, while listening, or with text in the field.
+    /// An ask is running or a hold / capture / voice turn is in progress: the panel never folds then.
+    private var askRunning: Bool {
+        model.state.phase == .working || gesture.phase != .idle || ptt.phase != .idle || model.capturing
+    }
+
+    /// A real interaction inside the panel: restarts the 8 s fold (and the 20 s hard maximum).
+    private func touched(typed: Bool = false) {
+        lastActivity = Date()
+        if typed { fold.typedKey(now: uptime) } else { fold.interaction(now: uptime) }
+    }
+
+    /// Folds 8 s after the answer and any speech end, 20 s after the last interaction at most (`FoldClock`).
+    /// Keyboard focus, a parked cursor and the unused Speak button do not keep it open.
     private func collapseIfIdle() {
-        let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty
-        if busy { lastActivity = Date(); return }
-        if model.expanded, Date().timeIntervalSince(lastActivity) > Self.collapseAfter { collapse(why: "idle") }
+        if askRunning { lastActivity = Date() }
+        let v = fold.decide(now: uptime, expanded: model.expanded, running: askRunning, speaking: model.speaking,
+                            hasDraft: !model.draft.isEmpty)
+        if v != .stay { collapse(why: v.rawValue, leave: true) }
+        syncFoldEsc()
         hidePillIfIdle()
+    }
+
+    /// Esc folds the expanded panel even when it is not key (answers open without focus). Registered only while the
+    /// panel is expanded and nothing else owns Esc; released on fold so other apps get Esc back.
+    private func syncFoldEsc() {
+        // the lens and dictation register their own Esc; never hold it while they are up
+        let want = model.expanded && !askRunning && escHotkey == nil && voiceEsc.isEmpty && !lens.isOpen
+            && dictation?.isOn != true
+        if want, foldEsc == nil {
+            foldEsc = Hotkeys.shared.register(keyCode: Keys.escape, modifiers: 0, name: "Esc (fold panel)") { [weak self] in
+                self?.escape()
+            }
+        } else if !want { dropFoldEsc() }
+    }
+
+    private func dropFoldEsc() {
+        if let id = foldEsc { Hotkeys.shared.unregister(id); foldEsc = nil }
+    }
+
+    /// Clicks, scrolls and keys inside the panel count as interaction (local monitor: our own events only); a click
+    /// in any other app folds it at once (global mouse-down monitor: needs no permission).
+    private func installFoldMonitors() {
+        if let m = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown, .scrollWheel, .keyDown],
+                                                    handler: { [weak self] e in
+            MainActor.assumeIsolated {
+                if let self, let panel = self.panel, e.window === panel, self.model.expanded {
+                    self.touched(typed: e.type == .keyDown)
+                }
+            }
+            return e
+        }) { eventMonitors.append(m) }
+        if let m = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self, self.model.expanded, !self.askRunning else { return }
+                if self.panel.frame.contains(NSEvent.mouseLocation) { return }
+                self.collapse(why: "click outside", leave: true)
+            }
+        }) { eventMonitors.append(m) }
     }
 
     /// Auto / Hidden: the collapsed pill leaves the screen once nothing is going on.
@@ -359,7 +426,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             return
         }
         if ptt.phase != .idle { voiceCancel(); return }
-        if model.state.phase == .working { model.abort() } else { collapse(why: "esc"); halo.hide() }
+        if model.state.phase == .working { model.abort() } else { collapse(why: "esc", leave: true); halo.hide() }
     }
 
     /// While a task runs, Esc aborts from anywhere; the hotkey is released as soon as it ends.
@@ -407,6 +474,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Quiet status: while working only the pill shows (spinner, one line, tiny stop); a tool run ends as a one-line
     /// result in the pill; a plain question ends in the answer panel.
     private func phaseChanged(_ phase: Phase) {
+        if phase == .working { dropFoldEsc() }   // the abort Esc below takes the key
         if phase == .working {
             if !panel.isVisible { panel.orderFrontRegardless() }
             hover.collapsed()
@@ -428,6 +496,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             Hotkeys.shared.unregister(id)
             escHotkey = nil
         }
+        syncFoldEsc()
     }
 
     private var compactFold: DispatchWorkItem?
@@ -466,6 +535,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         ttsID = nil
         speaker.stop()   // never transcribe Reach's own voice
         lens.close()
+        dropFoldEsc()   // the hold's own Esc takes the key
         let h = gesture.holdStarted()
         model.dropCircle()
         log("hold \(h): listening, ready to circle")
@@ -557,6 +627,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     func openLens(_ sel: Selection) {
+        dropFoldEsc()   // the lens registers its own Esc
         // never over the panel or the circled area
         var avoid = [panel.frame]
         var target = CGRect(x: panel.frame.midX, y: panel.frame.minY, width: 1, height: 1)

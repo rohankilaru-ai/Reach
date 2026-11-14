@@ -497,6 +497,8 @@ if args.contains("--dictation-selftest") {
     app.run()
 } else if args.contains("--hub-selftest") {
     exit(MainActor.assumeIsolated { runHubSelftest() })
+} else if args.contains("--fold-selftest") {
+    exit(MainActor.assumeIsolated { runFoldSelftest() })
 } else if args.contains("--lasso-selftest") {
     exit(MainActor.assumeIsolated { runLassoSelftest() })
 } else if let prompt = argValue("--relay-selftest") {
