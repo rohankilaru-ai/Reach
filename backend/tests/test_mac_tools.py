@@ -289,10 +289,15 @@ def test_image_outside_reach_dir_refused(tmp_path):
         tables.table_to_note(str(outside), "file", send=reply("| a |\n|---|\n| 1 |"))
 
 
-def test_tools_registered():
+def test_tools_registered(monkeypatch):
     from reach.intern_ext import ReachTools
 
+    monkeypatch.delenv("REACH_CHROME_ACTIONS", raising=False)
     names = {t.name for t in ReachTools().tools()}
-    assert {"chrome_list_tabs", "chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab",
-            "table_to_note", "note_append"} <= names
+    # By default only the read-only tab list is on; actions that touch the real browser are opt-in.
+    assert {"chrome_list_tabs", "table_to_note", "note_append"} <= names
+    assert not {"chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"} & names
+    monkeypatch.setenv("REACH_CHROME_ACTIONS", "1")
+    names = {t.name for t in ReachTools().tools()}
+    assert {"chrome_open_url", "chrome_activate_tab", "chrome_close_tab", "chrome_move_tab"} <= names
     assert json.dumps(sorted(names))
