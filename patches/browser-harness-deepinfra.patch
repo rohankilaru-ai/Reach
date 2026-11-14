@@ -1,0 +1,73 @@
+diff --git a/runner/src/run.mjs b/runner/src/run.mjs
+index 8cb50a9..d438bc9 100644
+--- a/runner/src/run.mjs
++++ b/runner/src/run.mjs
+@@ -32,6 +32,7 @@ export const KEY_ENV = Object.freeze({
+   anthropicKey: ["ANTHROPIC_API_KEY"],
+   openaiKey: ["OPENAI_API_KEY"],
+   fireworksKey: ["FIREWORKS_API_KEY"],
++  deepinfraKey: ["DEEPINFRA_API_KEY"],
+   googleKey: ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
+   openrouterKey: ["OPENROUTER_API_KEY"],
+ });
+diff --git a/src/models.ts b/src/models.ts
+index c7460a1..33488b7 100644
+--- a/src/models.ts
++++ b/src/models.ts
+@@ -13,6 +13,13 @@ export const PROVIDERS = {
+     prefix: /^sk-or-/,
+     defaultModel: "anthropic/claude-haiku-5.5",
+   },
++  // Reach patch: DeepInfra's OpenAI-compatible endpoint (keys start "sk-di-"; listed before OpenAI, whose "sk-" matches them)
++  deepinfra: {
++    label: "DeepInfra",
++    keyName: "deepinfraKey",
++    prefix: /^sk-di-/,
++    defaultModel: "Qwen/Qwen3-VL-235B-A22B-Instruct",
++  },
+   fireworks: {
+     label: "Fireworks",
+     keyName: "fireworksKey",
+@@ -57,6 +64,14 @@ export const CATALOG = {
+     vision: true,
+     offered: false,
+   },
++  // Reach patch. DeepInfra list prices on 2026-11-14 (api.deepinfra.com/models/list): $0.20 / $0.88 per million tokens in/out;
++  // no cache discount is assumed, so a cache read and write cost plain input. Non-reasoning, reads images.
++  "Qwen/Qwen3-VL-235B-A22B-Instruct": {
++    provider: "deepinfra",
++    label: "Qwen3 VL 235B (DeepInfra)",
++    prices: [0.2, 0.88, 0.2, 0.2],
++    vision: true,
++  },
+   "accounts/fireworks/models/glm-5p3-flash": {
+     provider: "fireworks",
+     label: "GLM-5.3 Flash (Fireworks)",
+diff --git a/src/providers.ts b/src/providers.ts
+index 64665fa..ce0ed36 100644
+--- a/src/providers.ts
++++ b/src/providers.ts
+@@ -17,6 +17,11 @@ const FACTORIES: Record<ProviderId, (apiKey: string) => (model: string) => Langu
+   anthropic: (apiKey) => createAnthropic({ apiKey, headers: { "anthropic-dangerous-direct-browser-access": "true" } }),
+   openai: (apiKey) => createOpenAI({ apiKey }),
+   fireworks: (apiKey) => createFireworks({ apiKey }),
++  // Reach patch: DeepInfra speaks the OpenAI chat-completions protocol, not the Responses API
++  deepinfra: (apiKey) => {
++    const di = createOpenAI({ apiKey, baseURL: "https://api.deepinfra.com/v1/openai" });
++    return (model) => di.chat(model);
++  },
+   google: (apiKey) => createGoogleGenerativeAI({ apiKey }),
+   openrouter: (apiKey) => createOpenRouter({ apiKey, appUrl: OPENROUTER_APP.url, appName: OPENROUTER_APP.name }),
+ };
+diff --git a/src/types.ts b/src/types.ts
+index 3100aae..f1ef2ae 100644
+--- a/src/types.ts
++++ b/src/types.ts
+@@ -29,6 +29,7 @@ export interface Settings {
+   anthropicKey?: string;
+   openaiKey?: string;
+   fireworksKey?: string;
++  deepinfraKey?: string;
+   googleKey?: string;
+   openrouterKey?: string;
+   model: ModelId;

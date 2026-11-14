@@ -1,0 +1,26 @@
+diff --git a/src/drex.ts b/src/drex.ts
+index 1cd9d11..48ea554 100644
+--- a/src/drex.ts
++++ b/src/drex.ts
+@@ -166,7 +166,7 @@ export class Drex {
+             throw requestError(error as Error, ms, usd, usage);
+           }
+         }
+-        if (j.model && j.model !== this.model)
++        if (j.model && j.model !== this.model && !j.model.startsWith(this.model + "-v"))
+           throw requestError(new WrongModel(wrongModelMessage(this.model, j.model)), ms, usd, usage);
+         return { answers: j.answers as DrexReply["answers"], usage, ms, usd: usd ?? 0, requestId: j.request_id };
+       }
+diff --git a/src/keycheck.ts b/src/keycheck.ts
+index 066c691..c0ac001 100644
+--- a/src/keycheck.ts
++++ b/src/keycheck.ts
+@@ -33,7 +33,7 @@ export async function checkDrexKey(key: string | undefined, fetchFn: FetchFn = f
+       return { ok: false, message: `Drex rejected this key (HTTP ${r.status}).` };
+     if (!r.ok) return { ok: false, message: `Drex answered HTTP ${r.status}. ${await reason(r)}`.trim() };
+     const j = bodyOf(await r.json());
+-    if (j.model && j.model !== DREX_MODEL) return { ok: false, message: wrongModelMessage(DREX_MODEL, j.model) };
++    if (j.model && j.model !== DREX_MODEL && !j.model.startsWith(DREX_MODEL + "-v")) return { ok: false, message: wrongModelMessage(DREX_MODEL, j.model) };
+     return { ok: true, message: "Works with Drex Max." };
+   } catch (e) {
+     return { ok: false, message: `Couldn't reach Drex: ${(e as Error).message}` };
