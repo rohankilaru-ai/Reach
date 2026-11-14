@@ -67,9 +67,14 @@ nobody at the machine, so the kill switch reads only mouse, scroll, key and modi
 Finder: `finder_list` and `finder_open` on a temporary `~/Reach-test-folder` returned `verified` (Finder's front window
 showed the folder); the window was closed and the folder removed.
 
-Key-free tests: `backend/tests/test_do_mode.py` (fake Accessibility layer: stale refusal, deny-listed titles and apps,
+Key-free tests: `backend/tests/test_do_mode.py` (the tool `run` path sending a top-level `pointer` with the task id,
+`Server._run` handing tools the client queue, guard_policy letting Finder paths through but not secrets; fake Accessibility layer: stale refusal, deny-listed titles and apps,
 secure fields, readback verdicts, budget, user takeover, tools absent without the flag; Finder path escape, symlink,
 secrets, launchable files, readback, list cap).
+
+Frontmost app: the system-wide `AXFocusedApplication` answered `kAXErrorCannotComplete` on this Mac, so Reach falls
+back to Launch Services (`lsappinfo front`), which the gate used. Frontmost detection inside the long-running server is
+not checked yet. `finder_reveal` has unit tests for its shared checks only, no real run.
 
 Not yet checked: the ghost pointer drawn by the overlay app for these messages (coordinates are global screen points
 with a top-left origin, as the Accessibility API reports them), and a full voice ask through Intern with the flag on.

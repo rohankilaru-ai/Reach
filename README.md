@@ -51,6 +51,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
 | Silent speech: lip-reading -> 12-command router (`perception/silent/`, research-only weights) | experimental | model runs on this Mac (0.4 s per 1.5 s clip after warm-up); typed hypotheses route through Drex live; no accuracy measured, no live mouthed run yet. See `perception/silent/README.md` |
 | Per-finger tracking, calibration and a cursor-follows-fingertip demo (`finger_processing/`, `cursor_demo/`) | experimental | added by a teammate with its own tests; not part of the agent tools |
+| Do mode: press buttons, fill text fields and open folders in other Mac apps through the Accessibility API (`REACH_DO_MODE=1`, off by default) | experimental | a TextEdit gate set text and pressed a checkbox with verified readback; Finder open verified on a temp folder; not run through a full ask yet. See `docs/evidence/do-mode.md` |
 | Lip reading / silent speech | planned | not built |
 | Controlling other apps by mouse or keyboard | planned (deliberately not done) | Reach only acts through apps' scripting interfaces and files |
 | Gaze, Adobe and Keenable integrations | planned | |

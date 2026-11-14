@@ -93,9 +93,13 @@ def fresh(monkeypatch, tmp_path):
                         "Settings > Privacy & Security > Accessibility")
     monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
     ax._STATE.clear()
+    from reach.ledger import CURRENT_OUT
+
+    out_tok = CURRENT_OUT.set(None)
     tok = CURRENT_TASK.set(f"t-{os.urandom(3).hex()}")
     yield
     CURRENT_TASK.reset(tok)
+    CURRENT_OUT.reset(out_tok)
 
 
 def run(fake, kind, ref, text=None, emit=None, app="TextEdit"):
@@ -154,7 +158,8 @@ def test_press_verified_when_state_changes_unverified_when_not():
     assert r.outcome == "unverified" and fake.pressed == ["Bold", "Nothing"]
 
 
-@pytest.mark.parametrize("title", ["Buy now", "Delete", "Confirm Purchase", "Submit order", "Pay", "Transfer"])
+@pytest.mark.parametrize("title", ["Buy now", "Delete", "Confirm Purchase", "Submit order", "Pay", "Transfer",
+                                   "Payments", "Deleting...", "Purchases", "Transferring", "Erase Disk"])
 def test_danger_titles_refused(title):
     fake = FakeAX(window(Node("AXButton", title)))
     r = run(fake, "press", "0")
@@ -291,3 +296,72 @@ def test_finder_list_cap(home):
     out = finder.list_dir(str(big), root=home)
     assert out.count("\nf") == finder.MAX_LIST and "and 30 more" in out
     assert "a.txt" in finder.list_dir("Docs", root=home)
+
+
+# ---- the real call path: tool.run -> overlay pointer on the asking client's queue ----
+
+
+def test_tool_run_sends_top_level_pointer_with_task_id(monkeypatch):
+    from reach.ledger import CURRENT_OUT
+
+    area = Node("AXTextArea", "", value="", frame=None)  # no element frame: falls back to the window's centre
+    fake = FakeAX(window(area))
+    fake.frame = lambda el: (0.0, 0.0, 200.0, 100.0) if el is fake.win else el.frame
+    monkeypatch.setattr(ax, "_AX", fake)
+    monkeypatch.setattr("reach.paths.drex_log", lambda: Path(os.environ["REACH_DIR"]) / "drex.jsonl")
+    sent: list[str] = []
+    CURRENT_OUT.set(sent.append)
+
+    async def go():
+        d = await ax.AXDescribe().run(ax.DescribeArgs(app="TextEdit"), None)
+        assert "[0] AXTextArea" in d.content
+        return await ax.AXSetText().run(ax.SetTextArgs(app="TextEdit", element_ref="0", text="Hi."), None)
+
+    out = asyncio.run(go())
+    assert out.content.startswith("outcome=verified")
+    msg = json.loads(sent[0])
+    assert msg["type"] == "pointer" and msg["task_id"] == CURRENT_TASK.get()
+    assert (msg["x"], msg["y"], msg["label"]) == (100.0, 50.0, "About to type into: AXTextArea")
+
+
+def test_no_overlay_channel_is_said_in_the_result(monkeypatch):
+    from reach.ledger import CURRENT_OUT
+
+    CURRENT_OUT.set(None)
+    fake = FakeAX(window(Node("AXCheckBox", "Bold", value=0, on_press=flip)))
+    s = ax.describe(fake)
+    ax.state().snapshot = s
+    r = asyncio.run(ax.act(fake, "press", "TextEdit", "0", emit=ax.overlay_pointer, show_s=0.15))
+    assert r.outcome == "verified" and "pointer not shown" in r.detail
+
+
+def test_server_run_gives_tools_the_client_queue():
+    from reach.contracts import Ask
+    from reach.ipc import Server
+    from reach.ledger import CURRENT_OUT
+
+    class FakeBridge:
+        grounds = False
+
+        async def run(self, task, sink):
+            CURRENT_OUT.get()('{"type":"pointer","task_id":"%s","x":1,"y":2}' % task.id)
+            return task.builder.receipt()
+
+    async def go():
+        srv = Server(FakeBridge())
+        out: asyncio.Queue = asyncio.Queue()
+        task = srv.Task(Ask(text="press bold"))
+        await srv._run(task, out)
+        return task, [json.loads(out.get_nowait()) for _ in range(out.qsize())]
+
+    task, msgs = asyncio.run(go())
+    assert msgs[0] == {"type": "pointer", "task_id": task.id, "x": 1, "y": 2}
+
+
+def test_guard_policy_lets_finder_paths_through_but_not_secrets(tmp_path):
+    from reach import guard_policy
+
+    assert guard_policy.check("finder_open", {"path": "~/Documents/Taxes"}, tmp_path) is None
+    assert guard_policy.check("finder_list", {"path": "~/.ssh"}, tmp_path) is not None
+    assert guard_policy.check("ax_set_text", {"app": "TextEdit", "element_ref": "3",
+                                              "text": "the token count was high"}, tmp_path) is None

@@ -52,11 +52,11 @@ DENY_BUNDLES = frozenset({
     "com.apple.systempreferences", "com.apple.SystemSettings", "com.apple.keychainaccess", "com.apple.Passwords",
     "com.apple.SecurityAgent", "com.apple.loginwindow", "com.apple.LocalAuthentication.UIAgent",
     "com.apple.coreservices.uiagent", "com.apple.Terminal", "com.googlecode.iterm2", "dev.warp.Warp-Stable",
-    "net.kovidgoyal.kitty", "com.mitchellh.ghostty", "io.alacritty", "com.github.wez.wezterm",
+    "com.apple.UserNotificationCenter", "net.kovidgoyal.kitty", "com.mitchellh.ghostty", "io.alacritty", "com.github.wez.wezterm",
 })
-DANGER_RE = re.compile(
-    r"\b(pay|payment|purchase|buy|delete|erase|send money|transfer|confirm purchase|submit order|place order|"
-    r"checkout|check out|wipe|uninstall|empty trash)\b", re.I)
+DANGER_RE = re.compile(  # stems with a leading boundary only: "Payments", "Deleting", "Transferring" match too
+    r"\b(pay|purchas|buy|delet|eras|send money|transfer|confirm purchase|submit order|place order|checkout|"
+    r"check out|wipe|uninstall|empty trash)", re.I)
 SENSITIVE_FIELD_RE = re.compile(
     r"\b(password|passcode|passphrase|pin|cvv|cvc|card number|security code|social security|ssn|api key|token|"
     r"secret)\b", re.I)
@@ -366,6 +366,15 @@ Emit = Any  # Callable[[float, float, str], None]
 
 async def act(ax: AXBackend, kind: str, app: str, ref: str, text: str | None = None, *,
               emit: Emit | None = None, show_s: float = SHOW_BEFORE_S) -> ActResult:
+    notes: list[str] = []
+    r = await _act(ax, kind, app, ref, text, emit=emit, show_s=show_s, notes=notes)
+    if notes:
+        r.detail += notes[0]
+    return r
+
+
+async def _act(ax: AXBackend, kind: str, app: str, ref: str, text: str | None, *,
+               emit: Emit | None, show_s: float, notes: list[str]) -> ActResult:
     st = state()
     dest = f"{app}/{ref}".replace(" ", "_")[:60]
     if st.took_over:
@@ -388,9 +397,17 @@ async def act(ax: AXBackend, kind: str, app: str, ref: str, text: str | None = N
 
     started = time.monotonic()
     verb = "press" if kind == "press" else "type into"
-    if emit is not None and target.frame is not None:
-        x, y, w, h = target.frame
-        emit(x + w / 2, y + h / 2, f"About to {verb}: {target.title or target.role}"[:80])
+    spot = target.frame
+    if spot is None:  # no frame for the element: point at its window's centre, so the user still sees it first
+        front = ax.frontmost()
+        win = ax.window(front[0]) if front else None
+        spot = ax.frame(win) if win is not None else None
+    shown = False
+    if emit is not None and spot is not None:
+        x, y, w, h = spot
+        shown = emit(x + w / 2, y + h / 2, f"About to {verb}: {target.title or target.role}"[:80]) is not False
+    if not shown:
+        notes.append(" (pointer not shown: no overlay connected)")
     waited = 0.0
     while waited < show_s:  # show the user first; any input from them stops it
         await asyncio.sleep(POLL_S)
@@ -455,17 +472,18 @@ def result_output(r: ActResult, tool: str) -> ToolOutput:
     return ToolOutput(status="ok" if r.outcome == "verified" else "error", content=content)
 
 
-def overlay_pointer(x: float, y: float, label: str) -> None:
+def overlay_pointer(x: float, y: float, label: str) -> bool:
     """The overlay ghost pointer (global screen points, top-left origin, as Accessibility reports them)."""
     from ..contracts import Pointer
 
     put = CURRENT_OUT.get()
     if put is None:
-        return
+        return False
     try:
         put(Pointer(task_id=CURRENT_TASK.get(), x=x, y=y, label=label).model_dump_json())
     except Exception:
-        pass
+        return False
+    return True
 
 
 _AX: AXBackend | None = None
