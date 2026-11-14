@@ -11,6 +11,21 @@ public enum HandsMode {
     public static let hintSeconds: Double = 3
     public static let offSeconds: Double = 2
 
+    /// The pill's look for a live phase: glyph tint and a short label.
+    public enum Tint: Equatable, Sendable { case grey, blue, green, amber }
+
+    public static func look(phase: String?) -> (tint: Tint, label: String, pulse: Bool) {
+        switch phase {
+        case "pointing": return (.blue, "Pointing", false)
+        case "pinching": return (.green, "Click", true)
+        case "dragging": return (.green, "Dragging", true)
+        case "paused": return (.amber, "Paused", false)
+        case "leaving": return (.amber, "Leaving…", false)
+        case "no_hand": return (.grey, "No hand", false)
+        default: return (.grey, onLabel, false)
+        }
+    }
+
     /// What a toggle press (hotkey, menu item or spoken phrase) does.
     public enum Request: Equatable, Sendable {
         case send(on: Bool)
@@ -38,6 +53,7 @@ public struct HandsModeState: Equatable, Sendable {
     public private(set) var on = false
     public private(set) var pid: Int?
     public private(set) var hintShown = false
+    public private(set) var phase: String?
 
     public enum Effect: Equatable, Sendable {
         case none
@@ -50,10 +66,11 @@ public struct HandsModeState: Equatable, Sendable {
     public init() {}
 
     /// Applies one `hands_state`. Repeats of the same state are no-ops (the server may answer a no-op toggle).
-    public mutating func apply(on newOn: Bool, pid newPid: Int?, reason: String?) -> Effect {
+    public mutating func apply(on newOn: Bool, pid newPid: Int?, reason: String?, phase newPhase: String? = nil) -> Effect {
         let was = on
         on = newOn
         pid = newOn ? newPid : nil
+        if !newOn { phase = nil } else if let newPhase { phase = newPhase }
         if newOn, !was {
             if hintShown { return .none }
             hintShown = true

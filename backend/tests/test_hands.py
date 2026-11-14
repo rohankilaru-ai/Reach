@@ -103,3 +103,47 @@ def test_server_emitter_reaches_overlays(fake_child):
 
     msg = asyncio.run(run())
     assert msg == {"type": "hands_state", "on": False, "pid": None, "reason": "exited"}
+
+
+def test_state_line_parsing_and_phase_mapping():
+    assert hands.parse_state_line("[hands] dragging\n") == "dragging"
+    assert hands.parse_state_line("Hands mode ON: your hand...") is None
+    cases = {
+        "waiting for hand": "no_hand",
+        "point to move · pinch to click": "pointing",
+        "clutch · point to move": "pointing",
+        "scrolling": "pointing",
+        "pinch": "pinching",
+        "pinch · click": "pinching",
+        "double click": "pinching",
+        "dragging": "dragging",
+        "paused · you moved the mouse": "paused",
+        "open palm · hold to leave": "leaving",
+        "hand leaving · pinch ignored": "leaving",
+        "camera stalled": None,
+    }
+    for state, phase in cases.items():
+        assert hands.phase_of(state) == phase, state
+
+
+def test_watcher_broadcasts_phases_from_child_stdout(fake_child, monkeypatch):
+    """A fake child printing hands_mode state lines -> phases broadcast in order, exit reason 'open palm'."""
+    import threading
+
+    script = "import time\nfor s in ['waiting for hand','point to move','dragging','open palm · hold to leave']:\n" \
+             "    print('[hands] '+s, flush=True); time.sleep(0.15)\n"
+    monkeypatch.setattr(hands, "command", lambda: [__import__("sys").executable, "-c", script])
+    seen: list[dict] = []
+    done = threading.Event()
+
+    def emit(st):
+        seen.append(st)
+        if not st["on"]:
+            done.set()
+
+    hands.set_emitter(emit)
+    hands.start()
+    assert done.wait(10)
+    phases = [s["phase"] for s in seen if s.get("phase")]
+    assert phases == ["no_hand", "pointing", "dragging", "leaving"]
+    assert seen[-1]["reason"] == "open palm"

@@ -27,6 +27,20 @@ import Testing
                 == .handsState(on: false, pid: nil, reason: "stopped"))
     }
 
+    @Test func phaseStreamsAndLooks() throws {
+        var s = HandsModeState()
+        _ = s.apply(on: true, pid: 1, reason: "started")
+        #expect(s.apply(on: true, pid: 1, reason: nil, phase: "dragging") == .none && s.phase == "dragging")
+        _ = s.apply(on: false, pid: nil, reason: "open palm")
+        #expect(s.phase == nil)
+        #expect(HandsMode.look(phase: "pointing").tint == .blue)
+        #expect(HandsMode.look(phase: "pinching").tint == .green && HandsMode.look(phase: "pinching").pulse)
+        #expect(HandsMode.look(phase: "paused").tint == .amber)
+        #expect(HandsMode.look(phase: "no_hand").tint == .grey)
+        #expect(try ServerMessage.decode(#"{"type":"hands_state","on":true,"pid":3,"phase":"pointing"}"#)
+                == .handsState(on: true, pid: 3, reason: nil, phase: "pointing"))
+    }
+
     @Test func spokenPhrase() {
         #expect(HandsMode.phrase("Reach, hands mode on") == true)
         #expect(HandsMode.phrase("Reach, hands mode off.") == false)

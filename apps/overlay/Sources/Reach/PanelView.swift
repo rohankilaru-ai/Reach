@@ -98,6 +98,15 @@ struct PanelView: View {
         .environment(\.colorScheme, .dark)
     }
 
+    static func handsColor(_ t: HandsMode.Tint) -> Color {
+        switch t {
+        case .grey: return .white.opacity(0.55)
+        case .blue: return Color(red: 0.35, green: 0.62, blue: 1.0)
+        case .green: return Color(red: 0.3, green: 0.85, blue: 0.5)
+        case .amber: return Color(red: 1.0, green: 0.72, blue: 0.25)
+        }
+    }
+
     /// The idle island: a compact dark glass capsule that breathes softly. Drag it; double-click snaps it back.
     private var pill: some View {
         HStack(spacing: 8) {
@@ -128,11 +137,14 @@ struct PanelView: View {
             }
             if model.handsOn || model.handsLine != nil {
                 // hands mode: a small hand with a calm pulse and "Hands on" (or a short hint / "Hands off")
+                let look = HandsMode.look(phase: model.handsPhase)
                 HStack(spacing: 4) {
-                    Image(systemName: "hand.raised.fill").font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(model.handsOn ? Palette.accent : .white.opacity(0.6))
-                        .opacity(model.handsOn && !breathe ? 0.55 : 1)
-                    Text(model.handsLine ?? HandsMode.onLabel).font(.system(size: 10, weight: .medium))
+                    Image(systemName: look.tint == .green ? "hand.pinch.fill" : "hand.raised.fill")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(model.handsOn ? Self.handsColor(look.tint) : .white.opacity(0.6))
+                        .opacity(model.handsOn && !breathe ? (look.pulse ? 0.35 : 0.7) : 1)
+                    Text(model.handsLine ?? (model.handsPhase == nil ? HandsMode.onLabel : look.label))
+                        .font(.system(size: 10, weight: .medium))
                         .foregroundStyle(.white.opacity(0.75)).lineLimit(1)
                 }
                 .help(HandsMode.hint)

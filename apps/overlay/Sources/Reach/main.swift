@@ -476,6 +476,9 @@ func runHandsSelftest() -> Int32 {
     check("hands_state decodes", m == .handsState(on: false, pid: nil, reason: "exited"))
     check("phrase on/off", HandsMode.phrase("Reach, hands mode on.") == true && HandsMode.phrase("reach hands mode off") == false
           && HandsMode.phrase("what is hands mode") == nil)
+    _ = s.apply(on: true, pid: 43, reason: nil, phase: "pinching")
+    check("phase pinching -> green pulse", s.phase == "pinching" && HandsMode.look(phase: s.phase).tint == .green)
+    check("phase paused -> amber", HandsMode.look(phase: "paused").tint == .amber)
     log("hands selftest \(ok ? "PASS" : "FAIL")")
     return ok ? 0 : 1
 }

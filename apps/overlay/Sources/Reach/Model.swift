@@ -15,6 +15,8 @@ final class OverlayModel: ObservableObject {
     @Published var handsOn = false
     /// A short pill line about hands mode ("Hands off", the one-time hint, or "needs you"); cleared by a timer.
     @Published var handsLine: String?
+    /// Live phase from hands_mode (no_hand / pointing / pinching / dragging / paused / leaving).
+    @Published var handsPhase: String?
     var hands = HandsModeState()
     private var handsLineID = 0
     var onHandsChange: ((Bool) -> Void)?
@@ -318,9 +320,13 @@ final class OverlayModel: ObservableObject {
             log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
             onAddressed?(r)
             return
-        case .handsState(let on, let pid, let reason):
-            log("hands mode \(on ? "on" : "off")\(pid.map { " (pid \($0))" } ?? "")\(reason.map { " \($0)" } ?? "")")
-            switch hands.apply(on: on, pid: pid, reason: reason) {
+        case .handsState(let on, let pid, let reason, let phase):
+            if phase == nil || !on {
+                log("hands mode \(on ? "on" : "off")\(pid.map { " (pid \($0))" } ?? "")\(reason.map { " \($0)" } ?? "")")
+            }
+            let effect = hands.apply(on: on, pid: pid, reason: reason, phase: phase)
+            if handsPhase != hands.phase { handsPhase = hands.phase }
+            switch effect {
             case .showHint: flashHands(HandsMode.hint, seconds: HandsMode.hintSeconds)
             case .showOff: flashHands(HandsMode.offLabel, seconds: HandsMode.offSeconds)
             case .none: break
