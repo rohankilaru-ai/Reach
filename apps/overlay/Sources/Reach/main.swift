@@ -458,7 +458,9 @@ if args.contains("--replay") {
     return ok ? 0 : 1
 }
 
-if args.contains("--handsfree-selftest") {
+if args.contains("--dictation-selftest") {
+    exit(MainActor.assumeIsolated { runDictationSelftest() })
+} else if args.contains("--handsfree-selftest") {
     exit(MainActor.assumeIsolated { runHandsFreeSelftest() })
 } else if args.contains("--permissions-selftest") {
     MainActor.assumeIsolated { runPermissionsSelftest() }

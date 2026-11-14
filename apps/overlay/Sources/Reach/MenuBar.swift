@@ -14,6 +14,8 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var handsFreeOn: () -> Bool = { false }
     var onHandsFree: () -> Void = {}
     var onPauseHandsFree: () -> Void = {}
+    var dictationOn: () -> Bool = { false }
+    var onDictation: () -> Void = {}
 
     private var listening = false
     private var badge = false
@@ -73,6 +75,7 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
         if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
+        add("Dictation (⌥⇧D)", on: dictationOn()) { [weak self] in self?.onDictation() }
         add("Hands mode", on: model.handsOn) { [weak self] in
             guard let self else { return }
             self.model.handsOn.toggle()

@@ -185,5 +185,31 @@ to turn it off by voice. It always starts off at launch. While on, the pill show
 - Pinch: while hands-free is on, a held pinch from the hand worker counts as holding Option-Space (no wake word needed);
   releasing the pinch, or no pinch pointer for 0.6 s, ends it.
 - Check: `.build/debug/Reach --handsfree-selftest` (headless: fake segments and replies; no mic, network or prompts).
+
+## Dictation
+
+When the caret is in a text box, Reach types what you say.
+
+- Toggle: Option-Shift-D (tap), the menu bar item **Dictation**, or (with hands-free on) "Reach, start dictating" /
+  "Reach, stop dictating". Option-Shift-D works with hands-free off: dictation runs its own recognizer.
+- Signal: while on, the pill shows a mic with a red-orange pulse and **Dictating** (hint: Speak to type. Say "stop
+  dictating" or press Option-Shift-D to stop). It stops on Esc, on "stop dictating", after 60 s of silence ("Dictation
+  off" flashes), and when the focused app changes while a segment is waiting to be typed.
+- Where it types: only into the focused editable text field, text area, combo box, or a web input that exposes a value
+  and a caret (read through Accessibility). If nothing like that is focused, the pill says "Click a text box first".
+- How it types: sets the selected text through Accessibility (inserts at the caret). If the app refuses (many web
+  inputs), it saves the clipboard, puts the text on it, posts one Command-V, and restores the clipboard 0.4 s later.
+- Speech: each finished phrase (about 1 s pause; never partials) is typed with a leading space when needed, sentence
+  capitals, and spoken punctuation ("period", "comma", "question mark", "new line", "new paragraph").
+- Commands (exact phrases only): "delete that" removes the last typed phrase (Accessibility range, else Delete keys
+  capped at 200, or one Command-Z after a paste), "new line", "stop dictating". Everything else is text.
+- **Privacy and safety:** dictation is on-device only (it refuses to start without on-device recognition), saves no
+  audio, and makes no model or backend calls. It never types into password fields, never into Terminal, iTerm,
+  1Password, Keychain Access, System Settings or any app whose bundle id contains "password", never into Reach's own
+  panel, never presses Return, and caps each phrase at 800 characters. The only synthetic keys it sends are one
+  Command-V, one Command-Z, and Delete. Without Accessibility it shows "needs you" and opens the Accessibility pane.
+- Check: `.build/debug/Reach --dictation-selftest` (headless: fake focused field, fake clipboard, fake keys; no mic, no
+  real typing). Unit tests: `swift test --filter DictationTests`.
+
 ## Backend auto-start
 When no backend is reachable the app starts `uv run reach serve` from the repo's `backend/` folder itself (at most once every 25 s) and logs to `.reach/serve.log`. Server options live in `.reach/server.env` as plain `REACH_*=value` lines (for example `REACH_DO_MODE=1`); keys are never read from it.

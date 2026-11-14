@@ -126,6 +126,7 @@ struct PanelView: View {
                 .animation(.easeInOut(duration: 0.2), value: model.handsFreeFlicker)
                 .help(HandsFree.hint)
             }
+            DictationBadge()
             if let chip = model.handsFreeChip, model.handsFree {
                 Text(chip).font(.system(size: 10, weight: .medium)).foregroundStyle(.white.opacity(0.7))
                     .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(.white.opacity(0.1)))
