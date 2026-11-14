@@ -308,7 +308,7 @@ scripts/     dev.sh (backend + overlay), replay.sh
 
 | Variable | Needed for | Status |
 | --- | --- | --- |
-| `NACE_API_KEY` | System 1 (Drex Max) in Intern, NDI through `nace-sdk`, the S8a intent call, and the browser runner (passed to the child as `DREX_API_KEY`) | required, **pending from the owner** |
+| `NACE_API_KEY` | System 1 (Drex Max) in Intern, NDI through `nace-sdk`, the S8a intent call, and the browser runner (passed to the child as `DREX_API_KEY`) | required, working (verified 11:30 AM; Drex Max id is `drex-max-v1.1`) |
 | `DEEPINFRA_API_KEY` | System 2 `deepinfra/Qwen/Qwen3.8-27B`; browser helper after slice B | required, working |
 | `ANTHROPIC_API_KEY` | browser helper `claude-haiku-5-5` only; allowed by the rules, may not exist | optional fallback |
 | `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `GOOGLE_API_KEY` or `GEMINI_API_KEY`, `FIREWORKS_API_KEY` | spare System 2 route `openrouter/qwen/qwen3.8-27b`; other upstream helpers (`openai/gpt-6-luna`, `gpt-6-luna`, `gemini-3.8-flash`, `accounts/fireworks/models/glm-5p3-flash`) | optional |
@@ -365,6 +365,11 @@ We will not say: that Reach lip-reads reliably, that it works in any app, that i
 without a measurement, or that the costs shown are invoices. Pre-existing work is this plan and `docs/SOURCES.md` only.
 
 ## 7. Open questions that block work
+
+**Answered at 11:45 AM (2026-11-14):** 1. `NACE_API_KEY` works; Drex Max id is `drex-max-v1.1`. 2. No Claude key; slice B
+(DeepInfra helper) runs, Haiku is not planned. 3. Teammate (`KevinGeng07`) has repo access and takes S6, then S8a. The
+owner drives S0 to S5. Greptile is on for the repo and is advisory only, not a required check. S0 passed (Intern plus
+Drex Max plus Qwen, and an NDI parse of a real PDF). The rest are still open:
 
 1. **`NACE_API_KEY`.** When does it arrive, and how much credit covers System 1, NDI and browser runs? Blocks S0 gates.
 2. **Claude key.** Use is allowed; does a key exist? Decides whether slice B runs or its time goes to S6.
