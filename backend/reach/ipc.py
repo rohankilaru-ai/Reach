@@ -11,8 +11,19 @@ from pathlib import Path
 import websockets
 from pydantic import ValidationError
 
-from .contracts import Abort, Accepted, Ask, ErrorMsg, EventMsg, Hello, Ready, Select, Transcript, inbound_adapter
-from .paths import run_dir
+from .contracts import (
+    Abort, Accepted, AddDoc, Added, Ask, ErrorMsg, EventMsg, Hello, Ready, Select, Transcript, inbound_adapter,
+)
+from .bridge import evidence_cards
+from .ledger import count_ndi
+from .paths import drex_log, reach_dir, run_dir
+
+
+def log_evidence(card) -> None:
+    p = reach_dir() / "logs" / "evidence.jsonl"
+    p.parent.mkdir(parents=True, exist_ok=True)
+    with p.open("a", encoding="utf-8") as f:
+        f.write(card.model_dump_json() + "\n")
 
 
 def write_run_files(port: int, token: str) -> None:
@@ -95,6 +106,10 @@ class Server:
                         task.abort()
                 elif isinstance(msg, Select):
                     pass  # S2 consumes this; accepted and ignored for now
+                elif isinstance(msg, AddDoc):
+                    t = asyncio.create_task(self._add(msg, out))
+                    running.add(t)
+                    t.add_done_callback(running.discard)
         finally:
             for task in mine:  # a client that goes away takes its running tasks with it
                 if task.id in self.tasks:
@@ -110,6 +125,17 @@ class Server:
 
         try:
             receipt = await self.bridge.run(task, sink)
+            if receipt.final_text and getattr(self.bridge, "grounds", True):
+                try:
+                    cards = await asyncio.wait_for(
+                        asyncio.to_thread(evidence_cards, task.id, receipt.final_text), timeout=150
+                    )
+                except Exception:
+                    cards = []
+                for card in cards:
+                    log_evidence(card)
+                    out.put_nowait(card.model_dump_json())
+                receipt.ndi_calls = count_ndi(drex_log(), task.id)
             if receipt.final_text:
                 out.put_nowait(
                     Transcript(task_id=task.id, role="assistant", text=receipt.final_text).model_dump_json()
@@ -117,6 +143,18 @@ class Server:
             out.put_nowait(receipt.model_dump_json())
         finally:
             self.tasks.pop(task.id, None)
+
+    async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
+        from . import evidence
+        from .tools import ndi
+
+        try:
+            r = await asyncio.to_thread(evidence.add_document, Path(msg.path), ndi.parse_pdf)
+            out.put_nowait(
+                Added(name=r["name"], sha256=r["sha256"], cached=r["cached"], passages=len(r["passages"])).model_dump_json()
+            )
+        except Exception as e:
+            out.put_nowait(ErrorMsg(message=f"add failed: {type(e).__name__}").model_dump_json())
 
     async def serve(self, port: int = 0) -> None:
         async with websockets.serve(self.handle, "127.0.0.1", port, max_size=8 * 2**20) as server:

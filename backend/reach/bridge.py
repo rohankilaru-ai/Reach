@@ -10,7 +10,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .contracts import Ask, Receipt
+from .contracts import Ask, Evidence, Receipt
 from .ledger import ReceiptBuilder, append_drex
 from .paths import REPO_ROOT, drex_log
 
@@ -22,10 +22,63 @@ Sink = Callable[[str, dict[str, Any]], None]
 """(task_id, event dict) -> None; must not block."""
 
 
+EVIDENCE_HINT = (
+    "The user has added documents. Use the evidence_search tool to find passages, answer from them, and cite every "
+    "claim with the passage id in square brackets, e.g. [E3]. Only cite ids evidence_search returned."
+)
+
+
 def prompt_for(ask: Ask) -> str:
+    from . import evidence
+
+    text = ask.text
     if ask.selection and ask.selection.text:
-        return f"{ask.text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
-    return ask.text
+        text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
+    try:
+        if evidence.has_documents():
+            text += "\n\n" + EVIDENCE_HINT
+        pinned = evidence.shelf_prompt()
+        if pinned:
+            text += "\n\n" + pinned
+    except Exception:  # the store is optional; an ask never fails on it
+        pass
+    return text
+
+
+def evidence_cards(task_id: str, answer: str, do_ground: bool = True) -> list[Evidence]:
+    """Cited ids -> evidence cards (level 1), then one NDI ground job per source document to add page/region."""
+    from . import evidence
+
+    items = evidence.evidence_items(answer)
+    locs: dict[str, dict] = {}
+    if do_ground and items:
+        from .tools import ndi
+
+        by_job: dict[str, list[dict]] = {}
+        for it in items:
+            if it.get("parse_job_id"):
+                by_job.setdefault(it["parse_job_id"], []).append(it)
+        for job_id, group in by_job.items():
+            try:
+                res = ndi.ground(job_id, [{"id": it["id"], "text": it["quote"]} for it in group], task_id=task_id)
+            except Exception:
+                continue  # level 1 still ships
+            for t in res.get("targets") or []:
+                loc = ndi.locator_from(t)
+                if loc:
+                    locs[t.get("id")] = loc
+    cards = []
+    for it in items:
+        loc = locs.get(it["id"])
+        page = (loc or {}).get("page") or it.get("page")
+        level = 3 if loc and loc.get("polygons") else (2 if page else 1)
+        cards.append(
+            Evidence(
+                task_id=task_id, source=it["file"], quote=it["quote"], locator=loc,
+                id=it["id"], file=it["path"], page=page, level=level,
+            )
+        )
+    return cards
 
 
 class Task:

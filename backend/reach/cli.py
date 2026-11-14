@@ -20,9 +20,14 @@ from .paths import drex_log, reach_dir, run_dir
 
 
 def _print_receipt(r: dict) -> None:
-    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms")
+    keys = ("task_id", "status", "reason", "tools", "refused", "system1_asks", "tokens", "est_cost_usd", "duration_ms", "ndi_calls")
     print("\n--- receipt ---")
     print(json.dumps({k: r.get(k) for k in keys}, indent=2))
+
+
+def _print_card(c: dict) -> None:
+    where = f" p.{c['page']}" if c.get("page") else ""
+    print(f"\n[evidence {c.get('id')}] {c.get('source')}{where} (level {c.get('level')})\n  \"{c.get('quote')}\"", flush=True)
 
 
 def _render(event: dict) -> None:
@@ -111,6 +116,8 @@ async def _ask(text: str, selection: str | None) -> int:
             task_id = msg["task_id"]
         elif msg["type"] == "event":
             _render(msg["event"])
+        elif msg["type"] == "evidence":
+            _print_card(msg)
         elif msg["type"] == "receipt":
             _print_receipt(msg)
             await ws.close()
@@ -149,6 +156,53 @@ def cmd_replay(args) -> int:
     return 0
 
 
+def cmd_add(args) -> int:
+    from . import evidence
+    from .tools import ndi
+
+    code = 0
+    for f in args.files:
+        path = Path(f)
+        if not path.is_file():
+            print(f"reach: no such file {f}", file=sys.stderr)
+            code = 1
+            continue
+        t0 = time.time()
+        r = evidence.add_document(path, ndi.parse_pdf)
+        ids = r["passages"]
+        span = f"{ids[0]}..{ids[-1]}" if ids else "none"
+        how = "cached (same sha256)" if r["cached"] else f"parsed by NDI in {time.time() - t0:.1f}s"
+        print(f"added {r['name']}: {len(ids)} passages {span}, {how}, sha256 {r['sha256'][:12]}")
+    return code
+
+
+def cmd_shelf(args) -> int:
+    from . import evidence
+
+    items = evidence.shelf()
+    if not items:
+        print("shelf is empty (pin a card with: reach pin E3)")
+    for i in items:
+        where = f" p.{i['page']}" if i["page"] else ""
+        print(f"[{i['id']}] {i['file']}{where}: \"{i['quote']}\"")
+    return 0
+
+
+def cmd_pin(args) -> int:
+    from . import evidence
+
+    ok = evidence.pin(args.id, args.quote)
+    print(f"pinned {args.id}" if ok else f"reach: no passage {args.id}")
+    return 0 if ok else 1
+
+
+def cmd_unpin(args) -> int:
+    from . import evidence
+
+    print(f"unpinned {args.id}" if evidence.unpin(args.id) else f"{args.id} was not pinned")
+    return 0
+
+
 def cmd_stop(args) -> int:
     try:
         pid = json.loads((run_dir() / "server.json").read_text())["pid"]
@@ -176,6 +230,18 @@ def main(argv: list[str] | None = None) -> int:
     r.add_argument("file")
     r.add_argument("--delay", type=float, default=0.0)
     r.set_defaults(fn=cmd_replay)
+    ad = sub.add_parser("add", help="parse documents with NDI into the evidence store (cached by sha256)")
+    ad.add_argument("files", nargs="+")
+    ad.set_defaults(fn=cmd_add)
+    sh = sub.add_parser("shelf", help="list pinned evidence (offered to the next ask)")
+    sh.set_defaults(fn=cmd_shelf)
+    pn = sub.add_parser("pin", help="pin a passage to the shelf")
+    pn.add_argument("id")
+    pn.add_argument("--quote", help="the quote to keep with it")
+    pn.set_defaults(fn=cmd_pin)
+    up = sub.add_parser("unpin", help="remove a passage from the shelf")
+    up.add_argument("id")
+    up.set_defaults(fn=cmd_unpin)
     st = sub.add_parser("stop", help="stop the background server")
     st.set_defaults(fn=cmd_stop)
     args = p.parse_args(argv)

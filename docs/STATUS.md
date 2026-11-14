@@ -4,7 +4,8 @@
 | --- | --- | --- |
 | S0 Intern + Drex Max + Qwen | PASS | `intern -p --json --system1 drex-max-v1.1 --system2 deepinfra/Qwen/Qwen3.8-27B` completed with 4 `decision` events |
 | S0 NDI parse | PASS | `smoke/ndi_smoke.py` returned 47,662 chars of Markdown plus blocks and chunks for a 15-page PDF |
-| S0 ground response shape | not yet recorded | S3 |
+| S0 ground response shape | recorded | `docs/GROUND_SHAPE.md`: page + normalized polygons (level 3) |
+| S3 NDI evidence + shelf | PASS (gate) | `reach add` new arXiv PDF, `reach ask`: 5 cards, all level 3, `scripts/check_evidence.py` 5/5 verbatim |
 | S0 browser harness | cloned and `npm ci` done; build and DeepInfra helper pending | slice B |
 | S1 to S9 | not started | |
 

@@ -51,7 +51,14 @@ class Select(BaseModel):
     selection: Selection
 
 
-Inbound = Annotated[Hello | Ask | Abort | Select, Field(discriminator="type")]
+class AddDoc(BaseModel):
+    """Ingest a document with NDI into the evidence store (outside any agent run)."""
+
+    type: Literal["add"] = "add"
+    path: str
+
+
+Inbound = Annotated[Hello | Ask | Abort | Select | AddDoc, Field(discriminator="type")]
 inbound_adapter: TypeAdapter[Inbound] = TypeAdapter(Inbound)
 
 
@@ -91,16 +98,29 @@ class Receipt(BaseModel):
     est_cost_usd: float
     duration_ms: int
     final_text: str = ""
+    ndi_calls: int = Field(default=0, description="NDI calls (parse/ground) made for this task")
 
 
 class Evidence(BaseModel):
-    """A source the answer leans on (declared now; filled from S3)."""
+    """A passage the answer cites. `source` is the file name; `locator` is NDI ground's best match (page, polygons)."""
 
     type: Literal["evidence"] = "evidence"
     task_id: str
     source: str
     quote: str | None = None
     locator: dict[str, Any] | None = None
+    id: str | None = Field(default=None, description="Passage id cited by the answer, e.g. E3")
+    file: str | None = Field(default=None, description="Absolute path of the source PDF, for opening it")
+    page: int | None = None
+    level: int = Field(default=1, description="1 quote+id, 2 page, 3 page region (polygons)")
+
+
+class Added(BaseModel):
+    type: Literal["added"] = "added"
+    name: str
+    sha256: str
+    cached: bool
+    passages: int
 
 
 class Pointer(BaseModel):
@@ -130,7 +150,7 @@ class ErrorMsg(BaseModel):
 
 
 Outbound = Annotated[
-    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg, Field(discriminator="type")
+    Ready | Accepted | EventMsg | Receipt | Evidence | Pointer | Transcript | ErrorMsg | Added, Field(discriminator="type")
 ]
 outbound_adapter: TypeAdapter[Outbound] = TypeAdapter(Outbound)
 
