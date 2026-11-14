@@ -49,6 +49,14 @@ def load_key() -> None:
                 return
 
 
+def newest_captures(root: Path) -> list[Path]:
+    """Capture PNGs under `root`, oldest first: overlay captures (captures/*.png) and pinch selections
+    (selection-*.png, written by perception/reach_perception/capture.py)."""
+    found = [p for p in (root / "captures").glob("*.png") if p.is_file()] if (root / "captures").is_dir() else []
+    found += [p for p in root.glob("selection-*.png") if p.is_file()]
+    return sorted(found, key=lambda x: x.stat().st_mtime)
+
+
 def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
     """The PNG to look at: the given path, or the newest capture. Only files under .reach/ are readable."""
     root = (root or reach_dir()).resolve()
@@ -57,7 +65,7 @@ def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
         if not p.is_absolute():
             p = root / p
     else:
-        caps = sorted((root / "captures").glob("*.png"), key=lambda x: x.stat().st_mtime) if (root / "captures").is_dir() else []
+        caps = newest_captures(root)
         if not caps:
             raise FileNotFoundError("no screen capture yet; select a region first")
         p = caps[-1]

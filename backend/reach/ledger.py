@@ -199,6 +199,16 @@ class ReceiptBuilder:
         elif kind == "run_end":
             self.run_end = event
 
+    def browser_cost(self) -> float:
+        """Spend reported by the browser harness for this task's browser_task runs."""
+        total = 0.0
+        for b in self.browser:
+            try:
+                total += float(b.get("cost_usd") or 0)
+            except (TypeError, ValueError):
+                pass
+        return total
+
     def receipt(self, *, aborted: bool = False, error: str | None = None) -> Receipt:
         end = self.run_end or {}
         usage = end.get("usage") or {}
@@ -231,7 +241,7 @@ class ReceiptBuilder:
             refused=self.refused,
             system1_asks=self.decisions,
             tokens=int(usage.get("input_tokens", 0)) + int(usage.get("output_tokens", 0)),
-            est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost, 6),
+            est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost + self.browser_cost(), 6),
             duration_ms=int(duration),
             final_text=final_text,
             outcome=outcome,

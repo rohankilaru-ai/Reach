@@ -12,6 +12,7 @@ Keys are loaded inside the process (see `load_keys`) and never printed. Every de
 from __future__ import annotations
 
 import json
+import math
 import os
 import time
 import urllib.error
@@ -130,9 +131,19 @@ def state_for(text: str | None = None, hypotheses: list[str] | None = None, sele
     return s
 
 
+def _prob(v: Any) -> float | None:
+    """A probability in [0, 1], or None for anything else (null, bool, text, NaN, inf, out of range)."""
+    if isinstance(v, bool) or not isinstance(v, (int, float)):
+        return None
+    f = float(v)
+    return f if math.isfinite(f) and 0.0 <= f <= 1.0 else None
+
+
 def decide(probs: dict[str, float], threshold: float = THRESHOLD, margin: float = MARGIN) -> tuple[str, str]:
     """The abstain rule. Returns (label, reason); label is `uncertain` unless one command clearly wins."""
-    clean = {k: float(v) for k, v in probs.items() if k in LABELS and isinstance(v, (int, float))}
+    if any(_prob(v) is None for v in probs.values()):
+        return UNCERTAIN, "invalid probabilities"
+    clean = {k: float(v) for k, v in probs.items() if k in LABELS}
     if not clean:
         return UNCERTAIN, "no probabilities"
     ranked = sorted(clean.items(), key=lambda kv: kv[1], reverse=True)
@@ -195,11 +206,20 @@ class DrexRouter:
 
 
 def parse_drex(resp: dict[str, Any], latency_ms: int) -> RouteResult:
-    ans = (resp.get("answers") or {}).get("command") or {}
-    probs = {k: float(v) for k, v in (ans.get("probabilities") or {}).items()}
-    usage = resp.get("usage") or {}
-    tin = int(usage.get("input_tokens") or 0)
-    tout = int(usage.get("output_tokens") or 0)
+    try:
+        ans = (resp.get("answers") or {}).get("command") or {}
+        raw = ans.get("probabilities") or {}
+        usage = resp.get("usage") or {}
+        tin = int(usage.get("input_tokens") or 0)
+        tout = int(usage.get("output_tokens") or 0)
+        if not isinstance(raw, dict):
+            raise TypeError("probabilities is not an object")
+    except (AttributeError, TypeError, ValueError) as e:
+        return RouteResult(UNCERTAIN, "error", latency_ms=latency_ms, error=f"malformed response: {type(e).__name__}")
+    probs = {str(k): _prob(v) for k, v in raw.items()}
+    if any(v is None for v in probs.values()):
+        return RouteResult(UNCERTAIN, "error", latency_ms=latency_ms, error="invalid probability in response",
+                           input_tokens=tin, output_tokens=tout, model=resp.get("model"))
     if not probs:
         return RouteResult(UNCERTAIN, "error", latency_ms=latency_ms, error="no probabilities in response",
                            input_tokens=tin, model=resp.get("model"))

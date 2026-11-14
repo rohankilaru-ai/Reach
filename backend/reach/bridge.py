@@ -64,8 +64,10 @@ def prompt_for(ask: Ask) -> str:
     return text
 
 
-def evidence_cards(task_id: str, answer: str, do_ground: bool = True) -> list[Evidence]:
-    """Cited ids -> evidence cards (level 1), then one NDI ground job per source document to add page/region."""
+def evidence_cards(task_id: str, answer: str, do_ground: bool = True,
+                   should_stop: Callable[[], bool] | None = None) -> list[Evidence]:
+    """Cited ids -> evidence cards (level 1), then one NDI ground job per source document to add page/region.
+    `should_stop` is checked before every ground job, so a stopped or timed-out ask starts no further billable calls."""
     from . import evidence
 
     items = evidence.evidence_items(answer)
@@ -78,6 +80,8 @@ def evidence_cards(task_id: str, answer: str, do_ground: bool = True) -> list[Ev
             if it.get("parse_job_id"):
                 by_job.setdefault(it["parse_job_id"], []).append(it)
         for job_id, group in by_job.items():
+            if should_stop is not None and should_stop():
+                break
             try:
                 res = ndi.ground(job_id, [{"id": it["id"], "text": it["quote"]} for it in group], task_id=task_id)
             except Exception:
@@ -165,6 +169,8 @@ class InternBridge:
 
 class ReplayBridge:
     """Streams a recorded event file instead of calling models, so clients work with no keys."""
+
+    grounds = False  # replay never makes real NDI calls
 
     def __init__(self, path: Path, delay_s: float = 0.01) -> None:
         self.events = [json.loads(line) for line in path.read_text().splitlines() if line.strip()]

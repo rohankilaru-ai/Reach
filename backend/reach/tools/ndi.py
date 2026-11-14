@@ -52,11 +52,19 @@ def _safe_err(e: Exception) -> str:
 def parse_pdf(path: Path, task_id: str = "add") -> dict[str, Any]:
     """Upload and parse with NDI. Returns {job_id, file_id, workspace_id, result}."""
     t0 = time.time()
-    with _client() as client:
-        f = client.documents.upload(str(path))
-        job = client.documents.parse(f.as_source(), output={"formats": ["markdown"]})
-        done = client.jobs.wait(job.job_id, timeout=PARSE_TIMEOUT_S)
-    result = done.result if hasattr(done, "result") else done
+    job = None
+    try:
+        with _client() as client:
+            f = client.documents.upload(str(path))
+            job = client.documents.parse(f.as_source(), output={"formats": ["markdown"]})
+            done = client.jobs.wait(job.job_id, timeout=PARSE_TIMEOUT_S)
+        result = done.result if hasattr(done, "result") else done
+    except Exception as e:  # a failed or timed-out parse may still be billable: log it before re-raising
+        append_ndi(
+            drex_log(), task_id, "parse", file=path.name, job_id=str(job.job_id) if job is not None else None,
+            ok=False, error=_safe_err(e), ms=int((time.time() - t0) * 1000),
+        )
+        raise
     append_ndi(
         drex_log(), task_id, "parse",
         file=path.name, job_id=str(job.job_id), units=(result or {}).get("units"),

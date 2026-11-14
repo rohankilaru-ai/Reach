@@ -97,14 +97,21 @@ def render(s: dict[str, Any]) -> str:
 
 
 def parse_marker(content: str) -> dict[str, Any] | None:
-    """The receipt marker in a browser_task tool result, or None."""
-    m = re.search(re.escape(MARKER) + r" (\{.*\})", content or "")
+    """The receipt marker in a browser_task tool result, or None.
+
+    Only the tool's own trailing line counts: `render` always writes the marker last, so a marker quoted inside the
+    page's answer text (earlier lines) can never stand in for the real one."""
+    lines = (content or "").rstrip().splitlines()
+    if not lines:
+        return None
+    m = re.fullmatch(re.escape(MARKER) + r" (\{.*\})", lines[-1].strip())
     if not m:
         return None
     try:
-        return json.loads(m.group(1))
+        marker = json.loads(m.group(1))
     except ValueError:
         return None
+    return marker if isinstance(marker, dict) else None
 
 
 def _descendants(root: int) -> list[int]:

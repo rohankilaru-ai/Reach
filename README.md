@@ -39,7 +39,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 
 | Feature | Label | Evidence |
 | --- | --- | --- |
-| Intern as the harness, Drex Max as System 1, Qwen3.8-27B on DeepInfra as System 2 | implemented | `docs/evidence/drex-log.jsonl`, `docs/evidence/receipt.json` |
+| Intern as the harness, Drex Max as System 1, Qwen3.8-27B on DeepInfra as System 2 | implemented | Drex log and receipt: recorded at release (`docs/evidence/drex-log.jsonl`, `docs/evidence/receipt.json`, not yet committed) |
 | Drex decisions in the log (supervise, guard, wrap-up, memory, command routing) | implemented | `reach log` |
 | NDI evidence: ingest a PDF, cited quotes, ground to page and region | implemented | two real PDFs, 5 of 5 cited quotes found verbatim; `docs/GROUND_SHAPE.md` |
 | Browser task through an Intern tool, with Drex judging each call | implemented | `docs/evidence/browser-run.json`; abort stops the browser in under 0.3 s |
