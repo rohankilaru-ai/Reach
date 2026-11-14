@@ -108,6 +108,23 @@ class ScreenMap:
             return cls(screen_w, screen_h)
 
 
+def build_map(sw: float, sh: float, corners: list[tuple[float, float]]) -> tuple["ScreenMap", str | None]:
+    """ScreenMap from calibration corners; a bad calibration falls back to the fixed mapping plus a warning."""
+    try:
+        return ScreenMap(sw, sh, corners), None
+    except (ValueError, ZeroDivisionError) as exc:
+        return ScreenMap(sw, sh), f"calibration rejected ({exc}); using fixed mapping"
+
+
+def reset_calibration(sw: float, sh: float, path: Path | None = None) -> "ScreenMap":
+    """Fixed mapping, and the saved calibration file is deleted so it does not come back on restart."""
+    try:
+        (path or calibration_path()).unlink(missing_ok=True)
+    except OSError:
+        pass
+    return ScreenMap(sw, sh)
+
+
 def box_around(p: tuple[float, float], sw: float, sh: float, w: float = 480, h: float = 160) -> list[float]:
     """Fallback selection when the drag is tiny: a fixed box centred on the pointer, clamped to the screen."""
     x = min(max(p[0] - w / 2, 0), max(sw - w, 0))

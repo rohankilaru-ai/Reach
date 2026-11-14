@@ -119,3 +119,139 @@ def test_vision_ocr_reads_rendered_text(tmp_path):
     p = tmp_path / "probe.png"  # rendered text, not a camera frame
     cv2.imwrite(str(p), img)
     assert "paragraph" in ocr(p)
+
+
+# --- Greptile pinch worker findings ---
+
+
+def test_open_palm_clears_stale_pinch_timer():
+    eng = GestureEngine()
+    eng.update(0, hand(320, 330, 0.8))
+    eng.update(33, hand(320, 330, 0.1))  # starts the below-threshold timer
+    eng.update(66, hand(320, 330, 0.8, palm=True))  # open palm interrupts
+    assert eng._below_since is None
+    # pinch resumes later: the old timer must not make it count immediately
+    assert eng.update(33 + PINCH_HOLD_MS + 50, hand(320, 330, 0.1)) == []
+    assert not eng.pinching
+
+
+def test_lost_hand_resets_palm_fired():
+    eng = GestureEngine()
+    t = 0
+    while t <= 600:
+        eng.update(t, hand(320, 330, palm=True))
+        t += 33
+    assert eng._palm_fired and eng.palm
+    eng.update(t + LOST_MS + 100, None)
+    assert not eng._palm_fired and not eng.palm and eng._palm_gone_since is None
+
+
+def test_bad_calibration_falls_back_with_warning():
+    from reach_perception.screen_map import build_map
+
+    m, warn = build_map(1440, 900, [(0.5, 0.5)] * 4)
+    assert not m.calibrated and warn and "fixed" in warn
+    ok, none = build_map(1440, 900, [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)])
+    assert ok.calibrated and none is None
+
+
+def test_reset_deletes_saved_calibration(tmp_path):
+    from reach_perception.screen_map import reset_calibration
+
+    p = tmp_path / "calibration.json"
+    ScreenMap(1440, 900, [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)]).save(
+        [(0.1, 0.1), (0.9, 0.1), (0.9, 0.9), (0.1, 0.9)], p)
+    assert p.exists()
+    m = reset_calibration(1440, 900, p)
+    assert not m.calibrated and not p.exists()
+    assert not ScreenMap.load(1440, 900, p).calibrated  # does not come back on restart
+
+
+def test_read_worker_does_not_block_and_returns_results():
+    import threading
+    import time
+
+    from reach_perception.worker import ReadWorker
+
+    gate = threading.Event()
+
+    def slow_capture(rect):
+        gate.wait(2)
+        return "img.png"
+
+    rw = ReadWorker(slow_capture, lambda img: "hello")
+    t = time.monotonic()
+    assert rw.submit([0, 0, 10, 10])
+    assert time.monotonic() - t < 0.2 and rw.busy and rw.poll() == []
+    gate.set()
+    out = []
+    for _ in range(100):
+        out += rw.poll()
+        if out:
+            break
+        time.sleep(0.02)
+    rw.close()
+    assert out == [([0, 0, 10, 10], "hello", "img.png")] and not rw.busy
+
+
+def test_read_worker_survives_capture_error():
+    import time
+
+    from reach_perception.worker import ReadWorker
+
+    def boom(rect):
+        raise OSError("no permission")
+
+    rw = ReadWorker(boom, lambda i: "x")
+    rw.submit([0, 0, 5, 5])
+    out = []
+    for _ in range(100):
+        out += rw.poll()
+        if out:
+            break
+        time.sleep(0.02)
+    rw.close()
+    assert out == [([0, 0, 5, 5], "", None)]
+
+
+def test_run_exits_cleanly_after_consecutive_frame_failures(monkeypatch, capsys):
+    import sys
+    import types
+
+    from reach_perception import worker
+
+    keys = []
+
+    class FakeCam:
+        def ok(self): return True
+        def read(self): return None
+        def release(self): pass
+
+    class FakeHands:
+        def detect(self, f, t): raise AssertionError("no frame, no detect")
+        def close(self): pass
+
+    class FakeBridge:
+        status = "off"
+        def connect(self): pass
+        def pointer(self, *a): pass
+        def select(self, *a): return False
+        def close(self): pass
+
+    mods = {
+        "reach_perception.camera": types.SimpleNamespace(Camera=FakeCam, PERMISSION_MSG="perm"),
+        "reach_perception.hands": types.SimpleNamespace(Hands=FakeHands),
+        "reach_perception.bridge_client": types.SimpleNamespace(BridgeClient=FakeBridge),
+        "reach_perception.capture": types.SimpleNamespace(capture_region=lambda r: None, ocr=lambda p: ""),
+        "reach_perception.preview": types.SimpleNamespace(
+            poll_key=lambda: keys.append(1) or -1, show=lambda i: -1, draw=lambda *a: None, close=lambda: None),
+    }
+    for k, v in mods.items():
+        monkeypatch.setitem(sys.modules, k, v)
+    monkeypatch.setattr("reach_perception.screen_map.screen_size", lambda: (1440.0, 900.0))
+    monkeypatch.setattr(worker, "screen_size", lambda: (1440.0, 900.0))
+    monkeypatch.setattr(worker, "MAX_FRAME_FAILURES", 5)
+    monkeypatch.setattr(worker.ScreenMap, "load", classmethod(lambda cls, w, h, path=None: cls(w, h)))
+    assert worker.run(no_preview=False, no_ocr=True) == 3
+    assert len(keys) == 4  # keys were polled on failed frames before exit
+    assert "camera stopped" in capsys.readouterr().out

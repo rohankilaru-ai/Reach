@@ -122,7 +122,8 @@ class GestureEngine:
                 self.pointer = None
                 self.palm = False
                 self._reset_pinch()
-                self._palm_since = None
+                self._palm_since = self._palm_gone_since = None
+                self._palm_fired = False
                 self.fx.reset(), self.fy.reset()
                 ev.append(Event("lost", t_ms, {"drag_cancelled": cancelled}))
             return ev
@@ -155,8 +156,7 @@ class GestureEngine:
                     self._palm_fired = False
                     self.palm = False
         if palm_now:
-            if self.pinching:
-                self._reset_pinch()
+            self._reset_pinch()  # also clears a stale `_below_since` so an interrupted pinch cannot count
             return ev
 
         # Pinch with hysteresis and hold times.
