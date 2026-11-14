@@ -145,13 +145,14 @@ class Server:
 
         try:
             receipt = await self.bridge.run(task, sink)
+            stopped = False  # aborted while grounding (an abort during bridge.run is already in the receipt)
             if receipt.final_text and getattr(self.bridge, "grounds", True) and not task.aborted:
                 try:
                     cards = await self._ground(task, receipt.final_text)
                 except Exception:  # the evidence store is optional; the receipt always ships
                     cards = []
                 if task.aborted:  # stopped while grounding: no cards, and never the earlier success
-                    cards = []
+                    stopped, cards = True, []
                     update = {"status": "aborted", "reason": "aborted"}
                     if receipt.outcome is not None:
                         update["outcome"] = "aborted"
@@ -167,7 +168,7 @@ class Server:
                 except Exception:
                     pass
             receipt.selection_source = getattr(task, "selection_source", None)
-            if receipt.final_text and receipt.status != "aborted":
+            if receipt.final_text and not stopped:
                 out.put_nowait(
                     Transcript(task_id=task.id, role="assistant", text=receipt.final_text).model_dump_json()
                 )

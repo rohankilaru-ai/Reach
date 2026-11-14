@@ -332,3 +332,70 @@ def test_bench_v2_dedupes_and_uses_saved_metadata():
     assert not bench_v2.is_complete(rows, items)
     full = rows + [_row("drex", "dev", "d1", "stop"), _row("qwen_probs", "dev", "d1", "stop")]
     assert bench_v2.is_complete(full, items)
+
+
+def test_bench_v2_report_partial_run_does_not_keep_old_verdict(monkeypatch, tmp_path):
+    ev = tmp_path / "evidence"
+    ev.mkdir()
+    monkeypatch.setattr(bench_v2, "EVIDENCE", ev)
+    marker = "## Verdict (written by hand after the held-out run)"
+    (ev / "bench_v2.md").write_text(f"old report\n\n{marker}\n- Drex wins by a mile\n")
+    run = tmp_path / "bench_v2-20261114-120000-held_out.jsonl"
+    run.write_text(json.dumps(_row("drex", "held_out", "h1", "stop", model="drex-max-v1.1")) + "\n")
+    items = [{"id": "h1", "split": "held_out", "gold": "stop"}, {"id": "d1", "split": "dev", "gold": "stop"}]
+    monkeypatch.setattr(bench_v2, "load_v2", lambda path=None: items)
+    monkeypatch.setattr(bench_v2, "FIXTURES_V2", bench_v2.REPO_ROOT / "fixtures" / "x.jsonl")
+    assert bench_v2.main(["report", str(run)]) == 0
+    md = (ev / "bench_v2.md").read_text()
+    assert "Drex wins by a mile" not in md and "pending: partial run" in md
+    assert json.loads((ev / "bench_v2.json").read_text())["meta"]["drex_model"] == "drex-max-v1.1"
+
+
+# ---- native tools ----
+
+
+def test_shelf_to_note_refuses_unknown_ids(monkeypatch, tmp_path):
+    from reach.tools import native
+
+    monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF note")
+    known = evidence.add_document(pdf, lambda p: _parse_result("A sentence that is long enough to quote here."))
+    wrote = []
+    monkeypatch.setattr(native, "note_write", lambda dest, text: wrote.append(text))
+    args = native.ShelfToNoteArgs(item_ids=[known["passages"][0], "E999"], destination="file")
+    out = asyncio.run(native.ShelfToNote().run(args, None))
+    assert wrote == [] and "E999" in out.content and "failed" in out.content
+
+
+def test_open_source_does_not_block_the_event_loop(monkeypatch, tmp_path):
+    from reach.tools import native
+
+    monkeypatch.setenv("REACH_DIR", str(tmp_path / ".reach"))
+    pdf = tmp_path / "a.pdf"
+    pdf.write_bytes(b"%PDF open")
+    known = evidence.add_document(pdf, lambda p: _parse_result("Some passage text for opening."))
+    loop_threads = []
+
+    def fake_run(argv, **kw):
+        loop_threads.append(threading.current_thread() is threading.main_thread())
+        time.sleep(0.3)
+
+    monkeypatch.setattr(native.subprocess, "run", fake_run)
+
+    async def go():
+        ticks = 0
+
+        async def ticker():
+            nonlocal ticks
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+
+        t = asyncio.create_task(ticker())
+        out = await native.OpenSource().run(native.OpenSourceArgs(item_id=known["passages"][0]), None)
+        t.cancel()
+        return out, ticks
+
+    out, ticks = asyncio.run(go())
+    assert out.content.startswith("Opened") and loop_threads == [False] and ticks >= 3
