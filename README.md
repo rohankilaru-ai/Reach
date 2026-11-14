@@ -49,6 +49,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Voice: hold Control-Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: on 90 held-out hard utterances Drex Max got 87 right (96.7%), Qwen3.8-27B 83 (one-label) and 82 (12-way); the intervals overlap, so this is a lead, not a proven win. Drex made 0 wrong commands, Qwen 2 to 3. Median latency 265 ms vs 544 ms (one-label Qwen). Command line only |
 | Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
+| Per-finger tracking, calibration and a cursor-follows-fingertip demo (`finger_processing/`, `cursor_demo/`) | experimental | added by a teammate with its own tests; not part of the agent tools |
 | Lip reading / silent speech | planned | not built |
 | Controlling other apps by mouse or keyboard | planned (deliberately not done) | Reach only acts through apps' scripting interfaces and files |
 | Gaze, Adobe and Keenable integrations | planned | |
@@ -81,7 +82,7 @@ Permissions macOS may ask for: Screen Recording (drag-select), Microphone and Sp
 ## Safety
 
 - The local server listens on 127.0.0.1 only and needs a token file readable by you alone.
-- No synthetic keystrokes or mouse events anywhere in the code. Native writes use an allowlist of destinations and are verified by reading back.
+- Reach's agent tools send no synthetic keystrokes or mouse events. Native writes use an allowlist of destinations and are verified by reading back. The one exception is the separate, opt-in `cursor_demo/` (a teammate's experiment), which moves the pointer to follow your fingertip and pauses when you touch the mouse; it is not an Intern tool and does not run unless you start it.
 - A policy hook refuses tool calls that touch key files or dump the environment. See `backend/reach/guard_policy.py` and its tests.
 - Documents, web pages and selected text are data, not instructions.
 
@@ -96,6 +97,6 @@ Permissions macOS may ask for: Screen Recording (drag-select), Microphone and Sp
 
 ## Repository
 
-`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/` MediaPipe pinch worker · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and router test sets · `docs/evidence/` real logs and benchmark output · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences.
+`backend/` Python bridge and Intern tools · `apps/overlay/` Swift overlay · `perception/` MediaPipe pinch worker · `finger_processing/` and `cursor_demo/` teammate's hand tracking and cursor demo · `patches/` two small patches to the Nace browser harness · `fixtures/` replay events and router test sets · `docs/evidence/` real logs and benchmark output · `docs/SOURCES.md` verified upstream facts · `THIRD_PARTY.md` licences.
 
 MIT licensed. Third-party components and their terms are in `THIRD_PARTY.md`.
