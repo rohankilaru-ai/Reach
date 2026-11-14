@@ -142,7 +142,7 @@ def test_receipt_dict_and_prompt_hook():
     it = intent.understand("find flights", post=fake(resp("browser_task", 0.93)))
     p = prompt_for(Ask(text="find flights", selection=Selection(text="x")), it)
     assert "Drex (a fast classifier) judged this a browser task (p=0.93); use browser_task" in p
-    assert "duckduckgo.com" in p and "email_draft" in p
+    assert "chrome_open_url" in p and "email_draft" in p
     d = it.receipt_dict()
     assert d["kind"] == "browser_task" and d["hint_used"] and d["action"] == "hint"
     assert d["probs"]["browser_task"] == 0.93 and "risky_or_irreversible" in d["probs"]
