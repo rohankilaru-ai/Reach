@@ -31,6 +31,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarItem?
     private var pillMode = PillMode.load()
     private var handsFree: HandsFreeController!
+    private var dictation: DictationController!
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -79,7 +80,15 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         // Hands-free: Option-Shift-Space toggles (always off at launch).
         handsFree = HandsFreeController(model: model)
-        handsFree.pttBusy = { [weak self] in (self?.ptt.phase ?? .idle) != .idle }
+        handsFree.pttBusy = { [weak self] in (self?.ptt.phase ?? .idle) != .idle || self?.dictation?.isOn == true }
+        // Dictation: Option-Shift-D, the menu item, or "Reach, start/stop dictating" (own on-device recognizer).
+        dictation = DictationController(model: model)
+        dictation.install()
+        dictation.onChange = { [weak self] in
+            guard let self else { return }
+            if self.dictation.isOn, !self.panel.isVisible { self.panel.orderFrontRegardless() }
+        }
+        handsFree.onDictation = { [weak self] on in self?.dictation.setOn(on, why: "spoken") }
         handsFree.onAsk = { [weak self] text in self?.handsFreeAsk(text) }
         handsFree.onPinchHold = { [weak self] down in
             guard let self else { return }
@@ -121,6 +130,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         bar.handsFreeOn = { [weak self] in self?.handsFree.isOn == true }
         bar.onHandsFree = { [weak self] in self?.handsFree.flip() }
         bar.onPauseHandsFree = { [weak self] in self?.handsFree.pauseFiveMinutes() }
+        bar.dictationOn = { [weak self] in self?.dictation.isOn == true }
+        bar.onDictation = { [weak self] in self?.dictation.flip() }
         bar.onHandsMode = { [weak self] in self?.toggleHandsMode(why: "menu") }
         menuBar = bar
         // Open the checklist once per launch when a required permission is missing.
@@ -551,6 +562,8 @@ final class AppController: NSObject, NSApplicationDelegate {
             PermissionProbe.relaunch()
         case .openMicSettings:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        case .openAccessibilitySettings:
+            NSWorkspace.shared.open(URL(string: PermissionKind.accessibility.settingsURL)!)
         case .circle, .none: break
         }
     }

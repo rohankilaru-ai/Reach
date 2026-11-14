@@ -135,6 +135,7 @@ struct PanelView: View {
                 .animation(.easeInOut(duration: 0.2), value: model.handsFreeFlicker)
                 .help(HandsFree.hint)
             }
+            DictationBadge()
             if model.handsOn || model.handsLine != nil {
                 // hands mode: a small hand with a calm pulse and "Hands on" (or a short hint / "Hands off")
                 let look = HandsMode.look(phase: model.handsPhase)

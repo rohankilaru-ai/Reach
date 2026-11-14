@@ -483,7 +483,9 @@ func runHandsSelftest() -> Int32 {
     return ok ? 0 : 1
 }
 
-if args.contains("--hands-selftest") {
+if args.contains("--dictation-selftest") {
+    exit(MainActor.assumeIsolated { runDictationSelftest() })
+} else if args.contains("--hands-selftest") {
     exit(MainActor.assumeIsolated { runHandsSelftest() })
 } else if args.contains("--handsfree-selftest") {
     exit(MainActor.assumeIsolated { runHandsFreeSelftest() })

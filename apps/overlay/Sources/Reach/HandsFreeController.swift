@@ -24,6 +24,8 @@ final class HandsFreeController {
     /// Whether the push-to-talk path owns the microphone right now.
     var pttBusy: () -> Bool = { false }
     var onChange: () -> Void = {}
+    /// "Reach, start dictating" / "Reach, stop dictating" (handled locally, never sent).
+    var onDictation: (Bool) -> Void = { _ in }
 
     private var now: Double { ProcessInfo.processInfo.systemUptime }
 
@@ -118,6 +120,7 @@ final class HandsFreeController {
     private func emit(_ s: Segmenter.Segment) {
         restart()   // fresh task per segment: partials can revise earlier words
         if WakeWord.isStopListening(s.text) { setOn(false); return }
+        if let d = DictationCommand.wakeToggle(s.text) { onDictation(d); return }
         guard model.state.connected else { flicker(); return }   // unreachable: not addressed
         pending.sent(text: s.text, ask: s.ask, at: now)
         model.send(.utterance(text: s.text, wakeMatched: s.wakeMatched))

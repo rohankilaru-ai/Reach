@@ -14,6 +14,8 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
     var handsFreeOn: () -> Bool = { false }
     var onHandsFree: () -> Void = {}
     var onPauseHandsFree: () -> Void = {}
+    var dictationOn: () -> Bool = { false }
+    var onDictation: () -> Void = {}
     var onHandsMode: () -> Void = {}
 
     private var listening = false
@@ -74,6 +76,7 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
         if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
+        add("Dictation (⌥⇧D)", on: dictationOn()) { [weak self] in self?.onDictation() }
         // the checkmark is the server's truth (`hands_state`), never the last request
         add("Hands mode (⌥⇧H)", on: model.handsOn) { [weak self] in self?.onHandsMode() }
         menu.addItem(.separator())
