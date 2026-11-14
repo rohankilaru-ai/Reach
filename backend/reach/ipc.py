@@ -82,7 +82,7 @@ class Server:
                     return
 
         pump_task = asyncio.create_task(pump())
-        mine: list = []
+        mine: dict[str, object] = {}
         running: set[asyncio.Task] = set()
         try:
             async for raw in ws:
@@ -94,14 +94,17 @@ class Server:
                 if isinstance(msg, Ask):
                     task = self.Task(msg)
                     self.tasks[task.id] = task
-                    mine.append(task)
+                    mine[task.id] = task
                     out.put_nowait(Accepted(task_id=task.id).model_dump_json())
                     out.put_nowait(Transcript(task_id=task.id, role="user", text=msg.text).model_dump_json())
-                    t = asyncio.create_task(self._run(task, out))
+                    t = asyncio.create_task(self._run(task, out, mine))
                     running.add(t)
                     t.add_done_callback(running.discard)
                 elif isinstance(msg, Abort):
-                    targets = [self.tasks[msg.task_id]] if msg.task_id in self.tasks else list(self.tasks.values())
+                    if msg.task_id:
+                        targets = [mine[msg.task_id]] if msg.task_id in mine else []
+                    else:  # no id: only this client's own tasks
+                        targets = list(mine.values())
                     for task in targets:
                         task.abort()
                 elif isinstance(msg, Select):
@@ -111,7 +114,7 @@ class Server:
                     running.add(t)
                     t.add_done_callback(running.discard)
         finally:
-            for task in mine:  # a client that goes away takes its running tasks with it
+            for task in list(mine.values()):  # a client that goes away takes its running tasks with it
                 if task.id in self.tasks:
                     task.abort()
             if running:
@@ -119,7 +122,7 @@ class Server:
             out.put_nowait(None)
             await pump_task
 
-    async def _run(self, task, out: asyncio.Queue) -> None:
+    async def _run(self, task, out: asyncio.Queue, mine: dict | None = None) -> None:
         def sink(task_id: str, event: dict) -> None:
             out.put_nowait(EventMsg(task_id=task_id, event=event).model_dump_json())
 
@@ -143,6 +146,8 @@ class Server:
             out.put_nowait(receipt.model_dump_json())
         finally:
             self.tasks.pop(task.id, None)
+            if mine is not None:
+                mine.pop(task.id, None)
 
     async def _add(self, msg: AddDoc, out: asyncio.Queue) -> None:
         from . import evidence

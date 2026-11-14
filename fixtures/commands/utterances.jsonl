@@ -1,0 +1,60 @@
+{"id": "d01", "split": "dev", "source": "typed", "text": "explain this", "gold": "explain_this"}
+{"id": "d02", "split": "dev", "source": "typed", "text": "wat does this paragraph mean", "gold": "explain_this"}
+{"id": "d03", "split": "dev", "source": "lip", "hypotheses": ["opn ths", "often this"], "gold": "open_this"}
+{"id": "d04", "split": "dev", "source": "typed", "text": "scroll down a bit", "gold": "scroll_down"}
+{"id": "d05", "split": "dev", "source": "dictated", "text": "go back up", "gold": "scroll_up"}
+{"id": "d06", "split": "dev", "source": "dictated", "text": "hold on a sec", "gold": "pause"}
+{"id": "d07", "split": "dev", "source": "dictated", "text": "ok keep going", "gold": "continue"}
+{"id": "d08", "split": "dev", "source": "typed", "text": "compare these two", "gold": "compare_these"}
+{"id": "d09", "split": "dev", "source": "dictated", "text": "put it over here", "gold": "put_this_here"}
+{"id": "d10", "split": "dev", "source": "dictated", "text": "never mind", "gold": "cancel"}
+{"id": "d11", "split": "dev", "source": "dictated", "text": "next one", "gold": "next"}
+{"id": "d12", "split": "dev", "source": "dictated", "text": "stop stop stop", "gold": "stop"}
+{"id": "d13", "split": "dev", "source": "lip", "hypotheses": ["skrol dow", "scroll dough"], "gold": "scroll_down"}
+{"id": "d14", "split": "dev", "source": "lip", "hypotheses": ["nex", "necks"], "gold": "next"}
+{"id": "d15", "split": "dev", "source": "typed", "text": "can you break this down for me", "gold": "explain_this"}
+{"id": "d16", "split": "dev", "source": "typed", "text": "launch that link", "gold": "open_this"}
+{"id": "d17", "split": "dev", "source": "dictated", "text": "hows the weather tomorrow", "gold": "uncertain"}
+{"id": "d18", "split": "dev", "source": "lip", "hypotheses": ["uh", "a"], "gold": "uncertain"}
+{"id": "d19", "split": "dev", "source": "typed", "text": "this", "gold": "uncertain"}
+{"id": "d20", "split": "dev", "source": "typed", "text": "contnue", "gold": "continue"}
+{"id": "h01", "split": "held_out", "source": "typed", "text": "what is this", "gold": "explain_this"}
+{"id": "h02", "split": "held_out", "source": "lip", "hypotheses": ["xplain tis", "explain kiss"], "gold": "explain_this"}
+{"id": "h03", "split": "held_out", "source": "typed", "text": "eli5 this bit", "gold": "explain_this"}
+{"id": "h04", "split": "held_out", "source": "dictated", "text": "tell me about this graph", "gold": "explain_this"}
+{"id": "h05", "split": "held_out", "source": "typed", "text": "open this", "gold": "open_this"}
+{"id": "h06", "split": "held_out", "source": "dictated", "text": "click into that", "gold": "open_this"}
+{"id": "h07", "split": "held_out", "source": "lip", "hypotheses": ["opn it", "open hit"], "gold": "open_this"}
+{"id": "h08", "split": "held_out", "source": "typed", "text": "page down", "gold": "scroll_down"}
+{"id": "h09", "split": "held_out", "source": "typed", "text": "scrol dwn plz", "gold": "scroll_down"}
+{"id": "h10", "split": "held_out", "source": "dictated", "text": "move further down the page", "gold": "scroll_down"}
+{"id": "h11", "split": "held_out", "source": "typed", "text": "scroll up", "gold": "scroll_up"}
+{"id": "h12", "split": "held_out", "source": "dictated", "text": "back to the part above", "gold": "scroll_up"}
+{"id": "h13", "split": "held_out", "source": "lip", "hypotheses": ["scrl up", "school up"], "gold": "scroll_up"}
+{"id": "h14", "split": "held_out", "source": "typed", "text": "pause", "gold": "pause"}
+{"id": "h15", "split": "held_out", "source": "dictated", "text": "wait a moment", "gold": "pause"}
+{"id": "h16", "split": "held_out", "source": "lip", "hypotheses": ["paws", "pos"], "gold": "pause"}
+{"id": "h17", "split": "held_out", "source": "typed", "text": "resume", "gold": "continue"}
+{"id": "h18", "split": "held_out", "source": "dictated", "text": "carry on", "gold": "continue"}
+{"id": "h19", "split": "held_out", "source": "lip", "hypotheses": ["go on", "go un"], "gold": "continue"}
+{"id": "h20", "split": "held_out", "source": "typed", "text": "how do these differ", "gold": "compare_these"}
+{"id": "h21", "split": "held_out", "source": "dictated", "text": "contrast these two sections", "gold": "compare_these"}
+{"id": "h22", "split": "held_out", "source": "lip", "hypotheses": ["compar thez", "compare these"], "gold": "compare_these"}
+{"id": "h23", "split": "held_out", "source": "dictated", "text": "move this here", "gold": "put_this_here"}
+{"id": "h24", "split": "held_out", "source": "typed", "text": "drop it rite here", "gold": "put_this_here"}
+{"id": "h25", "split": "held_out", "source": "lip", "hypotheses": ["pt ths hr", "put this hair"], "gold": "put_this_here"}
+{"id": "h26", "split": "held_out", "source": "typed", "text": "cancel that", "gold": "cancel"}
+{"id": "h27", "split": "held_out", "source": "dictated", "text": "forget it", "gold": "cancel"}
+{"id": "h28", "split": "held_out", "source": "lip", "hypotheses": ["cansl", "castle"], "gold": "cancel"}
+{"id": "h29", "split": "held_out", "source": "typed", "text": "next", "gold": "next"}
+{"id": "h30", "split": "held_out", "source": "dictated", "text": "skip to the next one", "gold": "next"}
+{"id": "h31", "split": "held_out", "source": "typed", "text": "show me the next result", "gold": "next"}
+{"id": "h32", "split": "held_out", "source": "typed", "text": "stop", "gold": "stop"}
+{"id": "h33", "split": "held_out", "source": "dictated", "text": "stop talking", "gold": "stop"}
+{"id": "h34", "split": "held_out", "source": "lip", "hypotheses": ["stp", "stopped"], "gold": "stop"}
+{"id": "h35", "split": "held_out", "source": "dictated", "text": "halt everything now", "gold": "stop"}
+{"id": "h36", "split": "held_out", "source": "dictated", "text": "order me a pizza", "gold": "uncertain"}
+{"id": "h37", "split": "held_out", "source": "typed", "text": "maybe", "gold": "uncertain"}
+{"id": "h38", "split": "held_out", "source": "typed", "text": "delete all my files", "gold": "uncertain"}
+{"id": "h39", "split": "held_out", "source": "lip", "hypotheses": ["fsh", "ash"], "gold": "uncertain"}
+{"id": "h40", "split": "held_out", "source": "dictated", "text": "the", "gold": "uncertain"}

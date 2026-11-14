@@ -128,10 +128,7 @@ class ReceiptBuilder:
                 self.browser.append(marker or {"outcome": "not_done", "status": "no_result", "kind": "no_result",
                                                "reason": "no receipt in the tool result", "cost_usd": 0.0,
                                                "drex_calls": 0})
-        elif kind == "tool_guard":
-            name = event.get("name", "?")
-            if name not in self.refused:
-                self.refused.append(name)
+        # tool_guard is not counted: the refused call also ends with tool_call_end(status=refused)
         elif kind == "decision":
             self.decisions += 1
             self.system1_cost += float(event.get("cost_usd") or 0)

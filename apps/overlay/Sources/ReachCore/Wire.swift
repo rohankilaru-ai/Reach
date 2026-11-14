@@ -1,0 +1,191 @@
+import Foundation
+
+/// A loosely typed JSON value, used for event payloads whose shape varies (Drex answers, locators).
+public enum JSONValue: Codable, Equatable, Sendable {
+    case string(String), number(Double), bool(Bool), object([String: JSONValue]), array([JSONValue]), null
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.singleValueContainer()
+        if c.decodeNil() { self = .null }
+        else if let b = try? c.decode(Bool.self) { self = .bool(b) }
+        else if let n = try? c.decode(Double.self) { self = .number(n) }
+        else if let s = try? c.decode(String.self) { self = .string(s) }
+        else if let a = try? c.decode([JSONValue].self) { self = .array(a) }
+        else { self = .object(try c.decode([String: JSONValue].self)) }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.singleValueContainer()
+        switch self {
+        case .string(let s): try c.encode(s)
+        case .number(let n): try c.encode(n)
+        case .bool(let b): try c.encode(b)
+        case .object(let o): try c.encode(o)
+        case .array(let a): try c.encode(a)
+        case .null: try c.encodeNil()
+        }
+    }
+
+    public subscript(key: String) -> JSONValue? {
+        if case .object(let o) = self { return o[key] }
+        return nil
+    }
+    public var string: String? { if case .string(let s) = self { return s }; return nil }
+    public var number: Double? { if case .number(let n) = self { return n }; return nil }
+    public var object: [String: JSONValue]? { if case .object(let o) = self { return o }; return nil }
+}
+
+// MARK: - client -> server
+
+public struct Selection: Codable, Equatable, Sendable {
+    public var text: String?
+    public var app: String?
+    /// [x, y, w, h] in screen points (top-left origin).
+    public var region: [Double]?
+    public var image_path: String?
+
+    public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil) {
+        self.text = text; self.app = app; self.region = region; self.image_path = image_path
+    }
+}
+
+public enum ClientMessage: Equatable, Sendable {
+    case hello(token: String)
+    case ask(text: String, selection: Selection?)
+    case abort(taskID: String?)
+    case select(Selection)
+
+    public func json() throws -> String {
+        var obj: [String: JSONValue] = [:]
+        let enc = JSONEncoder()
+        switch self {
+        case .hello(let token):
+            obj = ["type": .string("hello"), "token": .string(token)]
+        case .ask(let text, let sel):
+            obj = ["type": .string("ask"), "text": .string(text)]
+            if let sel { obj["selection"] = try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel)) }
+        case .abort(let id):
+            obj = ["type": .string("abort")]
+            if let id { obj["task_id"] = .string(id) }
+        case .select(let sel):
+            obj = ["type": .string("select"), "selection": try JSONDecoder().decode(JSONValue.self, from: enc.encode(sel))]
+        }
+        enc.outputFormatting = [.sortedKeys]
+        return String(decoding: try enc.encode(JSONValue.object(obj)), as: UTF8.self)
+    }
+}
+
+// MARK: - server -> client
+
+public struct Receipt: Decodable, Equatable, Sendable {
+    public var task_id: String
+    public var status: String
+    public var reason: String
+    public var system1_asks: Int
+    public var tokens: Int
+    public var duration_ms: Int
+    public var est_cost_usd: Double?
+    public var final_text: String?
+    public var tools: [String]?
+    public var ndi_calls: Int?
+
+    /// One compact line for the panel.
+    public var line: String {
+        "\(reason) · Drex asks \(system1_asks) · \(tokens) tok · \(duration_ms) ms"
+    }
+}
+
+public struct EvidenceCard: Decodable, Equatable, Sendable {
+    public var task_id: String?
+    public var id: String?
+    public var source: String?
+    public var file: String?
+    public var quote: String?
+    public var page: Int?
+    public var level: Int?
+    public var region: JSONValue?
+    public var locator: JSONValue?
+
+    public var title: String {
+        let name = source ?? file.map { ($0 as NSString).lastPathComponent } ?? "source"
+        return page.map { "\(name) · p. \($0)" } ?? name
+    }
+    public var stableID: String { id ?? "\(file ?? source ?? "")#\(page ?? 0)#\(quote ?? "")" }
+}
+
+public struct DrexDecision: Equatable, Sendable {
+    public var purpose: String
+    public var choice: String?
+    public var ms: Int?
+    public var ok: Bool
+
+    /// Pulls a readable choice out of the heterogeneous `answers` object.
+    public init(event: JSONValue) {
+        purpose = event["purpose"]?.string ?? "decision"
+        ms = event["duration_ms"]?.number.map { Int($0) }
+        if case .bool(let b)? = event["ok"] { ok = b } else { ok = true }
+        var found: String?
+        if let answers = event["answers"]?.object {
+            for key in answers.keys.sorted() {
+                guard let a = answers[key] else { continue }
+                if let c = a["choice"]?.string { found = "\(key)=\(c)"; break }
+                if let o = a.object, let (k, v) = o.first(where: { $0.value.number != nil }), let p = v.number {
+                    found = "\(k) \(String(format: "%.2f", p))"; break
+                }
+                if let s = a.string { found = s; break }
+            }
+        }
+        choice = found
+    }
+
+    public var line: String {
+        var s = purpose
+        if let choice { s += ": \(choice)" }
+        if let ms { s += " (\(ms) ms)" }
+        if !ok { s += " failed" }
+        return s
+    }
+}
+
+public enum ServerMessage: Equatable, Sendable {
+    case ready(protocol: Int)
+    case accepted(taskID: String)
+    case event(taskID: String, kind: String, body: JSONValue)
+    case receipt(Receipt)
+    case evidence(EvidenceCard)
+    case pointer(taskID: String?, x: Double, y: Double, label: String?)
+    case transcript(taskID: String, role: String, text: String)
+    case error(message: String, taskID: String?)
+    case added(name: String, passages: Int)
+    case unknown(type: String)
+
+    public static func decode(_ text: String) throws -> ServerMessage {
+        let data = Data(text.utf8)
+        let v = try JSONDecoder().decode(JSONValue.self, from: data)
+        let type = v["type"]?.string ?? ""
+        let tid = v["task_id"]?.string
+        switch type {
+        case "ready":
+            return .ready(protocol: Int(v["protocol"]?.number ?? 1))
+        case "accepted":
+            return .accepted(taskID: tid ?? "")
+        case "event":
+            let body = v["event"] ?? .null
+            return .event(taskID: tid ?? "", kind: body["type"]?.string ?? "", body: body)
+        case "receipt":
+            return .receipt(try JSONDecoder().decode(Receipt.self, from: data))
+        case "evidence":
+            return .evidence(try JSONDecoder().decode(EvidenceCard.self, from: data))
+        case "pointer":
+            return .pointer(taskID: tid, x: v["x"]?.number ?? 0, y: v["y"]?.number ?? 0, label: v["label"]?.string)
+        case "transcript":
+            return .transcript(taskID: tid ?? "", role: v["role"]?.string ?? "", text: v["text"]?.string ?? "")
+        case "error":
+            return .error(message: v["message"]?.string ?? "error", taskID: tid)
+        case "added":
+            return .added(name: v["name"]?.string ?? "", passages: Int(v["passages"]?.number ?? 0))
+        default:
+            return .unknown(type: type)
+        }
+    }
+}
