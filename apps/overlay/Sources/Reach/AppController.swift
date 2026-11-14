@@ -27,6 +27,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     /// Cloud TTS request whose audio may still play (nil after Esc, a new hold, or the on-device fallback).
     private var ttsID: String?
     private var ttsSeq = 0
+    private let setup = SetupWindow()
+    private var menuBar: MenuBarItem?
+    private var pillMode = PillMode.load()
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -79,8 +82,21 @@ final class AppController: NSObject, NSApplicationDelegate {
             self?.expand(focus: false, why: "hand selection")
         }
         model.connect()
-        panel.orderFrontRegardless()  // the idle pill; never takes focus on launch
-        log("panel: pill at \(frameLine())")
+        if pillMode == .always { panel.orderFrontRegardless() }  // the idle pill; never takes focus on launch
+        log("panel: pill at \(frameLine()) (pill mode \(pillMode.rawValue))")
+        let bar = MenuBarItem(model: model)
+        bar.pillShown = { [weak self] in self?.panel.isVisible == true }
+        bar.onTogglePill = { [weak self] in self?.togglePillFromMenu() }
+        bar.onPillMode = { [weak self] m in self?.setPillMode(m) }
+        bar.onSetup = { [weak self] in self?.setup.open() }
+        menuBar = bar
+        // Open the checklist once per launch when a required permission is missing.
+        Task { @MainActor in
+            let s = await PermissionProbe.read(probeCapture: true)
+            let missing = PermissionRules.missingRequired(s)
+            log("setup: required missing: \(missing.isEmpty ? "none" : missing.map(\.rawValue).joined(separator: ", "))")
+            if !missing.isEmpty { self.setup.open() }
+        }
         idleTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.collapseIfIdle() }
         }
@@ -96,6 +112,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         guard let panel, let screen = panel.screen ?? NSScreen.main else { return }
         if !model.expanded, panel.frame.height < 64 { pillSize = panel.frame.size }   // not mid-animation
         let mouse = NSEvent.mouseLocation
+        if !pillMode.hoverSummons, !model.expanded { return }
         let hot = Hover.hotZone(anchor: anchor, pill: pillSize, screenTop: screen.frame.maxY)
         if Hover.keepZone(panel: panel.frame).contains(mouse), model.expanded { lastActivity = Date() }
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
@@ -228,6 +245,36 @@ final class AppController: NSObject, NSApplicationDelegate {
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty
         if busy { lastActivity = Date(); return }
         if model.expanded, Date().timeIntervalSince(lastActivity) > Self.collapseAfter { collapse(why: "idle") }
+        hidePillIfIdle()
+    }
+
+    /// Auto / Hidden: the collapsed pill leaves the screen once nothing is going on.
+    private func hidePillIfIdle() {
+        guard let panel, panel.isVisible else { return }
+        let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
+            || model.capturing || model.speaking || model.typing || panel.isKeyWindow || ptt.phase != .idle
+        guard !PillVisibility.shouldShow(mode: pillMode, expanded: model.expanded, busy: busy) else { return }
+        guard panel.frame.height < 64 else { return }   // wait for the fold animation to finish
+        panel.orderOut(nil)
+        log("panel: pill hidden (\(pillMode.rawValue))")
+    }
+
+    private func setPillMode(_ m: PillMode) {
+        pillMode = m
+        UserDefaults.standard.set(m.rawValue, forKey: PillMode.key)
+        log("panel: pill mode \(m.rawValue)")
+        if m == .always { panel.orderFrontRegardless() } else { hidePillIfIdle() }
+    }
+
+    private func togglePillFromMenu() {
+        if panel.isVisible {
+            collapse(why: "menu")
+            panel.orderOut(nil)
+        } else {
+            lastActivity = Date()
+            panel.orderFrontRegardless()
+            if pillMode != .always { expand(focus: false, why: "menu") }   // folds away again after ~8 s idle
+        }
     }
 
     func toggle() {
@@ -248,6 +295,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         if gesture.phase != .idle {
             _ = gesture.cancel()
             ready.hide(); halo.hide()
+            panel.level = .statusBar
             _ = model.beginCapture()   // a late capture from this hold is now stale
             model.capturing = false
             voiceCancel()
@@ -264,6 +312,8 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var key = TapOrHold()
 
     private func optionSpaceDown() {
+        lastActivity = Date()
+        if !panel.isVisible { panel.orderFrontRegardless() }   // the pill appears as soon as the key goes down
         let token = key.down(at: ProcessInfo.processInfo.systemUptime)
         DispatchQueue.main.asyncAfter(deadline: .now() + TapOrHold.threshold) { [weak self] in
             guard let self else { return }
@@ -303,6 +353,8 @@ final class AppController: NSObject, NSApplicationDelegate {
         model.dropCircle()
         log("hold \(h): listening, ready to circle")
         ready.show()
+        // While circling, the panel sits under the ready layer so it never covers a loop drawn under the notch.
+        panel.level = .floating
         panel.orderFrontRegardless()
         if voiceEsc.isEmpty {
             for mods in [0, Keys.option] {   // Option is still down during the hold
@@ -316,6 +368,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     func holdEnded() {
         gesture.released()
         ready.hide()
+        panel.level = .statusBar
         log("hold released")
         if ptt.phase == .listening { voiceRelease() }
         // no voice session (mic or speech refused, or still asking): a circle still opens the typing box
@@ -405,7 +458,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         case .retry: model.retryLast()
         case .startServer: model.connect()
         case .openScreenSettings:
-            NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")!)
+            PermissionProbe.askedScreenThisRun = true
+            NSWorkspace.shared.open(URL(string: PermissionKind.screenRecording.settingsURL)!)
+            setup.open()
+        case .relaunch:
+            PermissionProbe.relaunch()
         case .openMicSettings:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
         case .circle, .none: break
@@ -604,7 +661,9 @@ final class AppController: NSObject, NSApplicationDelegate {
     private func showPointer(x: Double, y: Double, label rawLabel: String?, byHand: Bool) {
         let label = PointerLabel.short(rawLabel)   // at most 30 characters
         let top = NSScreen.screens.first?.frame.maxY ?? 0
-        let size = NSSize(width: 160, height: 34)
+        // fit the label: dot 18 + gap 6 + capsule padding 12, up to ~220 pt
+        let textW = label.map { ($0 as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 11, weight: .medium)]).width } ?? 0
+        let size = NSSize(width: min(220, max(40, ceil(18 + 6 + textW + 12 + 8))), height: 34)
         let origin = NSPoint(x: x - 9, y: top - y - 9)
         if ghost == nil || ghostLabel != .some(label) {
             ghost?.orderOut(nil)
@@ -617,7 +676,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             w.contentView = NSHostingView(rootView: HStack(spacing: 6) {
                 Circle().fill(Palette.accent.opacity(0.85)).frame(width: 18, height: 18)
                     .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.5))
-                if let label { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white)
+                if let label { Text(label).font(.system(size: 11, weight: .medium)).foregroundStyle(.white).lineLimit(1)
                     .padding(.horizontal, 6).padding(.vertical, 2).background(Capsule().fill(.black.opacity(0.6))) }
                 Spacer(minLength: 0)
             })
@@ -625,7 +684,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             ghostLabel = .some(label)
         }
         guard let w = ghost else { return }
-        w.setFrameOrigin(origin)
+        w.setFrame(NSRect(origin: origin, size: size), display: false)
         NSAnimationContext.runAnimationGroup { ctx in ctx.duration = 0; w.animator().alphaValue = 1 }  // stops a fade
         w.orderFrontRegardless()
         ghostFade?.cancel()

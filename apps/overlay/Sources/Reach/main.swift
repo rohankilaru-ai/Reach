@@ -355,7 +355,26 @@ if args.contains("--replay") {
     client.connect(port: info.port, token: info.token)
 }
 
-if let sentence = argValue("--cloud-voice-selftest") {
+/// Headless permission status: reads only (no prompts, no ScreenCaptureKit), prints one line per permission, exits.
+@MainActor func runPermissionsSelftest() {
+    Task { @MainActor in
+        let s = await PermissionProbe.read(probeCapture: false)
+        for k in PermissionKind.allCases {
+            let st = s[k] ?? .notYet
+            let note = k == .screenRecording ? " (preflight only; the app also tries a 1x1 capture)" : ""
+            log("permissions selftest \(k.rawValue) [\(k.need.rawValue)]: \(st.rawValue)\(note)")
+        }
+        let missing = PermissionRules.missingRequired(s)
+        log("permissions selftest required missing: \(missing.isEmpty ? "none" : missing.map(\.rawValue).joined(separator: ", "))")
+        log("permissions selftest done")
+        exit(0)
+    }
+}
+
+if args.contains("--permissions-selftest") {
+    MainActor.assumeIsolated { runPermissionsSelftest() }
+    app.run()
+} else if let sentence = argValue("--cloud-voice-selftest") {
     MainActor.assumeIsolated { runCloudVoiceSelftest(sentence) }
     app.run()
 } else if args.contains("--hub-selftest") {

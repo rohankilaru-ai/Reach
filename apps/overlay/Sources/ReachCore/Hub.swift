@@ -330,19 +330,25 @@ public enum ProgressLine {
 
 /// What an end state says: one plain sentence and at most one action.
 public struct PlainState: Equatable, Sendable {
-    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer }
+    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer, relaunch }
     public var sentence: String
     public var action: Action
+    /// An optional second line under the sentence (how to fix it when the obvious fix did not work).
+    public var detail: String?
 
-    public init(sentence: String, action: Action) { self.sentence = sentence; self.action = action }
+    public init(sentence: String, action: Action, detail: String? = nil) {
+        self.sentence = sentence; self.action = action; self.detail = detail
+    }
 
     public var actionLabel: String? {
         switch action {
         case .none: return nil
         case .retry: return "Try again"
         case .circle: return "Hold Option-Space and circle it"
-        case .openScreenSettings, .openMicSettings: return "Open Settings"
+        case .openScreenSettings: return "Fix"
+        case .openMicSettings: return "Open Settings"
         case .startServer: return "Retry"
+        case .relaunch: return "Relaunch Reach"
         }
     }
 
@@ -361,7 +367,11 @@ public struct PlainState: Equatable, Sendable {
     /// Needs-you notes raised locally (permissions, no server).
     public static func of(note: String) -> PlainState {
         let n = note.lowercased()
-        if n.contains("screen recording") { return PlainState(sentence: "Reach needs Screen Recording to see what you circle.", action: .openScreenSettings) }
+        if n.contains("relaunch") { return PlainState(sentence: ScreenRecordingCheck.relaunchSentence, action: .relaunch) }
+        if n.contains("screen recording") {
+            return PlainState(sentence: ScreenRecordingCheck.missingSentence, action: .openScreenSettings,
+                              detail: ScreenRecordingCheck.missingHint)
+        }
         if n.contains("microphone") || n.contains("speech") { return PlainState(sentence: "Reach needs the microphone to hear you.", action: .openMicSettings) }
         if n.contains("reach serve") || n.contains("connection") || n.contains("server") || n.contains("token") {
             return PlainState(sentence: "Reach's helper isn't running.", action: .startServer)
