@@ -72,13 +72,16 @@ Held-out accuracy by tag (an item can carry several tags):
   (96.7%, Wilson 90.6 to 98.9%), qwen_label 83/90 (92.2%, 84.8 to 96.2%), qwen_probs 82/90 (91.1%, 83.4 to 95.4%).
   The intervals overlap. On paired items Drex was right where Qwen was wrong 6 times versus 1 the other way
   (sign test p = 0.125 vs qwen_probs), and 5 versus 1 against qwen_label (p = 0.22). That is a lead, not a win.
-- **Safety is the clearest difference.** Drex executed no wrong command (0/90) and abstained on all 19 gold-`uncertain`
-  items. Both Qwen variants acted on two gold-`uncertain` items: "wait" became `pause`, and "no don't open it" became
-  `cancel`; qwen_probs also routed "don't go down, I need the bit above" to `cancel` (gold `scroll_up`). The two
-  gold-`uncertain` labels are judgement calls. "wait" is labelled ambiguous between pause and cancel, and "no don't
-  open it" is labelled a negation with no positive instruction, so a reader could reasonably score Qwen's answers there
-  as acceptable. Every Drex miss is an abstention (top p 0.46 to 0.48, just under the 0.5 threshold), which is the
-  cheap failure.
+- **Wrong commands: Drex 0, Qwen 2 to 3. The difference is small, and most of it rests on two contested labels.** Both
+  Qwen variants acted on the same two gold-`uncertain` items: "wait" became `pause`, and "no don't open it" became
+  `cancel`. Those labels are judgement calls. "wait" is labelled ambiguous between pause and cancel, and "no don't open
+  it" is labelled a negation with no positive instruction, so a reader could reasonably accept Qwen's answers. The only
+  uncontested wrong command in the run is qwen_probs routing "don't go down, I need the bit above" to `cancel` (gold
+  `scroll_up`). Zero versus 2 or 3 wrong commands in 90 is not significant either (sign test p = 0.5 and 0.25). Every
+  Drex miss is an abstention (top p 0.46 to 0.48, just under the 0.5 threshold), which is the cheap failure.
+- **Sensitivity:** accepting any command on those two contested items gives Drex 87, qwen_label 85 (0 wrong) and
+  qwen_probs 84 (1 wrong). Paired counts then become 3 versus 1 against qwen_label (p = 0.625) and 4 versus 1 against
+  qwen_probs (p = 0.375).
 - **Over-abstention:** Drex 3/71 command items (4.2%), each Qwen variant 5/71 (7.0%). All three abstained on
   v2h35 (three-guess lip list for "continue") and on v2h50 ("not there, here", which gives no held item).
 - **Latency (client wall-clock, sequential, this machine):** Drex p50 265 ms / p95 405 ms; qwen_label p50 544 ms /
@@ -88,10 +91,10 @@ Held-out accuracy by tag (an item can carry several tags):
 - **Tokens / cost:** Drex held-out 43,384 in, 31,888 out (reported in tokens only; no price in the response).
   Qwen at DeepInfra list price on held-out: qwen_probs $0.0334, qwen_label $0.0096 (about $0.00011 per call). Total
   spend for this benchmark, dev + held-out, Qwen list price: $0.0574.
-- **This set is harder than v1 but not hard enough to rank the models.** The best model is at 96.7%. Of the planned
-  stressors, negation (Drex 7/8, qwen_probs 4/8, qwen_label 6/8) and lip lists with the answer missing separated the
-  models most. Next steps are real lip-reader and dictation output and more ambiguous or negated items, which would
-  need roughly 300+ items to separate a 4-point difference.
+- **This set is harder than v1 but not hard enough to rank the models.** The best model is at 96.7%. Of the tags,
+  only negation separated the models (Drex 7/8, qwen_probs 4/8, qwen_label 6/8); everything else is within one item.
+  The next step is real lip-reader and dictation output plus more negated and ambiguous items, on a set large enough
+  that a few points of difference produce enough discordant pairs for a sign test to resolve.
 
 ## Caveats
 
@@ -99,6 +102,10 @@ Held-out accuracy by tag (an item can carry several tags):
   session. The frozen prompt (commit `9588d1f`) was written before the items. A test checks that no content-word bigram
   is shared between the prompt and any item, and that no v2 input matches a v1 input exactly and no v2 input shares a
   content-word bigram with the v1 descriptions. That guards against copying; it does not prove independence.
+  Single content words do still overlap under the same gold label in three held-out items: v2h08 "opne the link"
+  (`open_this` description says "link"), v2h62 "ok continue to the next slide" and v2h63 "move on, following step"
+  (`next` description says "following", "slide", "step"). All three models saw the same prompt, so this does not
+  change the ranking, but those three items are easier than the rest.
 - Lip-reading items are simulated hypothesis lists; dictated items are typed strings standing in for speech-to-text.
 - The instructions state the gold policy: the final intent wins on self-correction, two different commands mean
   `uncertain`, and a lip list whose guesses split go to `uncertain`. Multi-intent accuracy measures following that
