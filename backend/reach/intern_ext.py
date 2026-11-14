@@ -87,4 +87,9 @@ class ReachTools(Extension):
     name: ClassVar[str] = "reach"
 
     def tools(self) -> list[Tool]:
-        return [ReachNow(), EvidenceSearch(), BrowserTask()]
+        from .tools.native import NoteAppend, OpenSource, ShelfToNote
+        from .tools.vision import SeeRegion
+
+        return [
+            ReachNow(), EvidenceSearch(), BrowserTask(), NoteAppend(), ShelfToNote(), OpenSource(), SeeRegion(),
+        ]
