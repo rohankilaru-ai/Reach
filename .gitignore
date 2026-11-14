@@ -2,7 +2,10 @@
 .env.*
 !.env.example
 __pycache__/
+*.pyc
 .venv/
+.pytest_cache/
+*.egg-info/
 node_modules/
 .intern-home/
 vendor/
@@ -11,3 +14,8 @@ vendor/
 # overlay build output
 apps/overlay/.build/
 apps/overlay/build/
+
+# finger processing local artifacts
+finger_processing/hand_landmarker.task
+finger_processing/calibration.json*
+finger_processing/*.jsonl
