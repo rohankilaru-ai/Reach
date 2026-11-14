@@ -19,3 +19,5 @@ apps/overlay/build/
 finger_processing/hand_landmarker.task
 finger_processing/calibration.json*
 finger_processing/*.jsonl
+.DS_Store
+**/.DS_Store
