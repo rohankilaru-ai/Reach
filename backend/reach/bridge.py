@@ -52,7 +52,12 @@ def prompt_for(ask: Ask, intent: Any = None) -> str:
     from . import evidence
     from . import intent as intent_mod
 
-    text = PERSONA + "\n\n" + ask.text
+    from . import convo
+
+    history = convo.history_text() if convo.decide(intent) else None  # Drex judged: continue or start fresh
+    text = PERSONA + "\n\n" + (
+        f"Conversation so far (the new message may refer to it):\n{history}\n\nNew message: " if history else ""
+    ) + ask.text
     if ask.selection and ask.selection.text:
         text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
     if ask.selection and ask.selection.image_path:
@@ -201,6 +206,10 @@ class InternBridge:
                     pass
         r = task.builder.receipt(aborted=task.aborted, error=error)
         r.intent = intent_mod.receipt_dict(it)
+        if not task.aborted and not error and r.final_text:
+            from . import convo
+
+            convo.add(task.ask.text, r.final_text, list(r.tools))
         return r
 
 

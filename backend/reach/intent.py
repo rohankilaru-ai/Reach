@@ -49,6 +49,11 @@ FLAGS: dict[str, str] = {
         "or paying, deleting or overwriting, submitting a form, posting publicly."
     ),
     "ambiguous": "The request is unclear enough that a careful assistant would ask what the user means first.",
+    "continues_previous": (
+        "The state includes a previous exchange. The user's new message refers back to it or only makes sense "
+        "with it: a follow-up, 'that', 'it', 'the same', 'again', 'also', 'and then', 'what about...'. It is NO if "
+        "the message stands on its own or starts a new topic, or when there is no previous exchange."
+    ),
 }
 
 # All thresholds in one place. Tuned on the `dev` split only (fixtures/intent/requests.jsonl); never on held_out.
@@ -209,6 +214,13 @@ def understand(text: str, selection_summary: str | None = None, has_documents: b
         return Intent(error="no Drex key")
     headers = {"Authorization": f"Bearer {key or ''}", "X-Nace-Client": "reach/1"}
     state = state_for(text, selection_summary, has_documents, has_image)
+    try:
+        from . import convo
+
+        prev = convo.previous_summary()
+        state += f"\nPrevious exchange: {prev}" if prev else "\nPrevious exchange: none"
+    except Exception:
+        pass
     try:
         resp = post(DREX_URL, headers, body(state), timeout)
     except Exception as e:
