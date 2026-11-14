@@ -70,6 +70,9 @@ class Server:
         self.relay = Relay()
         self.router = None  # S8a: commands.DrexRouter by default; tests inject a fake
         self._routed = 0
+        from .tools import guide
+
+        guide.set_emitter(self.relay.broadcast)  # point_at's step pointers go to overlay clients
 
     async def handle(self, ws) -> None:
         try:
@@ -104,6 +107,9 @@ class Server:
                     out.put_nowait(ErrorMsg(message=f"bad message: {e.errors()[0]['msg']}").model_dump_json())
                     continue
                 if isinstance(msg, Ask):
+                    from .tools import guide
+
+                    guide.cancel()  # a new ask stops any guide pointers still pending
                     ask, sel_from = self.relay.attach(msg)
                     task = self.Task(ask)
                     task.selection_source = "pinch" if sel_from and sel_from.startswith("pinch") else None
@@ -123,6 +129,9 @@ class Server:
                         targets = list(mine.values())
                     for task in targets:
                         task.abort()
+                    from .tools import guide
+
+                    guide.cancel(msg.task_id)  # the guide outlives its ask's run, so cancel by id (or all)
                 elif isinstance(msg, (Select, PointerIn)):
                     fn = self.relay.select if isinstance(msg, Select) else self.relay.pointer
                     if err := fn(key, role, msg):

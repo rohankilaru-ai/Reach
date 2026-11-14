@@ -53,7 +53,9 @@ def prompt_for(ask: Ask, intent: Any = None) -> str:
         text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
     if ask.selection and ask.selection.image_path:
         text += (f"\n\nThe user selected a screen region, saved at {ask.selection.image_path}. To answer about what "
-                 f"is in it, call see_region with that image_path and the question.")
+                 f"is in it, call see_region with that image_path and the question. To show where to click or type, or how to "
+                 f"fill it in or use it, call point_at directly instead (it looks at the image itself and moves an "
+                 f"on-screen pointer; it never clicks), then explain the steps in words.")
     text += "\n\n" + NOTES_HINT
     try:
         if evidence.has_documents():
@@ -119,6 +121,9 @@ class Task:
 
     def abort(self) -> None:
         self.aborted = True
+        from .tools import guide
+
+        guide.cancel(self.id)
         if self.session is not None:
             try:
                 self.session.abort()
@@ -156,6 +161,9 @@ class InternBridge:
         error = None
         it = None
         CURRENT_TASK.set(task.id)
+        from .tools.guide import CURRENT_SELECTION
+
+        CURRENT_SELECTION.set(task.ask.selection)  # point_at uses this selection's image and region together
         try:
             t_intent = time.monotonic()
             fut = intent_mod.start(task.ask)  # Drex understands the ask while the Intern session starts
