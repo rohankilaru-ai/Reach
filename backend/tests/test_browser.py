@@ -153,3 +153,13 @@ def test_browser_outcome_and_write_outcome_coexist():
     r = b.receipt()
     assert r.status == "ok" and r.outcome == "done" and r.write_outcome == "verified"
     assert r.tools == ["browser_task", "note_append"]
+
+
+def test_browser_window_is_visible_by_default(monkeypatch, tmp_path):
+    from reach.tools import browser
+
+    monkeypatch.delenv("REACH_BROWSER_HEADED", raising=False)
+    assert "--headed" in browser.command("t", "https://example.com", tmp_path)
+    monkeypatch.setenv("REACH_BROWSER_HEADED", "0")
+    assert "--headed" not in browser.command("t", "https://example.com", tmp_path)
+    assert "--allow-risky" not in browser.command("t", "https://example.com", tmp_path)
