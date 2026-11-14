@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import Ask, Evidence, Receipt
-from .ledger import ReceiptBuilder, append_drex
+from .ledger import CURRENT_TASK, ReceiptBuilder, append_drex
 from .paths import REPO_ROOT, drex_log
 
 SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3.8-27B")
@@ -28,12 +28,22 @@ EVIDENCE_HINT = (
 )
 
 
+NOTES_HINT = (
+    "To put anything in the user's notes use note_append (or shelf_to_note for evidence ids) only, never a file or "
+    "shell tool, and report the outcome it returns (verified, unverified or failed) truthfully."
+)
+
+
 def prompt_for(ask: Ask) -> str:
     from . import evidence
 
     text = ask.text
     if ask.selection and ask.selection.text:
         text = f"{text}\n\nSelected text:\n<<<\n{ask.selection.text}\n>>>"
+    if ask.selection and ask.selection.image_path:
+        text += (f"\n\nThe user selected a screen region, saved at {ask.selection.image_path}. To answer about what "
+                 f"is in it, call see_region with that image_path and the question.")
+    text += "\n\n" + NOTES_HINT
     try:
         if evidence.has_documents():
             text += "\n\n" + EVIDENCE_HINT
@@ -115,6 +125,7 @@ class InternBridge:
             sink(task.id, data)
 
         error = None
+        CURRENT_TASK.set(task.id)
         try:
             task.session = await self.bootstrap.session(emit)
             if task.aborted:

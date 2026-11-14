@@ -4,10 +4,29 @@ from __future__ import annotations
 
 import json
 import time
+from contextvars import ContextVar
 from pathlib import Path
 from typing import Any
 
 from .contracts import LEDGER_TYPES, Receipt
+
+WRITE_TOOLS = frozenset({"note_append", "shelf_to_note"})
+
+
+def parse_outcome(content: str) -> str | None:
+    """The verdict a native write tool put on its first line (`outcome=verified ...`)."""
+    import re
+
+    m = re.match(r"outcome=(verified|unverified|failed)\b", content or "")
+    return m.group(1) if m else None
+
+
+def worst(outcomes: list[str]) -> str | None:
+    """Worst wins across a task's writes: failed > unverified > verified; None when nothing was written."""
+    for o in ("failed", "unverified", "verified"):
+        if o in outcomes:
+            return o
+    return None
 
 
 def append_drex(path: Path, event: dict[str, Any], task_id: str) -> bool:
@@ -26,6 +45,25 @@ def append_ndi(path: Path, task_id: str, op: str, **fields: Any) -> None:
     entry = {"task_id": task_id, "type": "ndi", "op": op, "timestamp": int(time.time() * 1000), **fields}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
+
+
+CURRENT_TASK: ContextVar[str] = ContextVar("reach_task", default="-")
+"""Set by the bridge for each run, so tools can log under the task id."""
+
+
+def append_tool_entry(kind: str, path: Path | None = None, **fields: Any) -> None:
+    """Log one native action or vision call (type `action` / `vision`) next to the Drex decisions."""
+    from .paths import drex_log
+
+    path = path or drex_log()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"task_id": CURRENT_TASK.get(), "type": kind, "timestamp": int(time.time() * 1000), **fields}
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def append_action(**fields: Any) -> None:
+    append_tool_entry("action", **fields)
 
 
 def count_ndi(path: Path, task_id: str | None = None) -> int:
@@ -87,6 +125,14 @@ def format_log_line(entry: dict[str, Any]) -> str:
         else:
             what = f"found {entry.get('found', '-')}/{entry.get('targets', '?')}"
         return f"{ts} ndi       {entry.get('op', '?'):<14} {what:<32} {ok:<7} units={entry.get('units', '-')}"
+    if kind == "action":
+        what = f"{entry.get('destination', '?')} {entry.get('chars', 0)} chars"
+        return f"{ts} action    {entry.get('tool', '?'):<14} {what:<32} {entry.get('outcome', '?')}"
+    if kind == "vision":
+        ok = "FAILED " + str(entry.get("error")) if entry.get("ok") is False else "ok"
+        cost = entry.get("cost_usd")
+        c = f"${cost:.4f}" if isinstance(cost, (int, float)) else "$-"
+        return f"{ts} vision    {entry.get('model', '?')[-14:]:<14} {str(entry.get('ms', '-')) + ' ms':<32} {ok:<7} {c}"
     return f"{ts} {kind}"
 
 
@@ -102,11 +148,15 @@ class ReceiptBuilder:
         self.system1_cost = 0.0
         self.run_end: dict[str, Any] | None = None
         self.text: list[str] = []
+        self.outcomes: list[str] = []
 
     def feed(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
         if kind == "tool_call_end":
             (self.refused if event.get("status") == "refused" else self.tools).append(event.get("name", "?"))
+            if event.get("name") in WRITE_TOOLS:
+                o = parse_outcome(event.get("content", "")) if event.get("status") != "refused" else "failed"
+                self.outcomes.append(o or "unverified")
         # tool_guard is not counted: the refused call also ends with tool_call_end(status=refused)
         elif kind == "decision":
             self.decisions += 1
@@ -135,4 +185,5 @@ class ReceiptBuilder:
             est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost, 6),
             duration_ms=int(duration),
             final_text=end.get("final_text") or "".join(self.text),
+            outcome=worst(self.outcomes),
         )

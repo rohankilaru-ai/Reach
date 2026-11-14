@@ -99,6 +99,10 @@ class Receipt(BaseModel):
     duration_ms: int
     final_text: str = ""
     ndi_calls: int = Field(default=0, description="NDI calls (parse/ground) made for this task")
+    outcome: str | None = Field(
+        default=None,
+        description="Computed from readbacks of native writes: verified, unverified or failed; None when nothing was written",
+    )
 
 
 class Evidence(BaseModel):
