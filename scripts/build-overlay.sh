@@ -31,5 +31,6 @@ cat > "$APP/Contents/Info.plist" <<PLIST
 PLIST
 # Ad-hoc signed without the hardened runtime, so the microphone needs no audio-input entitlement (that entitlement
 # is only enforced under the hardened runtime or the App Sandbox).
-codesign --force -s - "$APP"
+# Set REACH_SIGN_IDENTITY to a code-signing identity name so macOS keeps your permission grants across rebuilds; ad hoc otherwise.
+codesign --force -s "${REACH_SIGN_IDENTITY:--}" "$APP"
 echo "built $APP"
