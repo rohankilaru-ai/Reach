@@ -19,7 +19,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from ..paths import REPO_ROOT, reach_dir
+from ..paths import REPO_ROOT, reach_dir, run_dir
 
 DEFAULT_MODEL = "Qwen/Qwen3-VL-235B-A22B-Instruct"
 MAX_COST_USD = "0.10"
@@ -146,6 +146,84 @@ async def kill_tree(proc: asyncio.subprocess.Process) -> None:
         await asyncio.wait_for(proc.wait(), 1.0)
 
 
+# ---- live children, so `reach stop` (another process) can end them too ----
+
+HARNESS_KEYS = ("NACE_API_KEY", "DREX_API_KEY", "DEEPINFRA_API_KEY")
+_SECRETISH = re.compile(r"KEY|TOKEN|SECRET|PASSWORD|CREDENTIAL|AUTH", re.I)
+
+
+def child_env(env: dict[str, str] | None = None) -> dict[str, str]:
+    """The parent's env minus secret-looking variables, except the keys the harness needs."""
+    env = dict(os.environ if env is None else env)
+    return {k: v for k, v in env.items() if k in HARNESS_KEYS or not _SECRETISH.search(k)}
+
+
+def children_file() -> Path:
+    return run_dir() / "browser_children.json"
+
+
+def _read_children() -> list[int]:
+    try:
+        return [int(p) for p in json.loads(children_file().read_text())]
+    except (OSError, ValueError, TypeError):
+        return []
+
+
+def _write_children(pids: list[int]) -> None:
+    with contextlib.suppress(OSError):
+        children_file().parent.mkdir(parents=True, exist_ok=True)
+        children_file().write_text(json.dumps(sorted(set(pids))))
+
+
+def register_child(pid: int) -> None:
+    _write_children([*_read_children(), pid])
+
+
+def unregister_child(pid: int) -> None:
+    _write_children([p for p in _read_children() if p != pid])
+
+
+def clear_children() -> None:
+    with contextlib.suppress(OSError):
+        children_file().unlink()
+
+
+def _alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def kill_children(pids: list[int] | None = None, grace_s: float = KILL_GRACE_S) -> list[int]:
+    """SIGTERM each registered harness group and its descendants, SIGKILL what is left after `grace_s`.
+
+    Only a pid that still leads its own process group (how run_task starts it) is signalled, and never our own
+    group, so a recycled pid is not hit. Returns the pids signalled."""
+    pids = _read_children() if pids is None else pids
+    own = os.getpgrp()
+    targets: dict[int, list[int]] = {}
+    for pid in pids:
+        try:
+            if os.getpgid(pid) != pid or pid == own:
+                continue
+        except (ProcessLookupError, PermissionError):
+            continue
+        targets[pid] = _descendants(pid)
+    for pid, desc in targets.items():
+        _signal_all(pid, desc, signal.SIGTERM)
+    deadline = time.monotonic() + grace_s
+    while time.monotonic() < deadline and any(_alive(p) for p in targets):
+        time.sleep(0.05)
+    for pid, desc in targets.items():
+        _signal_all(pid, sorted(set(desc) | set(_descendants(pid))), signal.SIGKILL)
+    _write_children([p for p in _read_children() if p not in targets])
+    return list(targets)
+
+
 async def run_task(task: str, start_url: str, abort: asyncio.Event | None = None,
                    cmd: list[str] | None = None) -> dict[str, Any]:
     """Run one harness task; returns the summary. Abort (the event) kills the child tree at once."""
@@ -154,8 +232,9 @@ async def run_task(task: str, start_url: str, abort: asyncio.Event | None = None
     argv = cmd or command(task, start_url, out_dir)
     proc = await asyncio.create_subprocess_exec(
         *argv, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.DEVNULL,
-        stdin=asyncio.subprocess.DEVNULL, start_new_session=True,
+        stdin=asyncio.subprocess.DEVNULL, start_new_session=True, env=child_env(),
     )
+    register_child(proc.pid)
     reader = asyncio.create_task(proc.stdout.read())  # type: ignore[union-attr]
     waiters = {reader}
     stopper = asyncio.create_task(abort.wait()) if abort is not None else None
@@ -183,3 +262,4 @@ async def run_task(task: str, start_url: str, abort: asyncio.Event | None = None
             stopper.cancel()
         if proc.returncode is None:
             await kill_tree(proc)
+        unregister_child(proc.pid)
