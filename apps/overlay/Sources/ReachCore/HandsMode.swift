@@ -41,7 +41,10 @@ public enum HandsMode {
     /// "Reach, hands mode on" / "Reach, hands mode off" -> true / false; anything else -> nil.
     public static func phrase(_ text: String) -> Bool? {
         let t = text.lowercased().filter { $0.isLetter || $0 == " " }.split(separator: " ").joined(separator: " ")
-        guard t.hasPrefix("reach "), t.contains("hands mode") || t.contains("hand mode") else { return nil }
+        // the wake word may already be stripped ("hands mode on"); either form is a local switch
+        let body = t.hasPrefix("reach ") ? String(t.dropFirst(6)) : t
+        guard body.hasPrefix("hands mode") || body.hasPrefix("hand mode") || body.hasPrefix("turn hands mode")
+        else { return nil }
         if t.hasSuffix(" on") { return true }
         if t.hasSuffix(" off") { return false }
         return nil

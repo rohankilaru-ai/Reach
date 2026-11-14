@@ -151,8 +151,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
             || model.capturing || model.speaking || lens.isOpen || model.capturing
             || gesture.phase != .idle || NSEvent.pressedMouseButtons != 0 || panel.isKeyWindow
+        // opening needs a deliberate rest at the very top edge (never a pass toward the browser's tab bar)
+        let dwell = Hover.dwellZone(centerX: anchor.x, screenTop: screen.frame.maxY)
         switch hover.update(mouse: mouse, now: ProcessInfo.processInfo.systemUptime, expanded: model.expanded, hot: hot,
-                            panel: panel.frame, busy: busy) {
+                            panel: panel.frame, busy: busy, dwellZone: dwell,
+                            buttonsDown: NSEvent.pressedMouseButtons != 0 || gesture.phase != .idle) {
         case .expand: expand(focus: false, why: "hover", byHover: true)
         case .collapse: collapse(why: "hover away")
         case .none: break

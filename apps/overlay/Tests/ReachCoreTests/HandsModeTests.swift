@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 import Testing
 @testable import ReachCore
@@ -44,7 +45,8 @@ import Testing
     @Test func spokenPhrase() {
         #expect(HandsMode.phrase("Reach, hands mode on") == true)
         #expect(HandsMode.phrase("Reach, hands mode off.") == false)
-        #expect(HandsMode.phrase("turn hands mode on") == nil)
+        #expect(HandsMode.phrase("hands mode on") == true)          // wake word already stripped
+        #expect(HandsMode.phrase("what does hands mode on do") == nil)
         #expect(HandsMode.phrase("Reach, what is hands mode") == nil)
     }
 }
@@ -76,5 +78,51 @@ import Testing
         #expect(line == "Checked by Drex · opened a Chrome tab · looked at your screen · 5 s")
         for bad in ["tok", "$", "ms", "noul", "supervise", "wrap_up", "completed"] { #expect(!line.contains(bad)) }
         #expect(ReceiptSummary.line(receipt(asks: 0, tools: nil, ms: 200)) == "1 s")
+    }
+}
+
+@Suite struct HoverDwellTests {
+    let zone = Hover.dwellZone(centerX: 756, screenTop: 982)
+    let hot = CGRect(x: 600, y: 900, width: 300, height: 82)
+    let panel = CGRect(x: 500, y: 600, width: 500, height: 300)
+
+    @Test func zoneIsNarrowTopStrip() {
+        #expect(zone.width == 180 && zone.height == 4 && zone.maxY == 982)
+    }
+
+    @Test func quickPassDoesNothingRestOpens() {
+        var t = Hover.Tracker()
+        // a quick pass: moving through the strip
+        for (i, x) in stride(from: 660.0, through: 850.0, by: 20).enumerated() {
+            #expect(t.update(mouse: CGPoint(x: x, y: 980), now: Double(i) * 0.05, expanded: false, hot: hot, panel: panel,
+                             busy: false, dwellZone: zone) == .none)
+        }
+        // pass toward the tab bar below the strip: never counts
+        #expect(t.update(mouse: CGPoint(x: 756, y: 960), now: 2, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .none)
+        #expect(t.update(mouse: CGPoint(x: 756, y: 960), now: 3, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .none)
+        // a still rest of 0.7 s opens
+        let p = CGPoint(x: 756, y: 980)
+        #expect(t.update(mouse: p, now: 4, expanded: false, hot: hot, panel: panel, busy: false, dwellZone: zone) == .none)
+        #expect(t.update(mouse: CGPoint(x: 757, y: 980), now: 4.5, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .none)
+        #expect(t.update(mouse: CGPoint(x: 757, y: 980), now: 4.71, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .expand)
+    }
+
+    @Test func buttonDownOrMovementRestarts() {
+        var t = Hover.Tracker()
+        let p = CGPoint(x: 756, y: 980)
+        _ = t.update(mouse: p, now: 0, expanded: false, hot: hot, panel: panel, busy: false, dwellZone: zone)
+        #expect(t.update(mouse: p, now: 0.8, expanded: false, hot: hot, panel: panel, busy: false, dwellZone: zone,
+                         buttonsDown: true) == .none)
+        _ = t.update(mouse: p, now: 0.9, expanded: false, hot: hot, panel: panel, busy: false, dwellZone: zone)
+        #expect(t.update(mouse: CGPoint(x: 770, y: 980), now: 1.5, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .none)   // moved 14 pt: restart
+        #expect(t.update(mouse: CGPoint(x: 770, y: 980), now: 2.0, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .none)
+        #expect(t.update(mouse: CGPoint(x: 770, y: 980), now: 2.21, expanded: false, hot: hot, panel: panel, busy: false,
+                         dwellZone: zone) == .expand)
     }
 }

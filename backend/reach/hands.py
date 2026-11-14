@@ -90,11 +90,11 @@ def _watch(proc: subprocess.Popen, log=None) -> None:
             st = parse_state_line(raw.decode(errors="replace") if isinstance(raw, bytes) else raw)
             new = phase_of(st) if st else None
             now = time.monotonic()
-            if new and new != phase and now - last_emit >= MIN_PHASE_GAP and proc.pid not in _stopping:
-                phase, last_emit = new, now
+            if new and new != phase and proc.pid not in _stopping:
+                if (gap := MIN_PHASE_GAP - (now - last_emit)) > 0:
+                    time.sleep(gap)   # throttle without dropping the latest state (a quick pinch must not stick)
+                phase, last_emit = new, time.monotonic()
                 _announce({"on": True, "pid": proc.pid, "phase": phase})
-            elif new:
-                phase = new
     code = proc.wait()
     if log is not None:
         try:
@@ -157,10 +157,13 @@ def start(preview: bool = False) -> dict:
     run_dir().mkdir(parents=True, exist_ok=True)
     log = open(run_dir() / "hands.log", "ab")
     cmd = command() + ([] if preview else ["--no-preview"])
-    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+    # Only the server (which set an emitter) reads the child's state lines; the one-shot CLI must not pipe, or the
+    # child would die on a closed pipe once `reach hands on` returns.
+    piped = _emit is not None
+    proc = subprocess.Popen(cmd, cwd=REPO_ROOT, stdout=subprocess.PIPE if piped else log, stderr=subprocess.STDOUT,
                             start_new_session=True, env={**os.environ, "PYTHONUNBUFFERED": "1"})
     pidfile().write_text(str(proc.pid))
-    threading.Thread(target=_watch, args=(proc, log), name="hands-watch", daemon=True).start()
+    threading.Thread(target=_watch, args=(proc, log if piped else None), name="hands-watch", daemon=True).start()
     st = {"on": True, "pid": proc.pid}
     _announce({**st, "reason": "started"})
     return st

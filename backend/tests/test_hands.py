@@ -131,7 +131,7 @@ def test_watcher_broadcasts_phases_from_child_stdout(fake_child, monkeypatch):
     import threading
 
     script = "import time\nfor s in ['waiting for hand','point to move','dragging','open palm · hold to leave']:\n" \
-             "    print('[hands] '+s, flush=True); time.sleep(0.15)\n"
+             "    print('[hands] '+s, flush=True); time.sleep(0.02)\n"
     monkeypatch.setattr(hands, "command", lambda: [__import__("sys").executable, "-c", script])
     seen: list[dict] = []
     done = threading.Event()
