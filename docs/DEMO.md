@@ -28,7 +28,9 @@ Do these once, then run every step below one time as a warm-up.
      `uv run reach ask "Go to books.toscrape.com, click the Travel category link in the sidebar, then report the title of the first book listed"`
    - Tab B, in `backend/`: `uv run --extra do python ../smoke/do_mode_gate.py`
    - Tab C, in `perception/`: `uv run python -m reach_perception.worker`
-10. Open in an editor, ready to show as fallbacks: `docs/evidence/receipt.json`, `docs/evidence/browser-run.json`,
+10. A text file open with every prompt below, one per line, to paste instead of typing (the limits leave no time
+    for typing long prompts).
+11. Open in an editor, ready to show as fallbacks: `docs/evidence/receipt.json`, `docs/evidence/browser-run.json`,
     `docs/evidence/auto-screen.md`, `docs/evidence/do-mode.md`, and slide 5 of the deck (the Drex log).
 
 Not rehearsed in the evidence: running the browser task in the background while other asks run (step 1 below starts
@@ -73,7 +75,7 @@ step 9.
 
 - **Do:** Hold **Option-Space**, draw a loop with the mouse around the chart or paragraph, and while holding say:
   "Explain this in two sentences." Release.
-- **Say (while it works):** "The loop and my words go out as one ask. The circled area goes to Qwen3-VL on DeepInfra.
+- **Say (while it works):** "Voice is still experimental. The loop and my words go out as one ask. The circled area goes to Qwen3-VL on DeepInfra.
   Treat the answer as a second opinion: vision models misread dense images."
 - **Expect:** a short explanation in the panel within about 10 to 30 seconds.
 - **Fallback (voice not heard):** the panel opens with the circle attached and a text field; type
@@ -124,14 +126,16 @@ step 9.
 
 - **Do:** Tap **Option-Space**, type `Add "Drexathon demo, buy oat milk" to my notes`, press Return.
 - **Say:** "Reach writes the note, then reads the file back. It says done only when the readback matches."
-- **Expect:** "Added, verified" in about 4 seconds. Then open `~/Documents/Reach Notes.md` and show the last line.
+- **Expect:** "Added, verified" in about 4 seconds. Then, in a terminal, `tail -n 1 ~/Documents/"Reach Notes.md"`
+  to show only the new line (do not open the whole notes file on the projector).
 - **Fallback (panel says Failed or Unverified):** say "That is the point: a write it could not confirm is never shown
   as done." Move on.
 - **Evidence:** `docs/evidence/latency-after.md` (`note_append` ok and verified 3 of 3, median 3.7 s).
 
 ### 8. Chrome tab (2:25)
 
-- **Do:** Hold **Option-Space** and say: "Open a Chrome tab on water scarcity." Release. (Or tap and type it.)
+- **Do:** Hold **Option-Space** and say: "Open a Chrome tab on water scarcity." Release. Voice is experimental; if you
+  want the safe path, tap and paste the same sentence instead.
 - **Say:** "This opens a new tab in my own Chrome through Chrome's scripting interface, then reads Chrome back to
   confirm the tab exists. It never navigates, reloads or closes a tab it did not open."
 - **Expect:** a new Chrome tab with a search, in about 7 seconds.
@@ -166,8 +170,8 @@ step 9.
 ### 11. The Drex log (3:35)
 
 - **Do:** In a terminal, in `backend/`: `uv run reach log -n 30`.
-- **Say:** "Every decision Drex Max made in the last four minutes. `intent` before each ask, `guard` before each tool
-  call, `supervise` and `wrap_up` each turn, and the `action` lines with verified outcomes. Each line has a
+- **Say:** "The latest decisions Drex Max made during this demo. `intent` before each ask, `guard` before guarded
+  tool calls, `supervise` and `wrap_up` on turns, and the `action` lines with verified outcomes. Each line has a
   probability. Drex Max never wrote a word of the answers; it decided, Intern ran it, and Reach checked the result."
 - **Point at:** one `intent` line (the kind and its probability), one `guard` line (`risk=routine`), one `action` line
   ending `verified`.
