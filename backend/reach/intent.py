@@ -70,7 +70,9 @@ TOOL_FAMILY: dict[str, str] = {
         "for a web SEARCH use chrome_open_url with https://www.google.com/search?q=<url-encoded query> in the user's "
         "own Chrome (their signed-in browser is not bot-checked), then see_screen to read the results; use "
         "browser_task for navigating or filling forms on ordinary sites (search engines show it a CAPTCHA); for email "
-        "use email_draft, which opens a Gmail draft and never sends"
+        "use email_draft, which opens a Gmail draft and never sends. If you have browser_in_chrome, prefer it for "
+        "tasks on signed-in sites (YouTube, Gmail, anything the user uses) and for searches; keep browser_task for "
+        "anonymous public sites"
     ),
     "write_to_notes": (
         "use note_append (or shelf_to_note for evidence ids); to copy text so the user can paste it use "
