@@ -8,17 +8,24 @@ Native macOS panel for Reach (SwiftPM, AppKit + SwiftUI, macOS 14+). It speaks o
   hold, a hand selection or an incoming answer, and folds back after about 8 s idle (never while an ask runs, while
   listening, or with text in the field). Drag it anywhere; the spot is remembered per display. Double-click the pill
   or the panel header to snap back under the notch. It never takes focus except when you summon it to type.
-- **Option-Space** expands the pill (or folds the panel back). Type a question, press Return.
-- **Option-Shift-Space** drags a rectangle on screen. Reach draws a halo around it, saves a PNG to
-  `.reach/captures/`, reads its text locally with Vision, and sends it as `selection` with the next ask.
-- **Control-Option-Space (hold)** talks: key down starts listening, the live partial transcript fills the text
-  field, key up stops and sends the final transcript as an ordinary `ask` (the same path as typing). A
-  `heard: …` line stays under the field so mistakes are obvious. An empty transcript, or one whose average segment
-  confidence is below 0.4, is not sent and the panel says `didn't catch that`; so is a partial when no final
-  transcript arrives within 2 s of key up (the log says so).
+One key, **Option-Space**. The panel's hint line says it: "Tap Option-Space to type, hold to talk, or circle
+something."
+
+- **Tap** (under 0.25 s) opens the panel to type, or folds it back. Type a question, press Return.
+- **Hold** talks: listening starts once the key has been held 0.25 s, the live partial transcript fills the text
+  field, and releasing sends the final transcript as an ordinary `ask` (the same path as typing). A `heard: …` line
+  stays under the field so mistakes are obvious. An empty transcript, or one whose average segment confidence is
+  below 0.4, is not sent and the panel says `didn't catch that`; so is a partial when no final transcript arrives
+  within 2 s of release (the log says so).
+- **Circle** (the lasso button in the panel): a transparent layer covers the screen and you draw a freehand loop
+  around anything with your mouse. The stroke glows as you draw and closes itself on release, then a halo traces the
+  loop. Reach captures the loop's bounding box, masks everything outside the loop (transparent), saves the PNG to
+  `.reach/captures/circle-<ts>.png`, reads its text locally with Vision, and sends `selection {text, image_path,
+  region, path}` with the next ask (`path` is the simplified loop, at most 64 points, screen points with a top-left
+  origin). Strokes under 40 pt across are ignored with "draw a bigger circle". Esc cancels.
   Recognition runs on this Mac (`requiresOnDeviceRecognition`); only if on-device speech is unavailable does it
   fall back to Apple's server, and the panel says so while listening. Audio is held in memory, never saved.
-- **Esc** cancels listening, aborts a running ask, and hides the panel when idle.
+- **Esc** cancels a circle or listening, aborts a running ask, and folds the panel back when idle.
 - The panel shows the state (idle, working, needs you, done, failed), streamed text, evidence cards (click opens
   the PDF, at the page in Safari when a page is known), the receipt line and the last three Drex decisions.
 
@@ -40,6 +47,7 @@ line, a thumbnail when there is an image, and a clear button. It is used by the 
 `pointer` messages move the ghost pointer, which fades 1 s after the last one. Real-hand use is untested; the gate is
 `uv run --project backend python smoke/pinch_relay_gate.py --overlay apps/overlay/build/Reach.app/Contents/MacOS/Reach`.
 `--panel-selftest` shows pill -> panel -> pill and logs each frame (real windows, no input events).
+`--lasso-selftest` runs the circle state machine and the tap/hold key logic on synthetic strokes (no windows).
 
 ## Key-free check
 
@@ -71,6 +79,6 @@ says so and typed asks still work. Hotkeys use Carbon `RegisterEventHotKey` and 
 Each ad-hoc re-sign can reset the Screen Recording grant.
 
 Voice needs **Microphone** and **Speech Recognition** for Reach. macOS asks on the first hold of
-Control-Option-Space (never at launch); if either is refused the panel says which one to allow. The bundle is signed
+Option-Space (never at launch); if either is refused the panel says which one to allow. The bundle is signed
 ad hoc without the hardened runtime, so no `com.apple.security.device.audio-input` entitlement is needed
 (`codesign -d --entitlements - apps/overlay/build/Reach.app` shows none); add it if the runtime is ever enabled.

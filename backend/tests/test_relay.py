@@ -60,8 +60,10 @@ def test_select_and_pointer_relay_to_overlays_only(monkeypatch, tmp_path):
         img = rd / "selection-1.png"
         img.write_bytes(b"png")
         await cam.send(json.dumps({"type": "select", "selection": {
-            "text": "line one\nline two", "region": [10, 20, 300, 40], "image_path": str(img)}}))
+            "text": "line one\nline two", "region": [10, 20, 300, 40], "image_path": str(img),
+            "path": [[10, 20], [310, 20], [160, 60]]}}))
         m = await _next(ov, "selection")
+        assert m["selection"]["path"] == [[10, 20], [310, 20], [160, 60]]
         assert m["selection"]["text"].startswith("line one") and m["selection"]["source"] == "pinch"
         outbound_adapter.validate_python(m)
         await cam.send(json.dumps({"type": "pointer", "x": 100.5, "y": 200, "state": "pinch"}))
@@ -87,6 +89,8 @@ def test_bad_select_and_pointer_are_rejected(monkeypatch, tmp_path):
         assert (await _next(cam, "error"))["type"] == "error"
         await cam.send('{"type": "pointer", "x": Infinity, "y": 1}')
         assert "bad message" in (await _next(cam, "error"))["message"]
+        await cam.send(json.dumps({"type": "select", "selection": {"region": [0, 0, 5, 1], "path": [[1, 2, 3]]}}))
+        assert "path must be" in (await _next(cam, "error"))["message"]
         await cam.send(json.dumps({"type": "select", "selection": {"region": [0, 0, -5, 1]}}))
         assert "width/height" in (await _next(cam, "error"))["message"]
         assert await _nothing(ov)

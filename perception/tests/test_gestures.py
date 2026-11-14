@@ -255,3 +255,15 @@ def test_run_exits_cleanly_after_consecutive_frame_failures(monkeypatch, capsys)
     assert worker.run(no_preview=False, no_ocr=True) == 3
     assert len(keys) == 4  # keys were polled on failed frames before exit
     assert "camera stopped" in capsys.readouterr().out
+def test_loop_path_simplifies_and_rejects_tiny():
+    import math
+
+    from reach_perception.screen_map import loop_path, path_bbox
+
+    circle = [(500 + 100 * math.cos(a / 200 * 2 * math.pi), 400 + 100 * math.sin(a / 200 * 2 * math.pi)) for a in range(200)]
+    p = loop_path(circle)
+    assert p is not None and 8 <= len(p) <= 64
+    x, y, w, h = path_bbox(p)
+    assert abs(w - 200) < 5 and abs(h - 200) < 5 and abs(x - 400) < 3
+    assert loop_path([(0, 0), (10, 5), (20, 0), (5, 15)]) is None  # tiny: rect fallback
+    assert loop_path([(0, 0), (1, 1)]) is None

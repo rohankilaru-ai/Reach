@@ -130,3 +130,47 @@ def box_around(p: tuple[float, float], sw: float, sh: float, w: float = 480, h: 
     x = min(max(p[0] - w / 2, 0), max(sw - w, 0))
     y = min(max(p[1] - h / 2, 0), max(sh - h, 0))
     return [round(x), round(y), round(min(w, sw)), round(min(h, sh))]
+
+
+MIN_LOOP = 40.0  # points: a loop smaller than this on both sides falls back to the rect
+MAX_PATH = 64
+
+
+def _rdp(pts: list[tuple[float, float]], eps: float) -> list[tuple[float, float]]:
+    if len(pts) < 3:
+        return pts
+    (ax, ay), (bx, by) = pts[0], pts[-1]
+    dx, dy = bx - ax, by - ay
+    n = (dx * dx + dy * dy) ** 0.5
+    best, idx = -1.0, 0
+    for i in range(1, len(pts) - 1):
+        px, py = pts[i]
+        d = abs(dy * px - dx * py + bx * ay - by * ax) / n if n else ((px - ax) ** 2 + (py - ay) ** 2) ** 0.5
+        if d > best:
+            best, idx = d, i
+    if best <= eps:
+        return [pts[0], pts[-1]]
+    return _rdp(pts[: idx + 1], eps)[:-1] + _rdp(pts[idx:], eps)
+
+
+def loop_path(screen_pts: list[tuple[float, float]]) -> list[list[float]] | None:
+    """A pinch-drag trail (screen points) -> simplified closed loop (<= 64 points), or None for a tiny/straight drag."""
+    if len(screen_pts) < 3:
+        return None
+    xs, ys = [p[0] for p in screen_pts], [p[1] for p in screen_pts]
+    ext = max(max(xs) - min(xs), max(ys) - min(ys))
+    if ext < MIN_LOOP:
+        return None
+    eps = ext / 500
+    out = _rdp(screen_pts, eps)
+    while len(out) > MAX_PATH:
+        eps *= 1.5
+        out = _rdp(screen_pts, eps)
+    if len(out) < 3:
+        return None
+    return [[round(x, 1), round(y, 1)] for x, y in out]
+
+
+def path_bbox(path: list[list[float]]) -> list[float]:
+    xs, ys = [p[0] for p in path], [p[1] for p in path]
+    return [min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys)]

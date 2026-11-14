@@ -46,7 +46,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Verified notes: write to a notes file, TextEdit or Notes, then read back (`write_outcome`) | implemented | receipt field `write_outcome` |
 | Screen region question (`see_region`) | implemented, accuracy varies | a labelled image was read correctly; a chess position was read but the model did not call checkmate |
 | Overlay: hotkeys, streamed answers, evidence cards, receipt line | implemented | `apps/overlay/README.md`; not every path tried by hand |
-| Voice: hold Control-Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
+| Voice: hold Option-Space, on-device speech | experimental | transcribed a generated audio file at 98% confidence; live microphone untested |
 | 12-command router and benchmark against Qwen | experimental | `docs/evidence/bench_v2.md`: on 90 held-out hard utterances Drex Max got 87 right (96.7%), Qwen3.8-27B 83 (one-label) and 82 (12-way); the intervals overlap, so this is a lead, not a proven win. Drex made 0 wrong commands, Qwen 2 to 3. Median latency 265 ms vs 544 ms (one-label Qwen). Command line only |
 | Pinch-to-select with MediaPipe hands | experimental | passes synthetic landmark tests; no real-hand run yet |
 | Per-finger tracking, calibration and a cursor-follows-fingertip demo (`finger_processing/`, `cursor_demo/`) | experimental | added by a teammate with its own tests; not part of the agent tools |
@@ -72,7 +72,7 @@ uv run reach replay ../fixtures/events/ask.jsonl   # no keys needed
 ../scripts/build-overlay.sh && open ../apps/overlay/build/Reach.app
 ```
 
-Controls: **Option-Space** opens the panel. **Control-Option-Space** (hold) speaks. **Option-Shift-Space** drags a screen selection. **Esc** cancels.
+Controls: one key. **Option-Space**: tap to type, hold to talk. The lasso button in the panel circles something on screen. **Esc** cancels.
 Permissions macOS may ask for: Screen Recording (drag-select), Microphone and Speech Recognition (voice), Automation (TextEdit and Notes), Camera (pinch worker only).
 
 ## How NDI grounds answers

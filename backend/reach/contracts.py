@@ -24,6 +24,9 @@ class Selection(BaseModel):
     region: list[float] | None = Field(default=None, description="[x, y, w, h] in screen points")
     image_path: str | None = None
     source: str | None = Field(default=None, description="Who made it: 'pinch' (camera worker) or None (overlay/CLI)")
+    path: list[list[float]] | None = Field(
+        default=None, description="Circle selection: the loop as [[x, y], ...] in screen points, top-left origin (<= ~64)"
+    )
 
 
 # ---- client -> server ----

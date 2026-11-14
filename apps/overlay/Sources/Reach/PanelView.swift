@@ -100,6 +100,20 @@ struct PanelView: View {
                     .lineLimit(2)
             }
 
+            HStack(spacing: 8) {
+                Text("Tap Option-Space to type, hold to talk, or circle something.")
+                    .font(.system(size: 11)).foregroundStyle(.white.opacity(0.5)).lineLimit(1)
+                Spacer(minLength: 0)
+                Button { model.circleRequested?() } label: {
+                    Image(systemName: "lasso").font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.accent)
+                        .frame(width: 26, height: 22)
+                        .background(RoundedRectangle(cornerRadius: 6).fill(Palette.accent.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+                .help("Circle something on screen (Esc cancels)")
+            }
+
             if let chip = s.handChip {
                 HandChipView(chip: chip) { model.clearSelection() }
             }

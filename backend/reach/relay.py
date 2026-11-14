@@ -19,6 +19,7 @@ from .paths import reach_dir
 
 LATEST_TTL_S = 60.0
 MAX_TEXT = 20_000
+MAX_PATH = 256
 
 
 def check_selection(sel: Selection) -> str | None:
@@ -28,6 +29,9 @@ def check_selection(sel: Selection) -> str | None:
             return "region must be 4 finite numbers"
         if sel.region[2] < 0 or sel.region[3] < 0:
             return "region width/height must be >= 0"
+    if sel.path is not None:
+        if len(sel.path) > MAX_PATH or any(len(p) != 2 or not all(math.isfinite(v) for v in p) for p in sel.path):
+            return f"path must be at most {MAX_PATH} finite [x, y] points"
     if sel.text is not None and len(sel.text) > MAX_TEXT:
         return f"text longer than {MAX_TEXT} chars"
     if sel.image_path is not None:
@@ -82,7 +86,7 @@ class Relay:
         self.latest, self.latest_at = sel, time.monotonic()
         n = self._broadcast(sender, SelectionMsg(selection=sel).model_dump_json())
         log_line({"kind": "select", "from": role, "relayed_to": n, "chars": len(sel.text or ""),
-                  "image": bool(sel.image_path), "region": sel.region})
+                  "image": bool(sel.image_path), "region": sel.region, "path_points": len(sel.path or [])})
         return None
 
     def pointer(self, sender: int, role: str | None, msg: PointerIn) -> str | None:

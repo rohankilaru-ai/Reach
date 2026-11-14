@@ -63,10 +63,13 @@ def bridge_replay(smap: ScreenMap) -> bool:
     for t, lm in doc["frames"]:
         for e in eng.update(t, lm):
             if e.kind == "select":
+                from .screen_map import loop_path
+
                 rect = smap.rect_to_screen(e.data["start"], e.data["end"])
+                path = loop_path([smap.to_screen(p) for p in e.data.get("trail", [])])
                 img = _synthetic_png(server_reach_dir() / "captures")
-                sent_select = bridge.select(rect, SYNTH_TEXT, img)
-                print(f"bridge: select rect={rect} image={img} sent={sent_select}")
+                sent_select = bridge.select(rect, SYNTH_TEXT, img, path)
+                print(f"bridge: select rect={rect} path_points={len(path or [])} image={img} sent={sent_select}")
         if eng.pointer:
             sx, sy = smap.to_screen(eng.pointer)
             bridge._last_pointer = 0  # replay is faster than real time; do not rate-limit

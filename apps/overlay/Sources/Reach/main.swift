@@ -135,7 +135,44 @@ if args.contains("--replay") {
     DispatchQueue.main.asyncAfter(deadline: .now() + 30) { log("relay selftest FAIL: ask timeout"); exit(2) }
 }
 
-if let prompt = argValue("--relay-selftest") {
+/// The circle-select state machine on synthetic strokes: no windows, no capture, no input events.
+@MainActor func runLassoSelftest() -> Int32 {
+    func loop(_ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat, n: Int = 300) -> [CGPoint] {
+        (0..<n).map { i in let a = CGFloat(i) / CGFloat(n) * 2 * .pi; return CGPoint(x: cx + r * cos(a), y: cy + r * sin(a)) }
+    }
+    var ok = true
+    for (name, pts, cancel) in [("circle r=90", loop(600, 500, 90), false), ("tiny r=12", loop(600, 500, 12), false),
+                                ("esc mid-stroke", loop(600, 500, 90), true)] {
+        var rec = LassoRecorder()
+        var states = [rec.state.rawValue]
+        rec.begin(pts[0]); states.append(rec.state.rawValue)
+        pts.dropFirst().forEach { rec.add($0) }
+        let outcome: LassoRecorder.Outcome
+        if cancel { rec.cancel(); outcome = .cancelled } else { outcome = rec.end() }
+        states.append(rec.state.rawValue)
+        var detail = ""
+        if case .closed(let path, let box) = outcome {
+            let top: CGFloat = 982
+            detail = " path \(pts.count)->\(path.count) pts, region \(Lasso.region(box, primaryTop: top).map { Int($0) }), "
+                + "centre inside \(Lasso.contains(path, CGPoint(x: 600, y: 500)))"
+            ok = ok && path.count <= Lasso.maxPoints
+        }
+        let want: LassoRecorder.State = cancel ? .cancelled : (name.hasPrefix("tiny") ? .tooSmall : .closed)
+        ok = ok && rec.state == want
+        log("lasso selftest \(name): \(states.joined(separator: " -> "))\(detail)")
+    }
+    var k = TapOrHold()
+    let t = k.down(at: 0); let tap = k.up(at: 0.1); _ = k.holdCheck(token: t, at: 0.25)
+    let t2 = k.down(at: 1); let hold = k.holdCheck(token: t2, at: 1.25); let end = k.up(at: 3)
+    log("key selftest: tap 0.1 s -> \(tap), hold -> \(hold) ... \(end)")
+    ok = ok && tap == .tap && hold == .startHold && end == .endHold
+    log("lasso selftest \(ok ? "PASS" : "FAIL")")
+    return ok ? 0 : 1
+}
+
+if args.contains("--lasso-selftest") {
+    exit(MainActor.assumeIsolated { runLassoSelftest() })
+} else if let prompt = argValue("--relay-selftest") {
     MainActor.assumeIsolated { runRelaySelftest(prompt) }
     app.run()
 } else if let audio = argValue("--voice-selftest") {

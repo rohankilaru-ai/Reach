@@ -7,7 +7,7 @@ import SwiftUI
 final class AppController: NSObject, NSApplicationDelegate {
     let model: OverlayModel
     private var panel: ReachPanel!
-    private let picker = RegionPicker()
+    private let lasso = LassoPicker()
     private let halo = RegionHalo()
     private var ghost: NSWindow?
     private var ghostLabel: String??
@@ -39,15 +39,19 @@ final class AppController: NSObject, NSApplicationDelegate {
         NotificationCenter.default.addObserver(forName: NSWindow.didMoveNotification, object: panel, queue: .main) {
             [weak self] _ in MainActor.assumeIsolated { self?.savePosition() }
         }
-        log("panel ready (Option-Space toggles, Option-Shift-Space selects a region, hold Control-Option-Space to talk, Esc aborts)")
+        log("panel ready (tap Option-Space to type, hold it to talk, or circle something; Esc cancels)")
+        model.circleRequested = { [weak self] in self?.selectRegion() }
 
-        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option, name: "Option-Space") { [weak self] in
-            self?.toggle()
+        // One key: tap opens/closes, press-and-hold (> 0.25 s) talks.
+        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option, name: "Option-Space (tap / hold)",
+                                onRelease: { [weak self] in self?.optionSpaceUp() }) { [weak self] in
+            self?.optionSpaceDown()
         }
-        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "Option-Shift-Space") { [weak self] in
+        // The older combos still work, silently (not in the UI or README).
+        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "legacy circle combo") { [weak self] in
             self?.selectRegion()
         }
-        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.control | Keys.option, name: "Control-Option-Space (hold to talk)",
+        Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.control | Keys.option, name: "legacy talk combo",
                                 onRelease: { [weak self] in self?.voiceRelease() }) { [weak self] in
             self?.voicePress()
         }
@@ -193,6 +197,27 @@ final class AppController: NSObject, NSApplicationDelegate {
     }
 
     /// While a task runs, Esc aborts from anywhere; the hotkey is released as soon as it ends.
+    private var key = TapOrHold()
+
+    private func optionSpaceDown() {
+        let token = key.down(at: ProcessInfo.processInfo.systemUptime)
+        DispatchQueue.main.asyncAfter(deadline: .now() + TapOrHold.threshold) { [weak self] in
+            guard let self else { return }
+            if self.key.holdCheck(token: token, at: ProcessInfo.processInfo.systemUptime) == .startHold {
+                log("Option-Space held: listening")
+                self.voicePress()
+            }
+        }
+    }
+
+    private func optionSpaceUp() {
+        switch key.up(at: ProcessInfo.processInfo.systemUptime) {
+        case .tap: toggle()
+        case .endHold: voiceRelease()
+        default: break
+        }
+    }
+
     private func phaseChanged(_ phase: Phase) {
         if phase != .idle { expand(focus: false, why: "answer \(phase.rawValue)") }
         if phase == .working, escHotkey == nil {
@@ -228,7 +253,7 @@ final class AppController: NSObject, NSApplicationDelegate {
         // The key may have come up while macOS was asking for permission; then there is nothing to hear.
         guard ptt.accepts(partialFrom: id) else {
             if ptt.session == id { _ = ptt.cancel() }
-            model.voiceLine = "hold Control-Option-Space while you speak"
+            model.voiceLine = "hold Option-Space while you speak"
             return
         }
         model.listening = true
@@ -312,38 +337,48 @@ final class AppController: NSObject, NSApplicationDelegate {
         voiceEsc = []
     }
 
+    /// Circle selection: a freehand loop with the user's own mouse; only the inside of the loop is kept.
     func selectRegion() {
         panel.orderOut(nil)
-        picker.begin { [weak self] rect in
+        lasso.log = { log($0) }
+        lasso.begin { [weak self] outcome in
             guard let self else { return }
-            guard let rect else { self.show(); return }
-            self.halo.show(around: rect)
-            self.show()
-            self.captureRegion(rect)
+            switch outcome {
+            case .cancelled:
+                self.panel.orderFrontRegardless()
+            case .tooSmall:
+                self.model.selectionNote = "draw a bigger circle"
+                self.expand(focus: false, why: "circle too small")
+            case .closed(let loop, let box):
+                self.halo.show(loop: loop)
+                self.expand(focus: true, why: "circle")
+                self.captureLoop(loop, box: box)
+            }
         }
     }
 
-    private func captureRegion(_ rect: NSRect) {
-        // Contract region is [x, y, w, h] in points with a top-left origin.
-        let top = NSScreen.screens.first?.frame.maxY ?? rect.maxY
-        let region = [rect.minX, top - rect.maxY, rect.width, rect.height].map { Double($0) }
-        model.setSelection(Selection(region: region), note: "region selected · reading…")
+    private func captureLoop(_ loop: [CGPoint], box: NSRect) {
+        let top = NSScreen.screens.first?.frame.maxY ?? box.maxY
+        let region = Lasso.region(box, primaryTop: top)
+        let path = Lasso.contractPath(loop, primaryTop: top)
+        log("circle: \(loop.count) points, box \(region.map { Int($0) })")
+        model.setSelection(Selection(region: region, path: path), note: "circled · reading…")
         let dir = model.files.capturesDir
         Task { @MainActor in
             do {
-                let (image, url) = try await RegionCapture.capture(rect, into: dir)
+                let (image, url) = try await RegionCapture.captureLoop(loop, box: box, into: dir)
                 let text = await RegionCapture.recognizeText(image)
                 let words = text.split { $0 == " " || $0 == "\n" }.count
-                log("region captured to \(url.path), \(words) words read")
-                self.model.setSelection(Selection(text: text.isEmpty ? nil : text, region: region, image_path: url.path),
-                                        note: "region · \(words) words read")
+                log("circle captured to \(url.path) (outside the loop masked), \(words) words read")
+                self.model.setSelection(Selection(text: text.isEmpty ? nil : text, region: region, image_path: url.path,
+                                                  path: path), note: "circled · \(words) words read")
             } catch let e as CaptureError {
                 log("capture: \(e)")
-                self.model.setSelection(Selection(region: region), note: e.description)
+                self.model.setSelection(Selection(region: region, path: path), note: e.description)
                 if case .permission = e { self.model.needsUser("allow Screen Recording for Reach") }
             } catch {
                 log("capture error: \(error)")
-                self.model.setSelection(Selection(region: region), note: "capture failed")
+                self.model.setSelection(Selection(region: region, path: path), note: "capture failed")
             }
         }
     }

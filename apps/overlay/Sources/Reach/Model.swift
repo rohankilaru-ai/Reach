@@ -19,6 +19,7 @@ final class OverlayModel: ObservableObject {
     /// Pill (false) or full panel (true). The app controller owns when it changes.
     @Published var expanded = true
     var expandRequested: (() -> Void)?
+    var circleRequested: (() -> Void)?
 
     let files: RunFiles
     private let client = ReachClient()

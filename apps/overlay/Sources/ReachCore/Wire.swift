@@ -45,10 +45,13 @@ public struct Selection: Codable, Equatable, Sendable {
     public var image_path: String?
     /// "pinch" when the camera worker made it (relayed by the server); nil for the overlay's own selections.
     public var source: String?
+    /// Circle selection: the loop as `[[x, y], ...]` in screen points, top-left origin (at most ~64 points).
+    public var path: [[Double]]?
 
     public init(text: String? = nil, app: String? = nil, region: [Double]? = nil, image_path: String? = nil,
-                source: String? = nil) {
+                source: String? = nil, path: [[Double]]? = nil) {
         self.text = text; self.app = app; self.region = region; self.image_path = image_path; self.source = source
+        self.path = path
     }
 
     public var isEmpty: Bool { (text ?? "").isEmpty && region == nil && image_path == nil }

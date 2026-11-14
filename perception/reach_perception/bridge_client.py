@@ -125,8 +125,11 @@ class BridgeClient:
         self._last_pointer = now
         return self._send({"type": "pointer", "x": float(x), "y": float(y), "state": "pinch" if pinch else "hover"})
 
-    def select(self, region: list[float], text: str | None, image_path: str | None) -> bool:
+    def select(self, region: list[float], text: str | None, image_path: str | None,
+               path: list[list[float]] | None = None) -> bool:
         sel = {"region": region}
+        if path:
+            sel["path"] = path
         if text:
             sel["text"] = text
         if image_path:

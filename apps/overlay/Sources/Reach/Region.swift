@@ -1,76 +1,113 @@
 import AppKit
+import ReachCore
 import ScreenCaptureKit
 import Vision
 
-// MARK: - drag rectangle
+// MARK: - circle (freehand lasso)
 
-/// A transparent full-screen window per display that records one drag, in global Cocoa coordinates.
+/// A transparent full-screen layer per display that records one freehand loop with the user's own mouse, drawn live
+/// as a soft glowing line. On release the loop closes itself. Points come back in global Cocoa coordinates.
 @MainActor
-final class RegionPicker {
+final class LassoPicker {
     private var windows: [NSWindow] = []
-    private var done: ((NSRect?) -> Void)?
+    private var done: ((LassoRecorder.Outcome) -> Void)?
+    var log: ((String) -> Void)?
 
-    func begin(_ completion: @escaping (NSRect?) -> Void) {
+    func begin(_ completion: @escaping (LassoRecorder.Outcome) -> Void) {
         cancel()
         done = completion
         for screen in NSScreen.screens {
             let w = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             w.level = .screenSaver
-            w.backgroundColor = NSColor.black.withAlphaComponent(0.12)
+            w.backgroundColor = NSColor.black.withAlphaComponent(0.10)
             w.isOpaque = false
             w.ignoresMouseEvents = false
             w.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-            let v = DragView(frame: NSRect(origin: .zero, size: screen.frame.size))
-            v.onFinish = { [weak self] local in
-                guard let self else { return }
-                let global = local.map { $0.offsetBy(dx: screen.frame.minX, dy: screen.frame.minY) }
-                self.finish(global)
-            }
+            w.sharingType = .none   // never in Reach's own capture
+            let v = LassoView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            v.origin = screen.frame.origin
+            v.onState = { [weak self] st in self?.log?("lasso: \(st.rawValue)") }
+            v.onFinish = { [weak self] outcome in self?.finish(outcome) }
             w.contentView = v
             w.makeKeyAndOrderFront(nil)
+            w.makeFirstResponder(v)
             windows.append(w)
         }
         NSCursor.crosshair.push()
         NSApp.activate(ignoringOtherApps: true)
+        log?("lasso: idle (drag a loop around something; Esc cancels)")
     }
 
-    func cancel() { finish(nil) }
+    func cancel() { if done != nil { finish(.cancelled) } }
 
-    private func finish(_ rect: NSRect?) {
-        guard !windows.isEmpty || done != nil else { return }
-        windows.forEach { $0.orderOut(nil) }
-        if !windows.isEmpty { NSCursor.pop() }
+    private func finish(_ outcome: LassoRecorder.Outcome) {
+        let ws = windows
         windows = []
+        if !ws.isEmpty { NSCursor.pop() }
+        // let the closed loop linger a moment, then fade the layer out
+        let delay: Double = { if case .closed = outcome { return 0.25 }; return 0 }()
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
+            NSAnimationContext.runAnimationGroup({ ctx in
+                ctx.duration = 0.2
+                ws.forEach { $0.animator().alphaValue = 0 }
+            }, completionHandler: { MainActor.assumeIsolated { ws.forEach { $0.orderOut(nil) } } })
+        }
         let cb = done
         done = nil
-        cb?(rect.flatMap { $0.width > 4 && $0.height > 4 ? $0 : nil })
+        cb?(outcome)
     }
 }
 
-final class DragView: NSView {
-    var onFinish: ((NSRect?) -> Void)?
-    private var start: NSPoint?
-    private var current: NSRect?
+final class LassoView: NSView {
+    var origin: CGPoint = .zero
+    var onFinish: ((LassoRecorder.Outcome) -> Void)?
+    var onState: ((LassoRecorder.State) -> Void)?
+    private var rec = LassoRecorder()
+    private var closed = false
 
     override var acceptsFirstResponder: Bool { true }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
-    override func keyDown(with event: NSEvent) { if event.keyCode == 53 { onFinish?(nil) } }
-    override func mouseDown(with event: NSEvent) { start = convert(event.locationInWindow, from: nil) }
-    override func mouseDragged(with event: NSEvent) {
-        guard let start else { return }
-        let p = convert(event.locationInWindow, from: nil)
-        current = NSRect(x: min(start.x, p.x), y: min(start.y, p.y), width: abs(p.x - start.x), height: abs(p.y - start.y))
-        needsDisplay = true
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { rec.cancel(); onState?(.cancelled); onFinish?(.cancelled) }
     }
-    override func mouseUp(with event: NSEvent) { onFinish?(current) }
+    private func global(_ e: NSEvent) -> CGPoint {
+        let p = convert(e.locationInWindow, from: nil)
+        return CGPoint(x: p.x + origin.x, y: p.y + origin.y)
+    }
+    override func mouseDown(with event: NSEvent) {
+        closed = false
+        rec.begin(global(event)); onState?(.drawing); needsDisplay = true
+    }
+    override func mouseDragged(with event: NSEvent) { rec.add(global(event)); needsDisplay = true }
+    override func mouseUp(with event: NSEvent) {
+        rec.add(global(event))
+        let outcome = rec.end()
+        onState?(rec.state)
+        if case .closed = outcome { closed = true; needsDisplay = true }
+        onFinish?(outcome)
+    }
     override func draw(_ dirtyRect: NSRect) {
-        guard let r = current else { return }
-        NSColor.clear.setFill()
-        r.fill(using: .copy)
-        Palette.accentNS.setStroke()
-        let path = NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6)
-        path.lineWidth = 2
+        let pts = rec.points.map { CGPoint(x: $0.x - origin.x, y: $0.y - origin.y) }
+        guard pts.count > 1 else { return }
+        let path = NSBezierPath()
+        path.move(to: pts[0])
+        pts.dropFirst().forEach { path.line(to: $0) }
+        if closed { path.close() }
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        NSGraphicsContext.saveGraphicsState()
+        let glow = NSShadow()
+        glow.shadowColor = Palette.accentNS
+        glow.shadowBlurRadius = 10
+        glow.set()
+        Palette.accentNS.withAlphaComponent(0.9).setStroke()
+        path.lineWidth = 3
         path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+        if closed {
+            Palette.accentNS.withAlphaComponent(0.08).setFill()
+            path.fill()
+        }
     }
 }
 
@@ -81,7 +118,13 @@ final class DragView: NSView {
 final class RegionHalo {
     private var window: NSWindow?
 
-    func show(around rect: NSRect) {
+    /// A gentle halo that fades in along the loop (global Cocoa points).
+    func show(loop: [CGPoint]) {
+        let box = Lasso.boundingBox(loop)
+        show(around: box, path: loop)
+    }
+
+    func show(around rect: NSRect, path loop: [CGPoint]? = nil) {
         hide()
         let pad: CGFloat = 10
         let frame = rect.insetBy(dx: -pad, dy: -pad)
@@ -96,7 +139,21 @@ final class RegionHalo {
         let v = NSView(frame: NSRect(origin: .zero, size: frame.size))
         v.wantsLayer = true
         let ring = CAShapeLayer()
-        ring.path = CGPath(roundedRect: v.bounds.insetBy(dx: 4, dy: 4), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        if let loop, loop.count >= 3 {
+            let p = CGMutablePath()
+            p.addLines(between: loop.map { CGPoint(x: $0.x - frame.minX, y: $0.y - frame.minY) })
+            p.closeSubpath()
+            ring.path = p
+            ring.lineJoin = .round
+        } else {
+            ring.path = CGPath(roundedRect: v.bounds.insetBy(dx: 4, dy: 4), cornerWidth: 10, cornerHeight: 10, transform: nil)
+        }
+        let fadeIn = CABasicAnimation(keyPath: "strokeEnd")
+        fadeIn.fromValue = 0
+        fadeIn.toValue = 1
+        fadeIn.duration = 0.45
+        fadeIn.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ring.add(fadeIn, forKey: "draw")
         ring.fillColor = nil
         ring.strokeColor = Palette.accentNS.cgColor
         ring.lineWidth = 2.5
@@ -171,6 +228,22 @@ enum RegionCapture {
         guard let png = rep.representation(using: .png, properties: [:]) else { throw CaptureError.failed("png") }
         try png.write(to: url)
         return (image, url)
+    }
+
+    /// Captures the loop's bounding box, masks everything outside the loop (transparent) and saves that PNG.
+    static func captureLoop(_ loop: [CGPoint], box: NSRect, into dir: URL) async throws -> (CGImage, URL) {
+        let (raw, url) = try await capture(box, into: dir)
+        let scale = CGFloat(raw.width) / max(box.width, 1)
+        guard let masked = Lasso.mask(raw, polygon: Lasso.toImageSpace(loop, box: box, scale: scale)) else {
+            throw CaptureError.failed("mask")
+        }
+        let rep = NSBitmapImageRep(cgImage: masked)
+        guard let png = rep.representation(using: .png, properties: [:]) else { throw CaptureError.failed("png") }
+        let out = url.deletingLastPathComponent().appendingPathComponent(
+            url.lastPathComponent.replacingOccurrences(of: "region-", with: "circle-"))
+        try png.write(to: out)
+        try? FileManager.default.removeItem(at: url)   // keep only the masked image
+        return (masked, out)
     }
 
     /// Reads text locally with Vision; nothing leaves the machine here.
