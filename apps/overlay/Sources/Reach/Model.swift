@@ -11,7 +11,7 @@ func log(_ s: String) {
 final class OverlayModel: ObservableObject {
     @Published private(set) var state = PanelState()
     @Published var draft = ""
-    /// Hands mode (your hand moves the real mouse), as last requested from the menu.
+    /// Hands mode (your hand moves the real mouse): the backend's TRUE state from `hands_state`.
     @Published var handsOn = false
     /// "gesture: NAME" for a moment after a relayed hand gesture ran (EXPERIMENTAL).
     @Published var gestureFlash: String?
@@ -19,11 +19,28 @@ final class OverlayModel: ObservableObject {
     var onGestureCommand: ((String) -> Void)?
     var onOpenGestures: (() -> Void)?
 
-    /// Hands mode on/off/toggle: the menu item, Control-Option-H and the words "hands on" / "hands off" / "hands".
-    func setHands(_ on: Bool? = nil) {
-        handsOn = on ?? !handsOn
-        log("hands mode \(handsOn ? "on" : "off") requested")
-        send(.hands(on: handsOn))
+    /// Typed "hands on" / "hands off" / "hands": the app's toggle (nil = flip). It checks Accessibility first.
+    var onHandsRequest: ((Bool?) -> Void)?
+
+    /// A short pill line about hands mode ("Hands off", the one-time hint, or "needs you"); cleared by a timer.
+    @Published var handsLine: String?
+    /// Live phase from hands_mode (no_hand / pointing / pinching / dragging / paused / leaving).
+    @Published var handsPhase: String?
+    var hands = HandsModeState()
+    private var handsLineID = 0
+    var onHandsChange: ((Bool) -> Void)?
+    /// Developer toggle (menu bar): raw receipt lines, Drex decisions and cost in Details. Off by default.
+    @Published var technicalDetails: Bool = UserDefaults.standard.bool(forKey: "technicalDetails") {
+        didSet { UserDefaults.standard.set(technicalDetails, forKey: "technicalDetails") }
+    }
+
+    func flashHands(_ line: String, seconds: Double) {
+        handsLineID += 1
+        let id = handsLineID
+        handsLine = line
+        DispatchQueue.main.asyncAfter(deadline: .now() + seconds) { [weak self] in
+            if self?.handsLineID == id { self?.handsLine = nil }
+        }
     }
     @Published var selection: Selection?
     @Published var selectionNote: String?
@@ -174,7 +191,7 @@ final class OverlayModel: ObservableObject {
         }
         if let h = HandsCommand.parse(text) {   // local too: "hands on", "hands off", "hands"
             draft = ""
-            setHands(h == .toggle ? nil : h == .on)
+            onHandsRequest?(h == .toggle ? nil : h == .on)
             return
         }
         guard state.connected else {
@@ -317,10 +334,6 @@ final class OverlayModel: ObservableObject {
             log("addressed \(r.addressed) p \(r.pAddressed.map { String(format: "%.2f", $0) } ?? "-")")
             onAddressed?(r)
             return
-        case .handsState(let on):
-            log("hands_state \(on ? "on" : "off")")
-            if handsOn != on { handsOn = on }
-            return
         case .handsGesture(let name, let action):
             log("hand gesture \(name): \(action.summary)")
             gestureFlash = "gesture: \(name)"
@@ -332,6 +345,18 @@ final class OverlayModel: ObservableObject {
             case .ask: submit(action.value)   // a typed ask; carries the current selection like any other
             case .top, .bottom, .keys: break  // done by Hands mode itself, never relayed
             }
+        case .handsState(let on, let pid, let reason, let phase):
+            if phase == nil || !on {
+                log("hands mode \(on ? "on" : "off")\(pid.map { " (pid \($0))" } ?? "")\(reason.map { " \($0)" } ?? "")")
+            }
+            let effect = hands.apply(on: on, pid: pid, reason: reason, phase: phase)
+            if handsPhase != hands.phase { handsPhase = hands.phase }
+            switch effect {
+            case .showHint: flashHands(HandsMode.hint, seconds: HandsMode.hintSeconds)
+            case .showOff: flashHands(HandsMode.offLabel, seconds: HandsMode.offSeconds)
+            case .none: break
+            }
+            if handsOn != on { handsOn = on; onHandsChange?(on) }
             return
         case .unknown(let t): log("ignored message type \(t)")
         }

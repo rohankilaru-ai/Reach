@@ -31,7 +31,7 @@ final class AppController: NSObject, NSApplicationDelegate {
     private var menuBar: MenuBarItem?
     private var pillMode = PillMode.load()
     private var handsFree: HandsFreeController!
-    private lazy var gestures = GesturesWindow(model: model)
+    private var dictation: DictationController!
 
     init(files: RunFiles) {
         model = OverlayModel(files: files)
@@ -80,10 +80,19 @@ final class AppController: NSObject, NSApplicationDelegate {
         }
         // Hands-free: Option-Shift-Space toggles (always off at launch).
         handsFree = HandsFreeController(model: model)
-        handsFree.pttBusy = { [weak self] in (self?.ptt.phase ?? .idle) != .idle }
+        handsFree.pttBusy = { [weak self] in (self?.ptt.phase ?? .idle) != .idle || self?.dictation?.isOn == true }
+        // Dictation: Option-Shift-D, the menu item, or "Reach, start/stop dictating" (own on-device recognizer).
+        dictation = DictationController(model: model)
+        dictation.install()
+        dictation.onChange = { [weak self] in
+            guard let self else { return }
+            if self.dictation.isOn, !self.panel.isVisible { self.panel.orderFrontRegardless() }
+        }
+        handsFree.onDictation = { [weak self] on in self?.dictation.setOn(on, why: "spoken") }
         handsFree.onAsk = { [weak self] text in self?.handsFreeAsk(text) }
         handsFree.onPinchHold = { [weak self] down in
             guard let self else { return }
+            if self.model.handsOn { return }   // with hands mode on a pinch is a real click, not the old selection
             if down { if self.ptt.phase == .idle { self.holdBegan() } } else if self.gesture.phase == .holding { self.holdEnded() }
         }
         handsFree.onChange = { [weak self] in
@@ -94,12 +103,21 @@ final class AppController: NSObject, NSApplicationDelegate {
         Hotkeys.shared.register(keyCode: Keys.space, modifiers: Keys.option | Keys.shift, name: "Option-Shift-Space (hands-free)") {
             [weak self] in self?.handsFree.flip()
         }
-        // Hands mode: Control-Option-H toggles, same as the menu item.
+        // Hands mode: Control-Option-H (or Option-Shift-H) toggles; the backend's `hands_state` is the truth.
         Hotkeys.shared.register(keyCode: Keys.h, modifiers: Keys.control | Keys.option, name: "Control-Option-H (hands mode)") {
-            [weak self] in self?.model.setHands()
+            [weak self] in self?.toggleHandsMode(why: "hotkey")
         }
-        model.onOpenGestures = { [weak self] in self?.gestures.open() }
-        model.onGestureCommand = { [weak self] c in self?.handsFree.run(command: c) }
+        Hotkeys.shared.register(keyCode: Keys.h, modifiers: Keys.option | Keys.shift, name: "Option-Shift-H (hands mode)") {
+            [weak self] in self?.toggleHandsMode(why: "hotkey")
+        }
+        model.onHandsRequest = { [weak self] want in
+            guard let self else { return }
+            if let want { self.toggleHandsMode(why: "typed", want: want) } else { self.toggleHandsMode(why: "typed") }
+        }
+        model.onHandsChange = { [weak self] on in
+            guard let self else { return }
+            if on, !self.panel.isVisible { self.panel.orderFrontRegardless() }
+        }
         model.onPhase = { [weak self] phase in self?.phaseChanged(phase) }
         model.onCompact = { [weak self] c in self?.showCompact(c) }
         model.onBadge = { [weak self] on in self?.menuBar?.setBadge(on) }
@@ -119,6 +137,9 @@ final class AppController: NSObject, NSApplicationDelegate {
         bar.handsFreeOn = { [weak self] in self?.handsFree.isOn == true }
         bar.onHandsFree = { [weak self] in self?.handsFree.flip() }
         bar.onPauseHandsFree = { [weak self] in self?.handsFree.pauseFiveMinutes() }
+        bar.dictationOn = { [weak self] in self?.dictation.isOn == true }
+        bar.onDictation = { [weak self] in self?.dictation.flip() }
+        bar.onHandsMode = { [weak self] in self?.toggleHandsMode(why: "menu") }
         menuBar = bar
         // Open the checklist once per launch when a required permission is missing.
         Task { @MainActor in
@@ -148,8 +169,11 @@ final class AppController: NSObject, NSApplicationDelegate {
         let busy = model.state.phase == .working || model.listening || !model.draft.isEmpty || gesture.phase != .idle
             || model.capturing || model.speaking || lens.isOpen || model.capturing
             || gesture.phase != .idle || NSEvent.pressedMouseButtons != 0 || panel.isKeyWindow
+        // opening needs a deliberate rest at the very top edge (never a pass toward the browser's tab bar)
+        let dwell = Hover.dwellZone(centerX: anchor.x, screenTop: screen.frame.maxY)
         switch hover.update(mouse: mouse, now: ProcessInfo.processInfo.systemUptime, expanded: model.expanded, hot: hot,
-                            panel: panel.frame, busy: busy) {
+                            panel: panel.frame, busy: busy, dwellZone: dwell,
+                            buttonsDown: NSEvent.pressedMouseButtons != 0 || gesture.phase != .idle) {
         case .expand: expand(focus: false, why: "hover", byHover: true)
         case .collapse: collapse(why: "hover away")
         case .none: break
@@ -287,6 +311,7 @@ final class AppController: NSObject, NSApplicationDelegate {
             || model.capturing || model.speaking || model.typing || ptt.phase != .idle || model.compact != nil
             || (panel.isKeyWindow && model.expanded)   // a folded pill that kept key focus after a typed ask is idle
             || model.handsFree   // the listening indicator is always visible while hands-free is on
+            || model.handsOn || model.handsLine != nil   // so is the hands mode indicator
             || NSEvent.pressedMouseButtons != 0
         guard !PillVisibility.shouldShow(mode: pillMode, expanded: model.expanded, busy: busy) else { return }
         guard panel.frame.height < 64 else { return }   // wait for the fold animation to finish
@@ -544,12 +569,34 @@ final class AppController: NSObject, NSApplicationDelegate {
             PermissionProbe.relaunch()
         case .openMicSettings:
             NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")!)
+        case .openAccessibilitySettings:
+            NSWorkspace.shared.open(URL(string: PermissionKind.accessibility.settingsURL)!)
         case .circle, .none: break
         }
     }
 
     /// An addressed hands-free ask: the normal ask path, with a hand selection or circle only if fresh (60 s).
+    /// Hotkey, menu or spoken phrase. Turning on needs Accessibility (hands mode posts real mouse events).
+    func toggleHandsMode(why: String, want: Bool? = nil) {
+        let current = model.handsOn
+        if let want, want == current { return }   // "hands mode on" while on: a no-op
+        switch HandsMode.toggle(currentOn: current, accessibility: AXIsProcessTrusted()) {
+        case .send(let on):
+            log("hands mode: asking for \(on ? "on" : "off") (\(why))")
+            model.send(.hands(on: on))
+        case .needsAccessibility:
+            log("hands mode: refused, Accessibility not granted (\(why))")
+            model.flashHands(HandsMode.needsAccessibility, seconds: 4)
+            if !panel.isVisible { panel.orderFrontRegardless() }
+            setup.open()
+        }
+    }
+
     private func handsFreeAsk(_ text: String) {
+        if let want = HandsMode.phrase(text) {   // "Reach, hands mode on/off" is a local switch, not an ask
+            toggleHandsMode(why: "voice", want: want)
+            return
+        }
         if Date().timeIntervalSince(model.selectionAt) > HandsFree.selectionMaxAge, model.selection != nil {
             model.setSelection(nil, note: nil)
         }

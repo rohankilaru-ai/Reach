@@ -218,6 +218,12 @@ public enum Hover {
         return CGRect(x: anchor.x - w / 2, y: bottom, width: w, height: max(screenTop - bottom, pill.height))
     }
 
+    /// Where a deliberate hover may open the panel: a narrow strip at the very top edge, centred on the anchor
+    /// (about 180 pt wide, 4 pt tall), so reaching for a browser's tab bar never opens it.
+    public static func dwellZone(centerX: CGFloat, screenTop: CGFloat, width: CGFloat = 180, height: CGFloat = 4) -> CGRect {
+        CGRect(x: centerX - width / 2, y: screenTop - height, width: width, height: height)
+    }
+
     /// The expanded panel keeps open while the mouse is inside it or within `margin` of it.
     public static func keepZone(panel: CGRect, margin: CGFloat = 24) -> CGRect { panel.insetBy(dx: -margin, dy: -margin) }
 
@@ -232,7 +238,11 @@ public enum Hover {
         /// After a collapse the mouse must leave the hot zone once before hover can open the panel again.
         public private(set) var armed = true
         var enteredAt: Double?
+        var enteredPoint: CGPoint?
         var leftAt: Double?
+        /// A deliberate dwell: rest at least this long, moving less than `stillRadius`.
+        public static let deliberateDwell = 0.7
+        public static let stillRadius: CGFloat = 3
 
         public init() {}
 
@@ -240,14 +250,26 @@ public enum Hover {
         public mutating func openedElsewhere() { openedByHover = false; enteredAt = nil; leftAt = nil }
         public mutating func collapsed() { openedByHover = false; enteredAt = nil; leftAt = nil; armed = false }
 
+        /// `dwellZone` (when given) is where the cursor must rest still for `deliberateDwell` to open the panel;
+        /// any movement over `stillRadius`, a pressed mouse button or a drag restarts the wait, so a quick pass does
+        /// nothing. Without it, the old short dwell in `hot` applies.
         public mutating func update(mouse: CGPoint, now: Double, expanded: Bool, hot: CGRect, panel: CGRect,
-                                    busy: Bool) -> Action {
+                                    busy: Bool, dwellZone: CGRect? = nil, buttonsDown: Bool = false) -> Action {
             if !expanded {
-                guard hot.contains(mouse) else { enteredAt = nil; armed = true; return .none }
+                let zone = dwellZone ?? hot
+                guard zone.contains(mouse) else { enteredAt = nil; enteredPoint = nil; armed = true; return .none }
                 guard armed else { return .none }
+                if buttonsDown { enteredAt = nil; enteredPoint = nil; return .none }
+                if dwellZone != nil, let p = enteredPoint, hypot(mouse.x - p.x, mouse.y - p.y) > Self.stillRadius {
+                    enteredAt = now; enteredPoint = mouse; return .none   // still moving: start over
+                }
                 let t = enteredAt ?? now
                 enteredAt = t
-                if now - t >= Self.dwell - 1e-9 { enteredAt = nil; openedByHover = true; leftAt = nil; return .expand }
+                if enteredPoint == nil { enteredPoint = mouse }
+                let need = dwellZone == nil ? Self.dwell : Self.deliberateDwell
+                if now - t >= need - 1e-9 {
+                    enteredAt = nil; enteredPoint = nil; openedByHover = true; leftAt = nil; return .expand
+                }
                 return .none
             }
             enteredAt = nil
@@ -330,7 +352,7 @@ public enum ProgressLine {
 
 /// What an end state says: one plain sentence and at most one action.
 public struct PlainState: Equatable, Sendable {
-    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer, relaunch }
+    public enum Action: String, Equatable, Sendable { case none, retry, circle, openScreenSettings, openMicSettings, startServer, relaunch, openAccessibilitySettings }
     public var sentence: String
     public var action: Action
     /// An optional second line under the sentence (how to fix it when the obvious fix did not work).
@@ -349,6 +371,7 @@ public struct PlainState: Equatable, Sendable {
         case .openMicSettings: return "Open Settings"
         case .startServer: return "Retry"
         case .relaunch: return "Relaunch Reach"
+        case .openAccessibilitySettings: return "Fix"
         }
     }
 
@@ -371,6 +394,9 @@ public struct PlainState: Equatable, Sendable {
         if n.contains("screen recording") {
             return PlainState(sentence: ScreenRecordingCheck.missingSentence, action: .openScreenSettings,
                               detail: ScreenRecordingCheck.missingHint)
+        }
+        if n.contains("accessibility") {
+            return PlainState(sentence: "Dictation needs Accessibility to type for you.", action: .openAccessibilitySettings)
         }
         if n.contains("microphone") || n.contains("speech") { return PlainState(sentence: "Reach needs the microphone to hear you.", action: .openMicSettings) }
         if n.contains("reach serve") || n.contains("connection") || n.contains("server") || n.contains("token") {

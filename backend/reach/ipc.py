@@ -99,6 +99,21 @@ class Server:
         from .tools import guide
 
         guide.set_emitter(self.relay.broadcast)  # point_at's step pointers go to overlay clients
+        self.loop: asyncio.AbstractEventLoop | None = None
+
+    def _hands_emit(self, st: dict) -> None:
+        """hands.py's emitter: the TRUE hands state to every overlay client (thread-safe; the watcher is a thread)."""
+        msg = json.dumps({"type": "hands_state", **st})
+        loop = self.loop
+        if loop is None or loop.is_closed():
+            return
+        try:
+            if asyncio.get_running_loop() is loop:
+                self.relay.broadcast(msg)
+                return
+        except RuntimeError:
+            pass
+        loop.call_soon_threadsafe(self.relay.broadcast, msg)
 
     async def handle(self, ws) -> None:
         try:
@@ -123,6 +138,13 @@ class Server:
         pump_task = asyncio.create_task(pump())
         role, key = first.role, id(ws)
         self.relay.join(key, role, out)
+        if role == "overlay":  # the current truth on connect: the menu and pill never guess
+            from . import hands
+
+            if self.loop is None:
+                self.loop = asyncio.get_running_loop()
+                hands.set_emitter(self._hands_emit)
+            out.put_nowait(json.dumps({"type": "hands_state", **hands.status()}))
         mine: dict[str, object] = {}
         running: set[asyncio.Task] = set()
         try:
@@ -130,8 +152,11 @@ class Server:
                 if isinstance(raw, str) and '"hands"' in raw and (hm := _hands_msg(raw)) is not None:  # hands mode on/off (not an agent action)
                     from . import hands
 
+                    if self.loop is None:
+                        self.loop = asyncio.get_running_loop()
+                        hands.set_emitter(self._hands_emit)
                     st = await asyncio.to_thread(hands.set_on, hm)
-                    out.put_nowait(json.dumps({"type": "hands_state", **st}))
+                    out.put_nowait(json.dumps({"type": "hands_state", **st}))  # also answers a no-op repeat
                     continue
                 if isinstance(raw, str) and '"hands_' in raw and (hx := _hands_extra(raw)) is not None:
                     from . import hands

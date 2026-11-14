@@ -28,8 +28,8 @@ import Testing
     }
 
     @Test func decodesHandsStateAndGesture() throws {
-        #expect(try ServerMessage.decode(#"{"type":"hands_state","on":true,"pid":12}"#) == .handsState(on: true))
-        #expect(try ServerMessage.decode(#"{"type":"hands_state","on":false,"pid":null}"#) == .handsState(on: false))
+        #expect(try ServerMessage.decode(#"{"type":"hands_state","on":true,"pid":12}"#) == .handsState(on: true, pid: 12, reason: nil))
+        #expect(try ServerMessage.decode(#"{"type":"hands_state","on":false,"pid":null}"#) == .handsState(on: false, pid: nil, reason: nil))
         let g = try ServerMessage.decode(#"{"type":"hands_gesture","name":"wave","action":{"kind":"command","value":"scroll_down"}}"#)
         #expect(g == .handsGesture(name: "wave", action: GestureAction(kind: .command, value: "scroll_down")))
         let a = try ServerMessage.decode(#"{"type":"hands_gesture","name":"q","action":{"kind":"ask","value":"summarise this"}}"#)
