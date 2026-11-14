@@ -262,6 +262,17 @@ def tab_state(tab_id: int, run: Runner) -> dict[str, Any] | None:
     return {"loading": f[1] == "true", "url": f[2], "window_id": int(f[3])}
 
 
+def same_site(a: str, b: str) -> bool:
+    """True when two URLs are on the same registrable site (mail.google.com redirecting to its inbox is still a success)."""
+    from urllib.parse import urlparse
+
+    def site(u: str) -> str:
+        host = (urlparse(u).hostname or "").lower().split(".")
+        return ".".join(host[-2:]) if len(host) >= 2 else ".".join(host)
+
+    return bool(site(a)) and site(a) == site(b)
+
+
 def wait_loaded(tab_id: int, url: str, run: Runner, wait_s: float = LOAD_WAIT_S, sleep=time.sleep) -> tuple[Outcome, str]:
     """Poll the tab until it stops loading at the requested URL (trailing slash and host case ignored)."""
     deadline = time.monotonic() + wait_s
@@ -270,7 +281,7 @@ def wait_loaded(tab_id: int, url: str, run: Runner, wait_s: float = LOAD_WAIT_S,
         st = tab_state(tab_id, run)
         if st is None:
             return "failed", "the new tab is gone"
-        if not st["loading"] and norm_url(st["url"]) == norm_url(url):
+        if not st["loading"] and (norm_url(st["url"]) == norm_url(url) or same_site(st["url"], url)):
             return "verified", f"tab {tab_id} loaded {st['url']}"
         if time.monotonic() >= deadline:
             break
