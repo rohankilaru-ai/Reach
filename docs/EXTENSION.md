@@ -42,3 +42,21 @@ The side panel has a **Let coding agents use Drex** setting. Turning it on pairs
 server (`vendor/drex-browser-harness/mcp/server.mjs`) using a pairing code the panel shows, so an agent on this Mac
 can hand tasks to the extension and watch them run in your signed-in Chrome. Reach does not use this yet: today Reach
 runs the harness through its own runner. Wiring Reach to the paired extension is planned, not built.
+
+## Let Reach use it (pairing, experimental)
+
+Reach can hand an ask to this extension so it runs in your own, signed-in Chrome (YouTube, Gmail, any site you use).
+It talks to the extension through the harness's local pairing server (`mcp/server.mjs`, on `127.0.0.1:47615`), which
+Reach starts itself when it needs it. Untested with a real extension so far; only a fake pairing server is tested.
+
+1. In Chrome, open the Drex side panel (**Alt+Shift+D**) and click the **gear icon**.
+2. Turn on **Let coding agents use Drex**. It shows a pairing code.
+3. Add one line to `.reach/server.env` in the repo: `REACH_PAIRING_CODE=<the code it shows>`.
+4. Restart Reach.
+
+Reach then gets the `browser_in_chrome` tool. Only an extension status of `done` counts as done; partial, needs-you,
+failed, stopped, a timeout (120 s by default, `REACH_CHROME_TIMEOUT_S`) or an extension that is not connected are
+reported as not done, with the reason. Abort closes the link to Chrome (the run in Chrome may still finish its current
+move). A risky step (pay, send, delete) always ends the run and hands control back to you. The pairing code is never
+logged or shown in results. The pairing server sends no progress updates, so Reach shows none while the run goes.
+If you click **New code** in the extension, update `.reach/server.env` and restart Reach.

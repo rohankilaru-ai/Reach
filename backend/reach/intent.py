@@ -69,9 +69,10 @@ TOOL_FAMILY: dict[str, str] = {
     "browser_task": (
         "for web research or an action on PUBLIC pages use browser_cloud (Nace's hosted browser with Drex Max: fast, "
         "sandboxed; give a start_url; it cannot use the user's logins and Nace refuses banking, payment, identity, "
-        "large social and government sites); for the user's own signed-in pages use chrome_open_url then see_screen "
-        "and click_on_screen; browser_task is the slower local fallback; for email use email_draft, which opens a "
-        "Gmail draft and never sends"
+        "large social and government sites); for the user's own signed-in pages (YouTube, Gmail, anything the user "
+        "uses) prefer browser_in_chrome when you have it, otherwise chrome_open_url then see_screen and "
+        "click_on_screen; browser_task is the slower local fallback; for email use email_draft, which opens a Gmail "
+        "draft and never sends"
     ),
     "write_to_notes": (
         "use note_append (or shelf_to_note for evidence ids); to copy text so the user can paste it use "

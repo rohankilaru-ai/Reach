@@ -44,6 +44,7 @@ Labels: **implemented** = a gate passed on a fresh input; **experimental** = run
 | Conversation memory: Drex decides whether a message continues the last exchange | implemented | live check: follow-up scored 0.98, unrelated topic 0.009 |
 | NDI evidence: add a PDF, cited quotes grounded to page and region | implemented | two real PDFs; `docs/GROUND_SHAPE.md` |
 | Browser task as an Intern tool, Drex judges each call | implemented | `docs/evidence/browser-run.json`; runs hidden by default (a visible window lost runs in a test) |
+| Browser task in your own signed-in Chrome (`browser_in_chrome`, via the extension's pairing server) | experimental | Untested with a real extension; tested against a fake pairing server. Setup: `docs/EXTENSION.md` |
 | Verified notes (file, TextEdit, Notes) with read-back (`write_outcome`) | implemented | receipt field `write_outcome` |
 | Screen look with no circle (`see_screen`) and circled regions (`see_region`) | implemented | `docs/evidence/auto-screen.md`; vision answers can be wrong, especially on dense images such as chess boards |
 | Pointers that show where to click or type (`point_at`) | implemented on generated screens | 54/54 steps on 10 clean mock-ups (`docs/evidence/guide.md`); not tested on dense real apps |
