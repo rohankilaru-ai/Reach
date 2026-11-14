@@ -25,4 +25,5 @@ packages = ["finger_processing"]
 finger_processing = ["config.yaml"]
 
 [tool.pytest.ini_options]
-testpaths = ["finger_processing"]
+testpaths = ["finger_processing", "hands_mode", "cursor_demo"]
+pythonpath = ["."]

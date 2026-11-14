@@ -73,6 +73,11 @@ final class MenuBarItem: NSObject, NSMenuDelegate {
         menu.addItem(.separator())
         add("Hands-free listening (⌥⇧Space)", on: handsFreeOn()) { [weak self] in self?.onHandsFree() }
         if handsFreeOn() { add("Pause for 5 minutes") { [weak self] in self?.onPauseHandsFree() } }
+        add("Hands mode", on: model.handsOn) { [weak self] in
+            guard let self else { return }
+            self.model.handsOn.toggle()
+            self.model.send(.hands(on: self.model.handsOn))
+        }
         menu.addItem(.separator())
         add("Set up Reach…") { [weak self] in self?.onSetup() }
         add("Quit Reach") { NSApp.terminate(nil) }

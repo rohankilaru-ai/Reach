@@ -339,6 +339,11 @@ def main(argv: list[str] | None = None) -> int:
     up.set_defaults(fn=cmd_unpin)
     st = sub.add_parser("stop", help="stop the background server")
     st.set_defaults(fn=cmd_stop)
+    from .hands import cmd_hands
+
+    hd = sub.add_parser("hands", help="hands mode: your hand controls the mouse (sends real mouse events)")
+    hd.add_argument("action", choices=("on", "off", "status"))
+    hd.set_defaults(fn=cmd_hands)
     args = p.parse_args(argv)
     return args.fn(args)
 

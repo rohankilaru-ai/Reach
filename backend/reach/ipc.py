@@ -28,6 +28,17 @@ from .paths import drex_log, reach_dir, run_dir
 GROUND_DEADLINE_S = 150
 
 
+def _hands_msg(raw: str | bytes) -> bool | None:
+    """{"type": "hands", "on": true|false} -> the bool; anything else -> None."""
+    try:
+        d = json.loads(raw)
+    except ValueError:
+        return None
+    if isinstance(d, dict) and d.get("type") == "hands" and isinstance(d.get("on"), bool):
+        return d["on"]
+    return None
+
+
 def log_evidence(card) -> None:
     p = reach_dir() / "logs" / "evidence.jsonl"
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -104,6 +115,12 @@ class Server:
         running: set[asyncio.Task] = set()
         try:
             async for raw in ws:
+                if isinstance(raw, str) and '"hands"' in raw and (hm := _hands_msg(raw)) is not None:  # hands mode on/off (not an agent action)
+                    from . import hands
+
+                    st = await asyncio.to_thread(hands.set_on, hm)
+                    out.put_nowait(json.dumps({"type": "hands_state", **st}))
+                    continue
                 try:
                     msg = inbound_adapter.validate_json(raw)
                 except ValidationError as e:
