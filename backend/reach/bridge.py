@@ -10,8 +10,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from .contracts import Ask, Evidence, Receipt
-from .ledger import ReceiptBuilder, append_drex
+from .contracts import BROWSER_TOOL, Ask, Evidence, Receipt
+from .ledger import ReceiptBuilder, append_browser, append_drex
 from .paths import REPO_ROOT, drex_log
 
 SYSTEM2 = os.environ.get("REACH_SYSTEM2", "deepinfra/Qwen/Qwen3.8-27B")
@@ -112,6 +112,9 @@ class InternBridge:
             data = event.model_dump(mode="json")
             task.builder.feed(data)
             append_drex(drex_log(), data, task.id)
+            if data.get("type") == "tool_call_end" and data.get("name") == BROWSER_TOOL and task.builder.browser:
+                if data.get("status") != "refused":
+                    append_browser(drex_log(), task.id, task.builder.browser[-1])
             sink(task.id, data)
 
         error = None

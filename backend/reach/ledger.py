@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from .contracts import LEDGER_TYPES, Receipt
+from .contracts import BROWSER_TOOL, LEDGER_TYPES, Receipt
 
 
 def append_drex(path: Path, event: dict[str, Any], task_id: str) -> bool:
@@ -24,6 +24,15 @@ def append_ndi(path: Path, task_id: str, op: str, **fields: Any) -> None:
     """Log one NDI call (parse / ground) next to the Drex decisions. Timestamp in ms like Intern events."""
     path.parent.mkdir(parents=True, exist_ok=True)
     entry = {"task_id": task_id, "type": "ndi", "op": op, "timestamp": int(time.time() * 1000), **fields}
+    with path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+
+def append_browser(path: Path, task_id: str, marker: dict[str, Any]) -> None:
+    """Log one browser_task result (outcome, harness status, LLM cost, Drex calls) next to the Drex decisions."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    keep = {k: marker.get(k) for k in ("outcome", "status", "kind", "final_url", "cost_usd", "drex_calls", "llm_calls")}
+    entry = {"task_id": task_id, "type": "browser", "timestamp": int(time.time() * 1000), **keep}
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
 
@@ -87,6 +96,10 @@ def format_log_line(entry: dict[str, Any]) -> str:
         else:
             what = f"found {entry.get('found', '-')}/{entry.get('targets', '?')}"
         return f"{ts} ndi       {entry.get('op', '?'):<14} {what:<32} {ok:<7} units={entry.get('units', '-')}"
+    if kind == "browser":
+        what = f"{entry.get('outcome', '?')} {entry.get('status', '?')}"
+        return (f"{ts} browser   {entry.get('kind', '?')[:14]:<14} {what[:32]:<32} drex={entry.get('drex_calls', 0):<3} "
+                f"${float(entry.get('cost_usd') or 0):.4f}")
     return f"{ts} {kind}"
 
 
@@ -102,11 +115,19 @@ class ReceiptBuilder:
         self.system1_cost = 0.0
         self.run_end: dict[str, Any] | None = None
         self.text: list[str] = []
+        self.browser: list[dict[str, Any]] = []
 
     def feed(self, event: dict[str, Any]) -> None:
         kind = event.get("type")
         if kind == "tool_call_end":
             (self.refused if event.get("status") == "refused" else self.tools).append(event.get("name", "?"))
+            if event.get("name") == BROWSER_TOOL and event.get("status") != "refused":
+                from .tools.browser import parse_marker
+
+                marker = parse_marker(event.get("content", ""))
+                self.browser.append(marker or {"outcome": "not_done", "status": "no_result", "kind": "no_result",
+                                               "reason": "no receipt in the tool result", "cost_usd": 0.0,
+                                               "drex_calls": 0})
         elif kind == "tool_guard":
             name = event.get("name", "?")
             if name not in self.refused:
@@ -124,6 +145,11 @@ class ReceiptBuilder:
         usage = end.get("usage") or {}
         reason = end.get("reason") or ("aborted" if aborted else (f"error: {error}" if error else "no_run_end"))
         status = "ok" if reason == "completed" else ("aborted" if reason == "aborted" else "failed")
+        outcome = None
+        if self.browser:
+            outcome = "aborted" if aborted else self.browser[-1].get("outcome", "not_done")
+            if status == "ok" and outcome != "done":
+                status = "failed"  # the run completed but the browser task did not: never show it as done
         duration = end.get("duration_ms")
         if duration is None:
             duration = int((time.monotonic() - self.started) * 1000)
@@ -138,4 +164,6 @@ class ReceiptBuilder:
             est_cost_usd=round(float(usage.get("cost_usd", 0.0)) + self.system1_cost, 6),
             duration_ms=int(duration),
             final_text=end.get("final_text") or "".join(self.text),
+            outcome=outcome,
+            browser=self.browser,
         )
