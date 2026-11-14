@@ -36,7 +36,7 @@ def command(task: str, start_url: str, out_dir: Path) -> list[str]:
     model = os.environ.get("REACH_BROWSER_HELPER_MODEL", DEFAULT_MODEL)
     return [
         os.environ.get("REACH_NODE", "node"), str(script_path()), "run", task, "--url", start_url,
-        "--json", "--temp-profile", "--mode", "default", "--model", model,
+        "--json", "--temp-profile", "--mode", os.environ.get("REACH_BROWSER_MODE", "loop"), "--model", model,
         "--max-cost", MAX_COST_USD, "--max-seconds", str(MAX_SECONDS), "--out", str(out_dir),
     ]  # --allow-risky is never passed
 
