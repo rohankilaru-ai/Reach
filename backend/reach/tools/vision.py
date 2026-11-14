@@ -22,6 +22,9 @@ from ..paths import REPO_ROOT, reach_dir
 MODEL = os.environ.get("REACH_VISION_MODEL", "Qwen/Qwen3-VL-235B-A22B-Instruct")
 ENDPOINT = "https://api.deepinfra.com/v1/openai/chat/completions"
 TIMEOUT_S = 90
+MAX_SIDE = 1280
+"""Images are downscaled to at most this many pixels on the long side before upload (fewer image tokens, faster)."""
+MAX_TOKENS = 400
 MAX_BYTES = 8 * 2**20
 KEY = "DEEPINFRA_API_KEY"
 
@@ -91,11 +94,31 @@ def resolve_image(image_path: str | None, root: Path | None = None) -> Path:
     return p
 
 
+def downscale_png(png: bytes, max_side: int = MAX_SIDE) -> bytes:
+    """The PNG with its long side at most `max_side` px; unchanged when already small enough or unreadable."""
+    import io
+
+    try:
+        from PIL import Image
+
+        im = Image.open(io.BytesIO(png))
+        if max(im.size) <= max_side:
+            return png
+        scale = max_side / max(im.size)
+        im = im.convert("RGB").resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))),
+                                      Image.LANCZOS)
+        out = io.BytesIO()
+        im.save(out, format="PNG", optimize=False)
+        return out.getvalue()
+    except Exception:
+        return png
+
+
 def build_request(png: bytes, question: str, model: str = MODEL) -> dict[str, Any]:
-    url = "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    url = "data:image/png;base64," + base64.b64encode(downscale_png(png)).decode("ascii")
     return {
         "model": model,
-        "max_tokens": 700,
+        "max_tokens": MAX_TOKENS,
         "temperature": 0.2,
         "messages": [
             {"role": "system", "content": "You look at a region of the user's screen and answer their question about "
