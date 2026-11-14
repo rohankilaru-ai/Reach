@@ -5,12 +5,14 @@ import Foundation
 final class Hotkeys {
     static let shared = Hotkeys()
     private var actions: [UInt32: () -> Void] = [:]
+    private var releases: [UInt32: () -> Void] = [:]
     private var refs: [UInt32: EventHotKeyRef] = [:]
     private var nextID: UInt32 = 1
     private var installed = false
 
     @discardableResult
-    func register(keyCode: Int, modifiers: Int, name: String, _ action: @escaping () -> Void) -> UInt32? {
+    func register(keyCode: Int, modifiers: Int, name: String, onRelease: (() -> Void)? = nil,
+                  _ action: @escaping () -> Void) -> UInt32? {
         installHandler()
         let id = nextID
         nextID += 1
@@ -22,6 +24,7 @@ final class Hotkeys {
             return nil
         }
         actions[id] = action
+        releases[id] = onRelease
         refs[id] = ref
         log("hotkey \(name) registered")
         return id
@@ -30,23 +33,28 @@ final class Hotkeys {
     func unregister(_ id: UInt32) {
         if let ref = refs.removeValue(forKey: id) { UnregisterEventHotKey(ref) }
         actions[id] = nil
+        releases[id] = nil
     }
 
-    fileprivate func fire(_ id: UInt32) {
-        if let a = actions[id] { DispatchQueue.main.async(execute: a) }
+    fileprivate func fire(_ id: UInt32, released: Bool) {
+        if let a = released ? releases[id] : actions[id] { DispatchQueue.main.async(execute: a) }
     }
 
     private func installHandler() {
         guard !installed else { return }
         installed = true
-        var spec = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        // Both kinds: hold-to-talk needs the key-up as well as the key-down.
+        var specs = [
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed)),
+            EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyReleased)),
+        ]
         InstallEventHandler(GetEventDispatcherTarget(), { _, event, _ -> OSStatus in
             var hk = EventHotKeyID()
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID),
                               nil, MemoryLayout<EventHotKeyID>.size, nil, &hk)
-            Hotkeys.shared.fire(hk.id)
+            Hotkeys.shared.fire(hk.id, released: GetEventKind(event) == UInt32(kEventHotKeyReleased))
             return noErr
-        }, 1, &spec, nil, nil)
+        }, specs.count, &specs, nil, nil)
     }
 }
 
@@ -55,4 +63,5 @@ enum Keys {
     static let escape = kVK_Escape
     static let option = optionKey
     static let shift = shiftKey
+    static let control = controlKey
 }

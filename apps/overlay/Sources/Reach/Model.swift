@@ -13,6 +13,9 @@ final class OverlayModel: ObservableObject {
     @Published var draft = ""
     @Published var selection: Selection?
     @Published var selectionNote: String?
+    /// Voice line under the text field: "listening…", "heard: …", "didn't catch that". Survives `submitted()`.
+    @Published var voiceLine: String?
+    @Published var listening = false
 
     let files: RunFiles
     private let client = ReachClient()
