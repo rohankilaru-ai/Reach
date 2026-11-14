@@ -105,3 +105,17 @@ def test_box_around_clamps():
 
 def test_selftest_entrypoint_passes():
     assert selftest.main() == 0
+
+
+@pytest.mark.skipif(__import__("sys").platform != "darwin", reason="macOS Vision only")
+def test_vision_ocr_reads_rendered_text(tmp_path):
+    cv2 = pytest.importorskip("cv2")
+    import numpy as np
+
+    from reach_perception.capture import ocr
+
+    img = np.full((120, 700, 3), 255, np.uint8)
+    cv2.putText(img, "Reach reads this paragraph", (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 1.3, (0, 0, 0), 3)
+    p = tmp_path / "probe.png"  # rendered text, not a camera frame
+    cv2.imwrite(str(p), img)
+    assert "paragraph" in ocr(p)
